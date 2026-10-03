@@ -42,6 +42,11 @@ assert.equal((await os.readBookmarks({ folder: 'Bookmarks bar/Dev', timeoutMs: 5
 assert.equal((await os.readBookmarks({ query: 'example & a', timeoutMs: 500 })).length, 1);
 const braw = await new Promise((r) => os.userRoot.get('bookmarks').get(bms[0].soul).once(r));
 assert(!/example|Dev/.test(JSON.stringify(braw)), 'bookmark plaintext leaked');
+// agent-style reorganisation: move by soul, keep url/addedAt, report unknown souls
+const dev = bms.find(b => b.title === 'Dev B');
+assert.deepEqual(await os.updateBookmarks([{ soul: dev.soul, folder: 'Work/Dev', tags: ['x'] }, { soul: 'bm-nope', folder: 'Z' }]), { updated: 1, missing: ['bm-nope'], failed: 0 });
+const moved = (await os.readBookmarks({ folder: 'Work', timeoutMs: 500 }))[0];
+assert(moved.title === 'Dev B' && moved.url === dev.url && moved.addedAt === dev.addedAt && moved.tags[0] === 'x');
 await os.deleteBookmark(bms[0].soul);
 assert.equal((await os.readBookmarks({ timeoutMs: 500 })).length, 1);
 

@@ -37,6 +37,9 @@ Usage:
   node cli.js migrate --user <user> --pass <pass>   # copy vault/calendar/bookmarks from the old (user+pass) identity
   node cli.js vault-write --user <user> --pass <pass> --title <title> --body <body> [--cat <cat>] [--pinned]
   node cli.js vault-read --user <user> --pass <pass> [--cat <cat>] [--query <q>] [--timeout <ms>]
+  node cli.js bookmarks-import --user <user> --pass <pass> --file <export.html>   # Brave/Chrome/Firefox export
+  node cli.js bookmarks-read --user <user> --pass <pass> [--folder <path>] [--query <q>] [--timeout <ms>]
+  node cli.js bookmarks-update --user <user> --pass <pass> --file <changes.json>  # [{soul, title?, folder?, tags?}]
   node cli.js blog-publish --user <user> --pass <pass> --title <title> --content <content> [--tags <tags>]
   node cli.js blog-read [--pub <pub>] [--alias <alias>] [--user <user> --pass <pass>]
   node cli.js relays                      # print the effective relay list
@@ -87,6 +90,31 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       if (!flags.user || !flags.pass) throw new Error('--user and --pass are required.');
       await os.login(flags.user, flags.pass);
       console.log(JSON.stringify({ pub: os.pub, legacyPub: os.legacyPair.pub, ...await os.migrateLegacy() }, null, 2));
+      setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    case 'bookmarks-import': {
+      if (!flags.user || !flags.pass || !flags.file) throw new Error('--user, --pass and --file are required.');
+      await os.login(flags.user, flags.pass);
+      console.log(JSON.stringify(await os.importBookmarksHtml(fs.readFileSync(flags.file, 'utf8')), null, 2));
+      setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    case 'bookmarks-read': {
+      if (!flags.user || !flags.pass) throw new Error('--user and --pass are required.');
+      await os.login(flags.user, flags.pass);
+      const marks = await os.readBookmarks({ folder: flags.folder, query: flags.query, timeoutMs: flags.timeout ? Number(flags.timeout) : 15000 });
+      console.log(JSON.stringify(marks, null, 2));
+      process.exit(0);
+      break;
+    }
+
+    case 'bookmarks-update': {
+      if (!flags.user || !flags.pass || !flags.file) throw new Error('--user, --pass and --file are required.');
+      await os.login(flags.user, flags.pass);
+      console.log(JSON.stringify(await os.updateBookmarks(JSON.parse(fs.readFileSync(flags.file, 'utf8'))), null, 2));
       setTimeout(() => process.exit(0), 500);
       break;
     }

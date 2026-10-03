@@ -459,6 +459,41 @@ export class ZenOS {
   }
 
   /**
+   * Apply many edits at once, e.g. after an agent decided how to reorganise.
+   * Each change is `{ soul, title?, folder?, tags? }`; omitted fields and `url`/`addedAt` are kept.
+   * Reads the bookmarks once, then rewrites only the changed ones (50 at a time).
+   * @returns {Promise<{updated:number, missing:string[], failed:number}>}
+   */
+  async updateBookmarks(changes, timeoutMs = 15000) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    const bySoul = new Map((await this.readBookmarks({ timeoutMs })).map(b => [b.soul, b]));
+    const missing = [], jobs = [];
+    for (const { soul, ...patch } of changes) {
+      const cur = bySoul.get(soul);
+      if (!cur) { missing.push(soul); continue; }
+      const { title = cur.title, folder = cur.folder, tags = cur.tags } = patch;
+      jobs.push({ ...cur, title, folder, tags });
+    }
+    let updated = 0, failed = 0;
+    for (let i = 0; i < jobs.length; i += 50) {
+      const res = await Promise.allSettled(jobs.slice(i, i + 50).map(({ soul, ...bm }) => this.writeBookmark(bm)));
+      updated += res.filter(r => r.status === 'fulfilled').length;
+      failed += res.filter(r => r.status === 'rejected').length;
+    }
+    return { updated, missing, failed };
+  }
+
+  /**
+   * Convenience: update one bookmark by soul.
+   */
+  async updateBookmark(soul, patch) {
+    const r = await this.updateBookmarks([{ soul, ...patch }]);
+    if (r.missing.length) throw new Error('Bookmark not found: ' + soul);
+    if (r.failed) throw new Error('Update failed');
+    return { soul, status: 'updated' };
+  }
+
+  /**
    * Delete a bookmark by soul.
    */
   async deleteBookmark(soul) {
