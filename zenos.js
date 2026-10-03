@@ -102,6 +102,38 @@ export function resolvePeers(opts = {}) {
   return peers;
 }
 
+/**
+ * Parse a Netscape bookmarks export (Brave / Chrome / Firefox "Export bookmarks" HTML).
+ * Returns [{ url, title, folder, addedAt }]; folder is a "A/B" path, addedAt is ms.
+ * Only http(s) URLs are kept (drops javascript:, chrome:, file: ...).
+ */
+export function parseBookmarksHtml(html) {
+  const decode = (t) => t.replace(/<[^>]*>/g, '').replace(/&(amp|lt|gt|quot|#39);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" })[e]).trim();
+  const out = [];
+  const stack = [];
+  let pending = null;
+  const re = /<A\b([^>]*)>([\s\S]*?)<\/A>|<H3\b[^>]*>([\s\S]*?)<\/H3>|<(\/?)DL\b[^>]*>/gi;
+  for (let m; (m = re.exec(html));) {
+    if (m[3] !== undefined) pending = decode(m[3]);
+    else if (m[4] !== undefined) {
+      if (m[4]) stack.pop();
+      else { stack.push(pending); pending = null; }
+    } else {
+      const href = /\bHREF="([^"]*)"/i.exec(m[1]);
+      const url = href && decode(href[1]);
+      if (!url || !/^https?:\/\//i.test(url)) continue;
+      const added = /\bADD_DATE="(\d+)"/i.exec(m[1]);
+      out.push({ url, title: decode(m[2]) || url, folder: stack.filter(Boolean).join('/'), addedAt: added ? Number(added[1]) * 1000 : Date.now() });
+    }
+  }
+  return out;
+}
+
+async function bookmarkSoul(url) {
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(url));
+  return 'bm-' + [...new Uint8Array(h)].slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 export class ZenOS {
   constructor(options = {}) {
     this.peers = resolvePeers(options);
@@ -297,6 +329,80 @@ export class ZenOS {
     if (!this.pair) throw new Error('Not authenticated.');
     return new Promise((resolve, reject) => {
       this.userRoot.get('calendar').get(soul).put(null, (ack) => {
+        if (ack && ack.err) reject(new Error(ack.err));
+        else resolve({ soul, status: 'deleted' });
+      }, { authenticator: this.pair });
+    });
+  }
+
+  // ─── Bookmarks (Encrypted) ──────────────────────────────────────────
+
+  /**
+   * Save an encrypted bookmark at `~pub/bookmarks/<soul>`. The soul is derived from the URL,
+   * so saving or importing the same URL twice updates one record instead of duplicating it.
+   * @param {{url:string, title?:string, folder?:string, tags?:string[], addedAt?:number}} bm
+   */
+  async writeBookmark({ url, title = '', folder = '', tags = [], addedAt = Date.now() }) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    if (!/^https?:\/\//i.test(url || '')) throw new Error('url must be http(s)');
+    const soul = await bookmarkSoul(url);
+    const data = await ZEN.encrypt({ url, title: title || url, folder, tags, addedAt }, this.pair);
+    return new Promise((resolve, reject) => {
+      this.userRoot.get('bookmarks').get(soul).put({ data, updatedAt: Date.now(), encrypted: true }, (ack) => {
+        if (ack && ack.err) reject(new Error(ack.err));
+        else resolve({ soul, status: 'saved' });
+      }, { authenticator: this.pair });
+    });
+  }
+
+  /**
+   * Import a browser bookmarks export (Brave/Chrome/Firefox HTML). Returns { imported, failed }.
+   */
+  async importBookmarksHtml(html) {
+    const items = parseBookmarksHtml(html);
+    const results = await Promise.allSettled(items.map(b => this.writeBookmark(b)));
+    return { imported: results.filter(r => r.status === 'fulfilled').length, failed: results.filter(r => r.status === 'rejected').length };
+  }
+
+  /**
+   * Read and decrypt all bookmarks, optionally filtered by folder prefix or text query.
+   */
+  async readBookmarks({ folder = null, query = null, timeoutMs = 5000 } = {}) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    const q = query ? query.toLowerCase() : null;
+    const marks = [];
+    const seen = new Set();
+    return new Promise((resolve) => {
+      setTimeout(() => resolve(marks.sort((a, b) => b.addedAt - a.addedAt)), timeoutMs);
+
+      const add = async (node, soul) => {
+        if (!node || !node.data || seen.has(soul)) return;
+        seen.add(soul);
+        try {
+          const bm = await ZEN.decrypt(node.data, this.pair); // ZEN returns the parsed object
+          if (folder && !(bm.folder === folder || bm.folder.startsWith(folder + '/'))) return;
+          if (q && !(bm.title + ' ' + bm.url).toLowerCase().includes(q)) return;
+          marks.push({ soul, ...bm });
+        } catch (_) {
+          // ignore corrupted or un-decryptable records
+        }
+      };
+
+      this.userRoot.get('bookmarks').map().once((node, soul) => {
+        if (!soul) return;
+        if (node && node.data) add(node, soul);
+        else this.userRoot.get('bookmarks').get(soul).once((full) => add(full, soul));
+      });
+    });
+  }
+
+  /**
+   * Delete a bookmark by soul.
+   */
+  async deleteBookmark(soul) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    return new Promise((resolve, reject) => {
+      this.userRoot.get('bookmarks').get(soul).put(null, (ack) => {
         if (ack && ack.err) reject(new Error(ack.err));
         else resolve({ soul, status: 'deleted' });
       }, { authenticator: this.pair });
