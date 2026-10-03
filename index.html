@@ -1903,6 +1903,7 @@
           <input type="search" id="bm-search" placeholder="Search bookmarks" oninput="bmSearch(this.value)">
           <button class="cal-btn hidden" id="bm-rename" onclick="bmRenameFolder()"><i class="ti ti-folder"></i> Rename folder</button>
           <button class="cal-btn" onclick="bmAdd()"><i class="ti ti-plus"></i> Add</button>
+          <button class="cal-btn" id="bm-export" onclick="bmExport()" title="Download as a browser-importable HTML file"><i class="ti ti-download"></i> Export</button>
           <button class="cal-btn primary" onclick="document.getElementById('bm-file').click()"><i class="ti ti-upload"></i> Import</button>
           <input type="file" id="bm-file" accept=".html,text/html" class="hidden" onchange="bmImport(this)">
         </div>
@@ -3532,11 +3533,43 @@ print("Welcome to ZenVault Bear Style!")
         else {
           const href = /\bHREF="([^"]*)"/i.exec(m[1]), url = href && decode(href[1]);
           if (!url || !/^https?:\/\//i.test(url)) continue;
-          const added = /\bADD_DATE="(\d+)"/i.exec(m[1]);
-          out.push({ url, title: decode(m[2]) || url, folder: stack.filter(Boolean).join('/'), addedAt: added ? Number(added[1]) * 1000 : Date.now() });
+          const added = /\bADD_DATE="(\d+)"/i.exec(m[1]), tags = /\bTAGS="([^"]*)"/i.exec(m[1]);
+          out.push({ url, title: decode(m[2]) || url, folder: stack.filter(Boolean).join('/'), addedAt: added ? Number(added[1]) * 1000 : Date.now(), tags: tags ? decode(tags[1]).split(',').map(t => t.trim()).filter(Boolean) : [] });
         }
       }
       return out;
+    }
+
+    // Netscape bookmarks HTML that Brave/Chrome/Firefox import; mirrors ZenOS bookmarksToHtml.
+    function bookmarksToHtml(list) {
+      const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      const root = { dirs: new Map(), items: [] };
+      for (const b of list) {
+        let node = root;
+        for (const part of (b.folder || '').split('/').filter(Boolean)) {
+          if (!node.dirs.has(part)) node.dirs.set(part, { dirs: new Map(), items: [] });
+          node = node.dirs.get(part);
+        }
+        node.items.push(b);
+      }
+      const block = (node, pad) => [
+        ...[...node.dirs].sort(([a], [b]) => a.localeCompare(b)).flatMap(([name, d]) =>
+          [`${pad}<DT><H3>${esc(name)}</H3>`, `${pad}<DL><p>`, ...block(d, pad + '    '), `${pad}</DL><p>`]),
+        ...node.items.sort((a, b) => a.addedAt - b.addedAt).map(b =>
+          `${pad}<DT><A HREF="${esc(b.url)}" ADD_DATE="${Math.floor((b.addedAt || Date.now()) / 1000)}"${(b.tags || []).length ? ` TAGS="${esc(b.tags.join(','))}"` : ''}>${esc(b.title || b.url)}</A>`)
+      ];
+      return ['<!DOCTYPE NETSCAPE-Bookmark-file-1>', '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">', '<TITLE>Bookmarks</TITLE>', '<H1>Bookmarks</H1>', '<DL><p>', ...block(root, '    '), '</DL><p>', ''].join('\n');
+    }
+    // exports the selected folder (and everything below it), or everything when "All" is selected
+    function bmExport() {
+      const list = Object.values(bookmarks).filter(b => bmFolder === null || (b.folder || '') === bmFolder || (b.folder || '').startsWith(bmFolder + '/'));
+      if (!list.length) return showToast('Nothing to export');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([bookmarksToHtml(list.map(b => ({ ...b })))], { type: 'text/html' }));
+      a.download = 'bookmarks' + (bmFolder ? '-' + bmFolder.replace(/[^\w.-]+/g, '_') : '') + '.html';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      showToast('Exported ' + list.length + ' bookmarks');
     }
 
     function loadBookmarks() {
@@ -3670,7 +3703,7 @@ print("Welcome to ZenVault Bear Style!")
       document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
       renderBookmarks();
     }
-    Object.assign(window, { openBookmarks, bmSearch, bmPickFolder, bmAdd, bmImport, bmDelete, bmEdit, bmRenameFolder });
+    Object.assign(window, { openBookmarks, bmSearch, bmPickFolder, bmAdd, bmImport, bmDelete, bmEdit, bmRenameFolder, bmExport });
 
     // Auto-login session recovery
     const savedUser = sessionStorage.getItem('zen_user');
