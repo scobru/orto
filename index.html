@@ -1548,6 +1548,28 @@
     .cal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
     @media (max-width: 768px) { .cal-title { font-size: 17px; } }
 
+
+    /* ── Blog view (read-only smollog posts at ~pub/posts) ── */
+    .blog-pane { flex: 1; display: none; min-width: 0; background: var(--bg-editor); color: var(--text-primary); }
+    body.blog-mode .blog-pane { display: flex; }
+    body.blog-mode .note-list-pane, body.blog-mode .editor-pane { display: none !important; }
+    .blog-list { width: 300px; flex-shrink: 0; border-right: 1px solid var(--border-color); overflow-y: auto; background: var(--bg-list); }
+    .blog-list-head { padding: 14px 16px; font-family: var(--font-heading); font-weight: 600; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .blog-list-head a { font-size: 12px; color: var(--bear-red); text-decoration: none; font-weight: 400; }
+    .blog-item { padding: 12px 16px; border-bottom: 1px solid var(--border-list); cursor: pointer; }
+    .blog-item:hover { background: var(--bg-card-hover); }
+    .blog-item.active { background: var(--bg-card-selected); }
+    .blog-item h4 { margin: 0 0 4px; font-size: 14px; }
+    .blog-item small { color: var(--text-muted); font-size: 12px; }
+    .blog-reader { flex: 1; overflow-y: auto; padding: 28px 36px; min-width: 0; }
+    .blog-reader article { max-width: 720px; margin: 0 auto; line-height: 1.65; }
+    .blog-reader h1 { font-family: var(--font-heading); margin-top: 0; }
+    .blog-reader img { max-width: 100%; }
+    .blog-reader pre, .blog-reader code { background: var(--code-bg); border-radius: 4px; }
+    .blog-reader pre { padding: 12px; overflow-x: auto; } .blog-reader code { padding: 1px 4px; }
+    .blog-empty { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 14px; }
+    @media (max-width: 768px) { .blog-pane { flex-direction: column; } .blog-list { width: auto; max-height: 38%; border-right: 0; border-bottom: 1px solid var(--border-color); } .blog-reader { padding: 18px; } }
+
     @media (max-width: 1024px) {
       .note-list-pane {
         width: 290px;
@@ -1713,6 +1735,12 @@
           <span class="nav-count" id="count-calendar">0</span>
         </a>
 
+        <a class="nav-item" id="nav-blog" onclick="openBlog()">
+          <span class="nav-icon"><i class="ti ti-writing"></i></span>
+          <span class="nav-text">Blog</span>
+          <span class="nav-count" id="count-blog">0</span>
+        </a>
+
         <a class="nav-item" id="filter-trash" onclick="setFilter('trash')">
           <span class="nav-icon"><i class="ti ti-trash"></i></span>
           <span class="nav-text">Trash</span>
@@ -1829,6 +1857,15 @@
         <button class="cal-btn primary" onclick="calNewEvent()"><i class="ti ti-plus"></i> Event</button>
       </header>
       <div class="cal-body" id="cal-body"></div>
+    </section>
+
+    <!-- Blog pane: read-only view of the user's public smollog posts -->
+    <section class="blog-pane" id="blog-pane">
+      <div class="blog-list">
+        <div class="blog-list-head"><span>Blog</span><a id="blog-open-link" target="_blank" rel="noopener">Open in smollog ↗</a></div>
+        <div id="blog-items"></div>
+      </div>
+      <div class="blog-reader" id="blog-reader"></div>
     </section>
 
     <!-- ════════════════════════════════════════════════════════════
@@ -2059,6 +2096,7 @@
         applyTheme();
         loadNotes();
         loadCalendar();
+        loadBlog();
       } catch (e) {
         console.error("Login Error:", e);
         alert("Decryption failed: " + e.message);
@@ -2307,6 +2345,7 @@
       // Update active nav item highlight
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
       if (calMode) document.getElementById('nav-calendar').classList.add('active');
+      if (blogMode) document.getElementById('nav-blog').classList.add('active');
       if (!currentFilter.startsWith('tag:')) {
         const activeNavEl = document.getElementById(`filter-${currentFilter}`);
         if (activeNavEl) activeNavEl.classList.add('active');
@@ -2922,6 +2961,7 @@ print("Welcome to ZenVault Bear Style!")
 
     function setFilter(filter) {
       closeCalendar();
+      closeBlog();
       currentFilter = filter;
       triggerRender();
       if (window.innerWidth <= 768) {
@@ -3166,6 +3206,7 @@ print("Welcome to ZenVault Bear Style!")
     }
 
     function openCalendar() {
+      closeBlog();
       calMode = true;
       document.body.classList.add('cal-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -3313,6 +3354,52 @@ print("Welcome to ZenVault Bear Style!")
     }
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeEventModal(); });
     Object.assign(window, { openCalendar, calToday, calNav, calSetView, calNewEvent, calEditEvent, calColClick });
+
+
+    // ═══════════════════════════════════════════════════════════════
+    // Blog — read-only view of the user's public smollog posts.
+    // Posts are plaintext by design (published at ~pub/posts/<id>).
+    // ═══════════════════════════════════════════════════════════════
+    const blogPosts = {};
+    let blogMode = false, blogSelected = null;
+
+    function loadBlog() {
+      zen.get('~' + pair.pub).get('posts').map().on((post, id) => {
+        if (!post || post.deleted === true || !post.title) delete blogPosts[id];
+        else blogPosts[id] = { id, title: post.title, content: post.content || '', tags: post.tags || '', createdAt: post.createdAt || 0 };
+        document.getElementById('count-blog').textContent = Object.keys(blogPosts).length;
+        if (blogMode) renderBlog();
+      });
+    }
+    function openBlog() {
+      closeCalendar();
+      blogMode = true;
+      document.body.classList.add('blog-mode');
+      document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
+      document.getElementById('nav-blog').classList.add('active');
+      document.getElementById('blog-open-link').href = 'https://smollog.vercel.app/' + pair.pub;
+      if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('open')) toggleSidebar();
+      renderBlog();
+    }
+    function closeBlog() {
+      blogMode = false;
+      document.body.classList.remove('blog-mode');
+      document.getElementById('nav-blog').classList.remove('active');
+    }
+    function renderBlog() {
+      const posts = Object.values(blogPosts).sort((a, b) => b.createdAt - a.createdAt);
+      if (!blogPosts[blogSelected]) blogSelected = posts[0] ? posts[0].id : null;
+      document.getElementById('blog-items').innerHTML = posts.length ? posts.map(p => `
+        <div class="blog-item ${p.id === blogSelected ? 'active' : ''}" onclick="blogSelect('${escapeHtml(p.id)}')">
+          <h4>${escapeHtml(p.title)}</h4><small>${p.createdAt ? new Date(p.createdAt).toLocaleDateString(navigator.language || 'en-US') : ''}${p.tags ? ' · ' + escapeHtml(String(p.tags)) : ''}</small>
+        </div>`).join('') : '<div class="blog-empty">No smollog posts yet.<br>Publish from smollog and they show up here.</div>';
+      const cur = blogPosts[blogSelected];
+      document.getElementById('blog-reader').innerHTML = cur
+        ? `<article><h1>${escapeHtml(cur.title)}</h1>${window.marked ? window.marked.parse(cur.content) : escapeHtml(cur.content).replace(/\n/g, '<br>')}</article>`
+        : '';
+    }
+    function blogSelect(id) { blogSelected = id; renderBlog(); }
+    Object.assign(window, { openBlog, blogSelect });
 
     // Auto-login session recovery
     const savedUser = sessionStorage.getItem('zen_user');
