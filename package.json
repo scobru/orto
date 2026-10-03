@@ -1,0 +1,20 @@
+{
+  "name": "zenos",
+  "version": "0.1.0",
+  "description": "Sovereign Decentralized Operating System for Humans and AI Agents",
+  "type": "module",
+  "main": "zenos.js",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "keywords": [
+    "zen",
+    "zenos",
+    "p2p",
+    "decentralized",
+    "agentic",
+    "autonomous-agents"
+  ],
+  "author": "scobru",
+  "license": "MIT"
+}

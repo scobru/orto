@@ -1,0 +1,305 @@
+# ZenOS — LLM & Autonomous Agent Integration Guide (llm.txt)
+
+> **Instructions for AI Agents, LLMs, and Automation Scripts:**
+> ZenOS is a decentralized, zero-backend, multi-app operating system powered by **ZEN** (peer-to-peer graph database & cryptographic identity).
+> You do NOT need a browser, headless browser, or UI to interact with ZenOS.
+> Any autonomous agent given a user's master credentials (`username` and `password`) can derive the exact same cryptographic keypair (`pair`), connect directly to the decentralized P2P graph overlay, and read, write, or synchronize across all ZenOS app nodes (private encrypted notes in ZenVault, public articles in smollog, and future modules).
+
+---
+
+## 1. Vision & Architecture
+
+ZenOS unifies a user's digital life under a **single sovereign cryptographic identity** (`pair.pub`):
+
+```
+                     ┌────────────────────────────────────────┐
+                     │          Master Credentials            │
+                     │         username + password            │
+                     └──────────────────┬─────────────────────┘
+                                        │ ZEN.pair(null, { seed })
+                                        ▼
+                     ┌────────────────────────────────────────┐
+                     │       Unified Public Key (Identity)    │
+                     │                 ~{pub}                 │
+                     └──────────────────┬─────────────────────┘
+                                        │
+         ┌──────────────────────────────┼──────────────────────────────┐
+         │                              │                              │
+         ▼                              ▼                              ▼
+  ┌──────────────┐              ┌──────────────┐              ┌──────────────┐
+  │   ZenVault   │              │   smollog    │              │ Future Nodes │
+  │   (Private)  │              │   (Public)   │              │ (Calendar,   │
+  │ ~{pub}/vault │              │ ~{pub}/posts │              │  Tasks, etc) │
+  │  [Encrypted] │              │   [Signed]   │              │              │
+  └──────────────┘              └──────────────┘              └──────────────┘
+```
+
+- **Zero Central Server**: All data lives across a peer-to-peer graph overlay (GunDB / ZEN protocol).
+- **Zero-Knowledge Private Nodes (`/vault`)**: Payloads are encrypted with AES-GCM-256 before leaving the client. Relays only relay blind ciphertexts.
+- **Verifiable Public Nodes (`/posts`)**: Blog entries are signed using ECDSA (secp256k1) and readable by anyone knowing the author's public key or alias.
+- **Cross-App Synergies for AI**: An AI agent can read research in ZenVault, summarize it, and publish an article directly to smollog!
+
+---
+
+## 2. Dependencies & Initialization
+
+### Loading ZEN Library
+Always load ZEN from the official repository CDN:
+
+```javascript
+// ESM / Browser / Deno / Node (ESM)
+import ZEN from 'https://cdn.jsdelivr.net/gh/scobru/zen@main/zen.min.js';
+```
+
+Or clone/install from GitHub:
+```bash
+git clone https://github.com/scobru/zen
+```
+
+### Official P2P WebSocket Relays
+Connect to any or all of these official Zen relays:
+```json
+[
+  "wss://delay.scobrudot.dev/zen",
+  "wss://zen.akao.io:8420/zen"
+]
+```
+
+### Client Initialization
+```javascript
+const zen = new ZEN({
+  peers: [
+    "wss://delay.scobrudot.dev/zen",
+    "wss://zen.akao.io:8420/zen"
+  ]
+});
+```
+
+---
+
+## 3. Cryptographic Key Derivation
+
+ZenOS uses deterministic key derivation so that an agent and the user in the browser produce the **identical public and private keypair**:
+
+```javascript
+const seed = username + password;
+const pair = await ZEN.pair(null, { seed });
+```
+
+The resulting `pair` object contains:
+- `pair.pub`: User's public identity (e.g. `0oQit1EicIMgYeM9rVRMjmgP9MoQjfK0XJLq6imoJ1CR0`)
+- `pair.priv`: User's private signing and decryption key (base62 scalar)
+- `pair.address`: EVM compatible checksummed address (e.g. `0x2F256...`)
+
+> **CRITICAL RULE FOR ALL WRITES**: When calling `.put()` on any node under `~pair.pub`, you **MUST** pass `{ authenticator: pair }` as the options argument. This generates the cryptographic signature proving ownership of the `~pub` namespace to the relay.
+
+---
+
+## 4. Node Specification: ZenVault (Encrypted Private Storage)
+
+### Path
+```javascript
+zen.get('~' + pair.pub).get('vault')
+```
+
+### Encryption
+All sensitive fields (`title`, `body`, `cat`) **MUST be encrypted** with `ZEN.encrypt(text, pair)`.
+
+### Note Schema
+| Field | Type | Encrypted? | Description |
+|---|---|---|---|
+| `title` | `string` | **YES** | Encrypted title (e.g. `🐻 Research Notes`) |
+| `body` | `string` | **YES** | Encrypted Markdown content |
+| `cat` | `string` | **YES** | Category or primary tag (e.g. `work`, `ai`) |
+| `pinned` | `boolean` | **NO** | `true` if pinned |
+| `trash` | `boolean` | **NO** | Soft-delete flag |
+| `timestamp` | `number` | **NO** | Unix epoch in milliseconds (`Date.now()`) |
+| `encrypted` | `boolean` | **NO** | Always `true` |
+
+### Write Note Example
+```javascript
+async function writeVaultNote({ zen, pair, title, body, cat = 'agent', pinned = false }) {
+  const encTitle = await ZEN.encrypt(title, pair);
+  const encBody = await ZEN.encrypt(body, pair);
+  const encCat = await ZEN.encrypt(cat, pair);
+
+  const soul = 'vault-' + Date.now() + '-' + Math.random().toString(36).substring(7);
+  const payload = {
+    title: encTitle,
+    body: encBody,
+    cat: encCat,
+    pinned: !!pinned,
+    trash: false,
+    timestamp: Date.now(),
+    encrypted: true
+  };
+
+  return new Promise((resolve, reject) => {
+    zen.get('~' + pair.pub).get('vault').get(soul).put(payload, (ack) => {
+      if (ack && ack.err) reject(new Error(ack.err));
+      else resolve({ soul, status: 'saved' });
+    }, { authenticator: pair });
+  });
+}
+```
+
+### Read Vault Notes Example
+```javascript
+async function readVaultNotes({ zen, pair, timeoutMs = 5000 }) {
+  const notes = [];
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(notes), timeoutMs);
+
+    zen.get('~' + pair.pub).get('vault').map().on(async (node, soul) => {
+      if (!node || node.trash) return;
+      try {
+        const title = await ZEN.decrypt(node.title, pair);
+        const body = await ZEN.decrypt(node.body, pair);
+        const cat = await ZEN.decrypt(node.cat, pair);
+        notes.push({ soul, title, body, cat, timestamp: node.timestamp, pinned: node.pinned });
+      } catch (e) {
+        // Skip corrupted or un-decryptable records
+      }
+    });
+  });
+}
+```
+
+---
+
+## 5. Node Specification: smollog (Public Decentralized Blog)
+
+### Path
+```javascript
+zen.get('~' + pair.pub).get('posts')
+```
+
+### Public Access
+smollog posts are **plain Markdown** (unencrypted) so that anyone can read them at `smollog.vercel.app/<pub>`. They are cryptographically signed by `{ authenticator: pair }`.
+
+### Post Schema
+| Field | Type | Description |
+|---|---|---|
+| `id` | `string` | Unique post ID (e.g. `post-1791036854137`) |
+| `title` | `string` | Post title |
+| `content` | `string` | Markdown blog content |
+| `tags` | `string` | Comma-separated tags (e.g. `ai, decentralization, agent`) |
+| `authorAlias`| `string` | Author username (e.g. `scobru`) |
+| `authorPub` | `string` | Author public key (`pair.pub`) |
+| `createdAt` | `number` | Creation timestamp (`Date.now()`) |
+| `updatedAt` | `number` | Last modified timestamp |
+| `deleted` | `boolean` | `true` if post is soft-deleted |
+
+### Publish Post Example
+```javascript
+async function publishBlogPost({ zen, pair, username, title, content, tags = [] }) {
+  const id = 'post-' + Date.now();
+  const tagStr = Array.isArray(tags) ? tags.join(', ') : tags;
+
+  const postPayload = {
+    id,
+    title: title.trim(),
+    content: content.trim(),
+    tags: tagStr,
+    authorAlias: username,
+    authorPub: pair.pub,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    deleted: false
+  };
+
+  return new Promise((resolve, reject) => {
+    zen.get('~' + pair.pub).get('posts').get(id).put(postPayload, (ack) => {
+      if (ack && ack.err) reject(new Error(ack.err));
+      else resolve({ id, status: 'published' });
+    }, { authenticator: pair });
+  });
+}
+```
+
+### Register Author Alias
+To allow readers to access the blog via human-friendly alias (e.g. `smollog.vercel.app/scobru`):
+```javascript
+async function registerAuthorAlias({ zen, pair, username }) {
+  const clean = username.trim().toLowerCase();
+  return new Promise((resolve) => {
+    zen.get('~' + pair.pub).get('alias').put(clean, null, { authenticator: pair });
+    zen.get('smollog_aliases').get(clean).put(pair.pub, () => resolve(true));
+  });
+}
+```
+
+---
+
+## 6. Future ZenOS Nodes (Roadmap & Convention)
+
+Agents building on ZenOS should respect standard graph node paths under `~pair.pub`:
+
+| Node Path | Purpose | Encryption Standard |
+|---|---|---|
+| `~{pub}/vault` | Encrypted notes & knowledge base | AES-GCM (Private) |
+| `~{pub}/posts` | Public blog posts & articles | Cleartext Signed (Public) |
+| `~{pub}/calendar` | Personal calendar events & schedules | AES-GCM (Private) or Signed |
+| `~{pub}/tasks` | Interactive todos & project kanban | AES-GCM (Private) |
+| `~{pub}/profile` | Sovereign bio, avatar, links, social | Cleartext Signed (Public) |
+| `~{pub}/inbox` | P2P encrypted messages from other agents | ECDH Shared Secret (`ZEN.secret`) |
+
+---
+
+## 7. Full Autonomous Agent Example: Research & Publish Pipeline
+
+Below is a complete autonomous workflow where an agent:
+1. Derives master credentials.
+2. Reads private research notes from **ZenVault**.
+3. Synthesizes a public article.
+4. Publishes the article to **smollog**.
+5. Saves an archival record back to **ZenVault**.
+
+```javascript
+import ZEN from 'https://cdn.jsdelivr.net/gh/scobru/zen@main/zen.min.js';
+
+async function runAutonomousWorkflow() {
+  const zen = new ZEN({
+    peers: ["wss://delay.scobrudot.dev/zen", "wss://zen.akao.io:8420/zen"]
+  });
+
+  const username = "scobru";
+  const password = "your_secure_password";
+  const pair = await ZEN.pair(null, { seed: username + password });
+  console.log("ZenOS Agent authenticated for:", pair.pub);
+
+  // 1. Fetch research from Vault
+  const notes = await readVaultNotes({ zen, pair, timeoutMs = 4000 });
+  console.log(`Found ${notes.length} vault notes.`);
+
+  // 2. Publish post to smollog
+  const blogResult = await publishBlogPost({
+    zen,
+    pair,
+    username,
+    title: "🤖 Agent Dispatches: Synchronizing with ZenOS",
+    content: "### Autonomous Sync Complete\n\nZenOS connects our decentralized vault with our public voice.\n\n- Encrypted storage: Secure\n- Public journal: Active",
+    tags: ["zenos", "agent", "p2p"]
+  });
+  console.log("Published to smollog:", blogResult.id);
+
+  // 3. Log execution event in private Vault
+  await writeVaultNote({
+    zen,
+    pair,
+    title: "🤖 Agent Log: Synced with smollog",
+    body: `Successfully published article ${blogResult.id} at ${new Date().toISOString()}`,
+    cat: "agent-logs"
+  });
+  console.log("Saved execution record in ZenVault.");
+}
+```
+
+---
+
+## 8. Best Practices for Agents
+
+1. **Always use `{ authenticator: pair }` on `.put()`**: The P2P relay requires cryptographic proof of authority to modify any child of `~pair.pub`.
+2. **Handle network latency**: GunDB/ZEN propagates graph changes over WebSockets asynchronously. Always await `.put()` callbacks and allow 500-1500ms before exiting CLI processes.
+3. **Graceful degradation**: Wrap `ZEN.decrypt` in `try / catch` to ignore old, corrupted, or non-encrypted legacy nodes.
+4. **Deterministic identity**: Never change credential casing without user confirmation, as `{ seed: user + pass }` is case-sensitive.
