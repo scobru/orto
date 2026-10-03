@@ -1,7 +1,7 @@
 // Calendar roundtrip: encrypted at rest in graph, decrypts on read, range filter, delete.
 import assert from 'assert';
 import http from 'http';
-import { ZenOS, parseBookmarksHtml, legacySmollogPair } from './zenos.js';
+import { ZenOS, parseBookmarksHtml, bookmarksToHtml, legacySmollogPair } from './zenos.js';
 import { deriveMasterPair } from './identity.js';
 
 // local in-process relay so the test needs no network
@@ -48,6 +48,14 @@ const dev = bms.find(b => b.title === 'Dev B');
 assert.deepEqual(await os.updateBookmarks([{ soul: dev.soul, folder: 'Work/Dev', tags: ['x'] }, { soul: 'bm-nope', folder: 'Z' }]), { updated: 1, missing: ['bm-nope'], failed: 0 });
 const moved = (await os.readBookmarks({ folder: 'Work', timeoutMs: 500 }))[0];
 assert(moved.title === 'Dev B' && moved.url === dev.url && moved.addedAt === dev.addedAt && moved.tags[0] === 'x');
+// export is the inverse of import: parse(export(x)) gives x back, entities and tags included
+const exported = await os.exportBookmarksHtml({ timeoutMs: 500 });
+const back = parseBookmarksHtml(exported);
+const key = (b) => [b.url, b.title, b.folder, b.addedAt, (b.tags || []).join(',')].join('|');
+const now = await os.readBookmarks({ timeoutMs: 500 });
+assert.deepEqual(back.map(key).sort(), now.map(key).sort());
+assert(exported.includes('Example &amp; A') && exported.includes('TAGS="x"'));
+assert.equal(parseBookmarksHtml(bookmarksToHtml([{ url: 'https://a.example/?q="1"&r=<2>', title: 'T <b> "q"', folder: 'A/B', addedAt: 5000, tags: [] }]))[0].url, 'https://a.example/?q="1"&r=<2>');
 await os.deleteBookmark(bms[0].soul);
 assert.equal((await os.readBookmarks({ timeoutMs: 500 })).length, 1);
 
@@ -70,5 +78,19 @@ const [n] = await os.readVaultNotes(500);
 assert(n.title === 'Old title' && n.body === 'Old body' && n.pinned);
 assert.equal((await os.readCalendarEvents({ timeoutMs: 500 })).find(e => e.title === 'Old ev').soul, 'cal-old');
 assert((await os.readBookmarks({ timeoutMs: 500 })).some(b => b.title === 'Old bm'));
+// Links: note <-> event, stored in the encrypted event; idempotent, validated, dangling links skipped
+const note = await os.writeVaultNote({ title: 'Meeting prep', body: 'agenda', cat: 'work' });
+const ev = await os.writeCalendarEvent({ title: 'Meeting', start: Date.now() + 3600000 });
+await os.linkToEvent(ev.soul, { soul: note.soul });
+await os.linkToEvent(ev.soul, { soul: note.soul });
+await os.linkToEvent(ev.soul, { kind: 'note', soul: 'vault-gone' });
+assert.deepEqual((await os.getCalendarEvent(ev.soul)).links, [{ kind: 'note', soul: note.soul }, { kind: 'note', soul: 'vault-gone' }]);
+assert.deepEqual((await os.eventsFor({ soul: note.soul }, 500)).map(e => e.soul), [ev.soul]);
+assert.deepEqual((await os.notesForEvent(ev.soul, 500)).map(n => n.title), ['Meeting prep']);
+const raw2 = await new Promise((r) => os.userRoot.get('calendar').get(ev.soul).once(r));
+assert(!JSON.stringify(raw2).includes(note.soul), 'link target leaked in clear');
+await assert.rejects(os.writeCalendarEvent({ soul: ev.soul, title: 'x', start: 1, links: [{ kind: 'url', soul: 'a' }] }));
+await os.unlinkFromEvent(ev.soul, { soul: note.soul });
+assert.equal((await os.eventsFor({ soul: note.soul }, 500)).length, 0);
 console.log('ok');
 process.exit(0);

@@ -106,7 +106,7 @@ export function resolvePeers(opts = {}) {
 
 /**
  * Parse a Netscape bookmarks export (Brave / Chrome / Firefox "Export bookmarks" HTML).
- * Returns [{ url, title, folder, addedAt }]; folder is a "A/B" path, addedAt is ms.
+ * Returns [{ url, title, folder, addedAt, tags }]; folder is a "A/B" path, addedAt is ms.
  * Only http(s) URLs are kept (drops javascript:, chrome:, file: ...).
  */
 export function parseBookmarksHtml(html) {
@@ -125,11 +125,39 @@ export function parseBookmarksHtml(html) {
       const url = href && decode(href[1]);
       if (!url || !/^https?:\/\//i.test(url)) continue;
       const added = /\bADD_DATE="(\d+)"/i.exec(m[1]);
-      out.push({ url, title: decode(m[2]) || url, folder: stack.filter(Boolean).join('/'), addedAt: added ? Number(added[1]) * 1000 : Date.now() });
+      const tags = /\bTAGS="([^"]*)"/i.exec(m[1]);
+      out.push({ url, title: decode(m[2]) || url, folder: stack.filter(Boolean).join('/'), addedAt: added ? Number(added[1]) * 1000 : Date.now(), tags: tags ? decode(tags[1]).split(',').map(t => t.trim()).filter(Boolean) : [] });
     }
   }
   return out;
 }
+
+/**
+ * Serialise bookmarks to a Netscape bookmarks HTML file that Brave, Chrome and Firefox can import
+ * (the inverse of parseBookmarksHtml). Folders become nested <DL> blocks; tags go in a TAGS attribute.
+ */
+export function bookmarksToHtml(bookmarks) {
+  const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const root = { dirs: new Map(), items: [] };
+  for (const b of bookmarks) {
+    let node = root;
+    for (const part of (b.folder || '').split('/').filter(Boolean)) {
+      if (!node.dirs.has(part)) node.dirs.set(part, { dirs: new Map(), items: [] });
+      node = node.dirs.get(part);
+    }
+    node.items.push(b);
+  }
+  const block = (node, pad) => [
+    ...[...node.dirs].sort(([a], [b]) => a.localeCompare(b)).flatMap(([name, d]) =>
+      [`${pad}<DT><H3>${esc(name)}</H3>`, `${pad}<DL><p>`, ...block(d, pad + '    '), `${pad}</DL><p>`]),
+    ...node.items.sort((a, b) => a.addedAt - b.addedAt).map(b =>
+      `${pad}<DT><A HREF="${esc(b.url)}" ADD_DATE="${Math.floor((b.addedAt || Date.now()) / 1000)}"${(b.tags || []).length ? ` TAGS="${esc(b.tags.join(','))}"` : ''}>${esc(b.title || b.url)}</A>`)
+  ];
+  return ['<!DOCTYPE NETSCAPE-Bookmark-file-1>', '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">', '<TITLE>Bookmarks</TITLE>', '<H1>Bookmarks</H1>', '<DL><p>', ...block(root, '    '), '</DL><p>', ''].join('\n');
+}
+
+// what an event can point at; the link lives inside the encrypted event, so there is one source of truth
+const LINK_KINDS = ['note', 'bookmark'];
 
 async function bookmarkSoul(url) {
   const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(url));
@@ -346,7 +374,7 @@ export class ZenOS {
    * The whole event (title, start, end, ...) is one encrypted object;
    * only `updatedAt` and `encrypted` stay in clear. Pass `soul` to update.
    * @param {{title:string, start:number|string, end?:number|string, allDay?:boolean,
-   *          notes?:string, location?:string, soul?:string}} event
+   *          notes?:string, location?:string, links?:{kind:'note'|'bookmark', soul:string}[], soul?:string}} event
    */
   async writeCalendarEvent({ soul = null, ...event }) {
     if (!this.pair) throw new Error('Not authenticated.');
@@ -356,6 +384,9 @@ export class ZenOS {
     const start = new Date(event.start).getTime();
     if (Number.isNaN(start)) throw new Error('Invalid start date');
     const end = event.end != null ? new Date(event.end).getTime() : start;
+    if (event.links !== undefined && !(Array.isArray(event.links) && event.links.every(l => LINK_KINDS.includes(l?.kind) && typeof l.soul === 'string'))) {
+      throw new Error('links must be [{ kind: "note"|"bookmark", soul }]');
+    }
     const data = await ZEN.encrypt({ ...event, start, end }, this.pair);
     const payload = { data, updatedAt: Date.now(), encrypted: true };
 
@@ -365,6 +396,60 @@ export class ZenOS {
         else resolve({ soul: eventSoul, status: 'saved', updatedAt: payload.updatedAt });
       }, { authenticator: this.pair });
     });
+  }
+
+  /**
+   * Read and decrypt one calendar event by soul (null if missing or not decryptable).
+   */
+  async getCalendarEvent(soul) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    const node = await new Promise((resolve) => {
+      const t = setTimeout(() => resolve(null), 5000);
+      this.userRoot.get('calendar').get(soul).once((n) => { clearTimeout(t); resolve(n); });
+    });
+    if (!node || !node.data) return null;
+    try { return { soul, ...(await ZEN.decrypt(node.data, this.pair)) }; } catch (_) { return null; }
+  }
+
+  /**
+   * Link a vault note (or bookmark) to a calendar event. The link is stored inside the encrypted event,
+   * so nothing changes on the note and there is nothing to keep in sync. Idempotent.
+   * @param {string} eventSoul
+   * @param {{kind?:'note'|'bookmark', soul:string}} target
+   */
+  async linkToEvent(eventSoul, { kind = 'note', soul }) {
+    const ev = await this.getCalendarEvent(eventSoul);
+    if (!ev) throw new Error('Event not found: ' + eventSoul);
+    const links = ev.links || [];
+    if (!links.some(l => l.kind === kind && l.soul === soul)) links.push({ kind, soul });
+    return this.writeCalendarEvent({ ...ev, soul: eventSoul, links });
+  }
+
+  /**
+   * Remove a link created by linkToEvent.
+   */
+  async unlinkFromEvent(eventSoul, { kind = 'note', soul }) {
+    const ev = await this.getCalendarEvent(eventSoul);
+    if (!ev) throw new Error('Event not found: ' + eventSoul);
+    return this.writeCalendarEvent({ ...ev, soul: eventSoul, links: (ev.links || []).filter(l => !(l.kind === kind && l.soul === soul)) });
+  }
+
+  /**
+   * Events that link to a given note (or bookmark), soonest first.
+   */
+  async eventsFor({ kind = 'note', soul }, timeoutMs = 5000) {
+    const events = await this.readCalendarEvents({ timeoutMs });
+    return events.filter(e => (e.links || []).some(l => l.kind === kind && l.soul === soul));
+  }
+
+  /**
+   * Notes linked to an event, decrypted. Links to notes that no longer exist are skipped.
+   */
+  async notesForEvent(eventSoul, timeoutMs = 5000) {
+    const ev = await this.getCalendarEvent(eventSoul);
+    if (!ev) throw new Error('Event not found: ' + eventSoul);
+    const wanted = new Set((ev.links || []).filter(l => l.kind === 'note').map(l => l.soul));
+    return (await this.readVaultNotes(timeoutMs)).filter(n => wanted.has(n.soul));
   }
 
   /**
@@ -507,6 +592,13 @@ export class ZenOS {
     if (r.missing.length) throw new Error('Bookmark not found: ' + soul);
     if (r.failed) throw new Error('Update failed');
     return { soul, status: 'updated' };
+  }
+
+  /**
+   * Export all bookmarks (optionally one folder) as a Netscape HTML string, importable by browsers.
+   */
+  async exportBookmarksHtml({ folder = null, timeoutMs = 15000 } = {}) {
+    return bookmarksToHtml(await this.readBookmarks({ folder, timeoutMs }));
   }
 
   /**
