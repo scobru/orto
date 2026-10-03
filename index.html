@@ -1901,6 +1901,7 @@
       <div class="bm-main">
         <div class="bm-bar">
           <input type="search" id="bm-search" placeholder="Search bookmarks" oninput="bmSearch(this.value)">
+          <button class="cal-btn hidden" id="bm-rename" onclick="bmRenameFolder()"><i class="ti ti-folder"></i> Rename folder</button>
           <button class="cal-btn" onclick="bmAdd()"><i class="ti ti-plus"></i> Add</button>
           <button class="cal-btn primary" onclick="document.getElementById('bm-file').click()"><i class="ti ti-upload"></i> Import</button>
           <input type="file" id="bm-file" accept=".html,text/html" class="hidden" onchange="bmImport(this)">
@@ -3575,17 +3576,20 @@ print("Welcome to ZenVault Bear Style!")
     function renderBookmarks() {
       const all = Object.entries(bookmarks).map(([soul, b]) => ({ soul, ...b }));
       const folders = {};
-      all.forEach(b => { const f = b.folder || ''; folders[f] = (folders[f] || 0) + 1; });
-      if (bmFolder !== null && !folders[bmFolder] && !Object.keys(folders).some(f => f.startsWith(bmFolder + '/'))) bmFolder = null;
-      const fb = (name, label, n) => `<div class="bm-folder ${bmFolder === name ? 'active' : ''}" onclick="bmPickFolder(${name === null ? 'null' : `decodeURIComponent('${encodeURIComponent(name)}')`})"><span>${escapeHtml(label)}</span><span>${n}</span></div>`;
-      document.getElementById('bm-folders').innerHTML = fb(null, 'All', all.length) + Object.keys(folders).sort().map(f => fb(f, f || 'Unfiled', folders[f])).join('');
+      // every ancestor path is a folder too, counting everything below it
+      all.forEach(b => { const parts = (b.folder || '').split('/').filter(Boolean); if (!parts.length) folders[''] = (folders[''] || 0) + 1; parts.forEach((_, i) => { const f = parts.slice(0, i + 1).join('/'); folders[f] = (folders[f] || 0) + 1; }); });
+      if (bmFolder !== null && !folders[bmFolder]) bmFolder = null;
+      const fb = (name, label, n, depth = 0) => `<div class="bm-folder ${bmFolder === name ? 'active' : ''}" style="padding-left:${10 + depth * 14}px" onclick="bmPickFolder(${name === null ? 'null' : `decodeURIComponent('${encodeURIComponent(name)}')`})"><span>${escapeHtml(label)}</span><span>${n}</span></div>`;
+      document.getElementById('bm-folders').innerHTML = fb(null, 'All', all.length) + Object.keys(folders).sort().map(f => fb(f, f ? f.split('/').pop() : 'Unfiled', folders[f], f ? f.split('/').length - 1 : 0)).join('');
+      document.getElementById('bm-rename').classList.toggle('hidden', !bmFolder);
       const shown = all
         .filter(b => bmFolder === null || (b.folder || '') === bmFolder || (b.folder || '').startsWith(bmFolder + '/'))
         .filter(b => !bmQuery || (b.title + ' ' + b.url).toLowerCase().includes(bmQuery))
         .sort((a, b) => b.addedAt - a.addedAt);
       document.getElementById('bm-items').innerHTML = shown.length ? shown.map(b => {
         let host = ''; try { host = new URL(b.url).hostname; } catch (_) {}
-        return `<div class="bm-item"><a href="${escapeHtml(b.url)}" target="_blank" rel="noopener noreferrer"><b>${escapeHtml(b.title)}</b><small>${escapeHtml(host)}${b.folder ? ' · ' + escapeHtml(b.folder) : ''}</small></a>
+        return `<div class="bm-item"><a href="${escapeHtml(b.url)}" target="_blank" rel="noopener noreferrer"><b>${escapeHtml(b.title)}</b><small>${escapeHtml(host)}${b.folder ? ' · ' + escapeHtml(b.folder) : ''}${(b.tags || []).length ? ' · #' + (b.tags || []).map(escapeHtml).join(' #') : ''}</small></a>
+          <button class="bm-del" title="Edit" onclick="bmEdit('${b.soul}')"><i class="ti ti-pencil"></i></button>
           <button class="bm-del" title="Delete" onclick="bmDelete('${b.soul}')"><i class="ti ti-trash"></i></button></div>`;
       }).join('') : '<div class="blog-empty">No bookmarks yet.<br>Use Import to load a Brave/Chrome/Firefox export (Bookmarks → Export), or Add.</div>';
     }
@@ -3600,14 +3604,22 @@ print("Welcome to ZenVault Bear Style!")
         zen.get('~' + pair.pub).get('bookmarks').get(soul).put({ data, updatedAt: Date.now(), encrypted: true }, (ack) => { clearTimeout(t); resolve(ack && ack.err ? ack : null); }, { authenticator: pair });
       });
     }
+    // thousands of bookmarks: encrypt and write 100 at a time instead of all at once
+    async function bmSaveMany(list, label) {
+      const res = [];
+      for (let i = 0; i < list.length; i += 100) {
+        res.push(...await Promise.all(list.slice(i, i + 100).map(bmSave)));
+        if (list.length > 100) showToast(label + ' ' + Math.min(i + 100, list.length) + '/' + list.length + '…');
+      }
+      return res.filter(Boolean).length; // failures
+    }
     async function bmImport(input) {
       const file = input.files[0]; input.value = '';
       if (!file) return;
       const items = parseBookmarksHtml(await file.text());
       if (!items.length) return showToast('No bookmarks found in file');
       showToast('Encrypting ' + items.length + ' bookmarks…');
-      const res = await Promise.all(items.map(bmSave));
-      const failed = res.filter(Boolean).length;
+      const failed = await bmSaveMany(items, 'Encrypting');
       document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
       renderBookmarks();
       showToast('Imported ' + (items.length - failed) + ' bookmarks' + (failed ? ' (' + failed + ' failed)' : ''));
@@ -3619,13 +3631,46 @@ print("Welcome to ZenVault Bear Style!")
       await bmSave({ url, title, folder: bmFolder || '' });
       renderBookmarks(); showToast('Bookmark encrypted & saved');
     }
+    function bmEdit(soul) {
+      const b = bookmarks[soul]; if (!b) return;
+      document.getElementById('cal-modal-bg')?.remove();
+      const folders = [...new Set(Object.values(bookmarks).map(x => x.folder).filter(Boolean))].sort();
+      const bg = document.createElement('div');
+      bg.className = 'cal-modal-bg'; bg.id = 'cal-modal-bg';
+      bg.onclick = (e) => { if (e.target === bg) bg.remove(); };
+      bg.innerHTML = `<div class="cal-modal">
+        <label>Title<input type="text" id="bm-e-title" value="${escapeHtml(b.title)}"></label>
+        <label>URL<input type="text" value="${escapeHtml(b.url)}" disabled></label>
+        <label>Folder (e.g. Dev/Tools)<input type="text" id="bm-e-folder" list="bm-folder-list" value="${escapeHtml(b.folder || '')}"></label>
+        <datalist id="bm-folder-list">${folders.map(f => `<option value="${escapeHtml(f)}">`).join('')}</datalist>
+        <label>Tags (comma separated)<input type="text" id="bm-e-tags" value="${escapeHtml((b.tags || []).join(', '))}"></label>
+        <div class="cal-actions"><button class="cal-btn" id="bm-e-cancel">Cancel</button><button class="cal-btn primary" id="bm-e-save">Save</button></div></div>`;
+      document.body.appendChild(bg);
+      document.getElementById('bm-e-cancel').onclick = () => bg.remove();
+      document.getElementById('bm-e-save').onclick = async () => {
+        const v = (id) => document.getElementById(id).value.trim();
+        await bmSave({ ...b, title: v('bm-e-title') || b.url, folder: v('bm-e-folder').replace(/^\/+|\/+$/g, ''), tags: v('bm-e-tags').split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean) });
+        bg.remove(); renderBookmarks(); showToast('Bookmark updated');
+      };
+      document.getElementById('bm-e-title').focus();
+    }
+    // rename (or merge into) a folder and everything below it
+    async function bmRenameFolder() {
+      const from = bmFolder; if (!from) return;
+      const to = (prompt('New name for "' + from + '" (use / for sub-folders, empty = unfiled)', from) || '').trim().replace(/^\/+|\/+$/g, '');
+      if (to === from) return;
+      const hit = Object.values(bookmarks).filter(b => b.folder === from || (b.folder || '').startsWith(from + '/'));
+      const failed = await bmSaveMany(hit.map(b => ({ ...b, folder: to + b.folder.slice(from.length) })).map(b => ({ ...b, folder: b.folder.replace(/^\/+/, '') })), 'Moving');
+      bmFolder = to || null; renderBookmarks();
+      showToast('Moved ' + (hit.length - failed) + ' bookmarks' + (failed ? ' (' + failed + ' failed)' : ''));
+    }
     function bmDelete(soul) {
       zen.get('~' + pair.pub).get('bookmarks').get(soul).put(null, null, { authenticator: pair });
       delete bookmarks[soul];
       document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
       renderBookmarks();
     }
-    Object.assign(window, { openBookmarks, bmSearch, bmPickFolder, bmAdd, bmImport, bmDelete });
+    Object.assign(window, { openBookmarks, bmSearch, bmPickFolder, bmAdd, bmImport, bmDelete, bmEdit, bmRenameFolder });
 
     // Auto-login session recovery
     const savedUser = sessionStorage.getItem('zen_user');
