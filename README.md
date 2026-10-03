@@ -89,5 +89,30 @@ await os.publishBlogPost({
 
 ---
 
+## 🛰️ Relays
+
+ZenOS is serverless, but data syncs through **ZEN relays**. By default it connects to:
+
+- `wss://delay.scobrudot.dev/zen` — **the author's personal [Delay](file:///d:/shogun-2/shogun-relay) relay** (best-effort, no SLA)
+- `wss://zen.akao.io:8420/zen` — public upstream [ZEN](file:///d:/shogun-2/zen) network relay
+
+> ⚠️ The system works out of the box **because it uses the author's relay**. For production or full sovereignty, run your own and point ZenOS to it.
+
+```bash
+# add a custom relay to the defaults
+node cli.js vault-read --user u --pass p --relay "wss://relay.example.com/zen"
+# use only your relay
+ZENOS_RELAYS="wss://relay.example.com/zen" ZENOS_ONLY_CUSTOM_RELAYS=true node cli.js vault-read --user u --pass p
+```
+
+```javascript
+const os = new ZenOS({ extraPeers: ['wss://relay.example.com/zen'] });            // defaults + custom
+const own = new ZenOS({ extraPeers: ['ws://localhost:8420/zen'], useDefaultRelays: false }); // custom only
+```
+
+Full guide (custom relays + self-hosting with `zen` or `shogun-relay`): **[RELAYS.md](file:///d:/shogun-2/zenOS/RELAYS.md)**.
+
+---
+
 ## 📜 License
 MIT License.

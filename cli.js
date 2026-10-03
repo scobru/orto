@@ -5,7 +5,7 @@
  */
 
 import fs from 'fs';
-import ZenOS, { DEFAULT_RELAYS } from './zenos.js';
+import ZenOS, { DEFAULT_RELAYS, resolvePeers } from './zenos.js';
 
 function parseArgs(args) {
   const flags = {};
@@ -38,11 +38,35 @@ Usage:
   node cli.js vault-read --user <user> --pass <pass> [--cat <cat>] [--query <q>] [--timeout <ms>]
   node cli.js blog-publish --user <user> --pass <pass> --title <title> --content <content> [--tags <tags>]
   node cli.js blog-read [--pub <pub>] [--alias <alias>] [--user <user> --pass <pass>]
+  node cli.js relays                      # print the effective relay list
+
+Relay options (all commands):
+  --relay <url[,url]>     add custom relay(s) on top of the defaults
+  --no-default-relays     use only custom relays (--relay / ZENOS_RELAYS)
+  --peers <url[,url]>     replace the relay list entirely
+
+Env vars:
+  ZENOS_RELAYS=<url[,url]>        custom relays, always added
+  ZENOS_ONLY_CUSTOM_RELAYS=true   same as --no-default-relays
+
+Default relays: ${DEFAULT_RELAYS.join(', ')}
+(delay.scobrudot.dev is the author's personal relay — run your own, see RELAYS.md)
 `);
     process.exit(0);
   }
 
-  const os = new ZenOS({ peers: flags.peers ? flags.peers.split(',') : DEFAULT_RELAYS });
+  const peers = resolvePeers({
+    peers: typeof flags.peers === 'string' ? flags.peers : undefined,
+    extraPeers: typeof flags.relay === 'string' ? flags.relay : undefined,
+    useDefaultRelays: flags['no-default-relays'] ? false : undefined
+  });
+
+  if (cmd === 'relays') {
+    console.log(JSON.stringify({ peers }, null, 2));
+    process.exit(0);
+  }
+
+  const os = new ZenOS({ peers });
 
   switch (cmd) {
     case 'identity': {

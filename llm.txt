@@ -56,8 +56,8 @@ Or clone/install from GitHub:
 git clone https://github.com/scobru/zen
 ```
 
-### Official P2P WebSocket Relays
-Connect to any or all of these official Zen relays:
+### Default P2P WebSocket Relays
+ZenOS connects to these relays by default:
 ```json
 [
   "wss://delay.scobrudot.dev/zen",
@@ -65,12 +65,41 @@ Connect to any or all of these official Zen relays:
 ]
 ```
 
+> **DISCLOSURE**: `wss://delay.scobrudot.dev/zen` is the **personal relay of the ZenOS author (scobru)**, running Delay / shogun-relay. It is best-effort (no SLA, no uptime or retention guarantee). `wss://zen.akao.io:8420/zen` is a public relay of the upstream ZEN network. The system works out of the box because it uses these relays. Vault data is ciphertext for the relay; smollog posts are plaintext (public by design).
+
+### Custom Relays
+If the user gives you their own relay, use it. Options:
+
+```bash
+# CLI: add to defaults
+node cli.js vault-read --user U --pass P --relay "wss://relay.example.com/zen"
+# CLI: only custom relays
+node cli.js vault-read --user U --pass P --relay "wss://relay.example.com/zen" --no-default-relays
+# Env (applies to every call)
+ZENOS_RELAYS="wss://relay.example.com/zen" ZENOS_ONLY_CUSTOM_RELAYS=true node cli.js vault-read --user U --pass P
+```
+
+```javascript
+import ZenOS from './zenos.js';
+new ZenOS({ extraPeers: ['wss://relay.example.com/zen'] });                          // defaults + custom
+new ZenOS({ extraPeers: ['wss://relay.example.com/zen'], useDefaultRelays: false }); // custom only
+new ZenOS({ peers: ['wss://relay.example.com/zen'] });                               // full replacement
+```
+
+URLs without a path get `/zen` appended. The ZenVault/smollog web apps only see agent data if the custom relay peers with the default network.
+
+### Self-Hosting a Relay
+- **ZEN relay** (minimal): `git clone https://github.com/scobru/zen && cd zen && npm start` → `ws://localhost:8420/zen`. Federate with `PEERS="wss://delay.scobrudot.dev/zen,wss://zen.akao.io:8420/zen"`; isolate with `NO_BOOTSTRAP=1`.
+- **Delay / shogun-relay** (full hub, same software as delay.scobrudot.dev): `docker compose up -d` in the repo root, or `cd relay && npm install && npm start` → `ws://localhost:8420/zen`. Federate with `RELAY_PEERS=...`.
+- Expose publicly with TLS (`wss://`) via reverse proxy. Full guide: `RELAYS.md`.
+
 ### Client Initialization
 ```javascript
 const zen = new ZEN({
   peers: [
     "wss://delay.scobrudot.dev/zen",
     "wss://zen.akao.io:8420/zen"
+    // , "wss://your-relay.example.com/zen"
   ]
 });
 ```

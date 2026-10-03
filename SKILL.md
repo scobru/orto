@@ -67,6 +67,21 @@ Or by public key:
 node cli.js blog-read --pub "0oQit1EicIMgYeM9rVRMjmgP9MoQjfK0XJLq6imoJ1CR0"
 ```
 
+### 6. Custom Relays
+If the user provides their own relay, pass it on **every** command (or set `ZENOS_RELAYS` once):
+```bash
+# add to the default relays
+node cli.js vault-read --user "<username>" --pass "<password>" --relay "wss://relay.example.com/zen"
+
+# use ONLY the user's relay(s)
+node cli.js vault-read --user "<username>" --pass "<password>" --relay "wss://relay.example.com/zen" --no-default-relays
+
+# check the effective list
+node cli.js relays --relay "wss://relay.example.com/zen"
+```
+Env alternative: `ZENOS_RELAYS="wss://a/zen,wss://b/zen"` and `ZENOS_ONLY_CUSTOM_RELAYS=true`.
+URLs without a path get `/zen` appended. See [RELAYS.md](file:///d:/shogun-2/zenOS/RELAYS.md) for self-hosting.
+
 ---
 
 ## 💻 Programmatic Usage via JavaScript SDK
@@ -95,6 +110,10 @@ await os.publishBlogPost({
   content: "Content goes here...",
   tags: ["ai", "p2p"]
 });
+
+// Custom relays
+const custom = new ZenOS({ extraPeers: ["wss://relay.example.com/zen"] });              // defaults + custom
+const onlyOwn = new ZenOS({ extraPeers: ["wss://relay.example.com/zen"], useDefaultRelays: false });
 ```
 
 ---
@@ -104,5 +123,5 @@ await os.publishBlogPost({
 1. **Always use `{ authenticator: pair }` on `.put()`**: The P2P relays reject any write under a user namespace (`~{pub}/...`) if not cryptographically signed by the owner pair.
 2. **Zero-Knowledge Vault (`/vault`)**: Payloads in the vault MUST be encrypted client-side with `ZEN.encrypt(text, pair)`. Relays only store blind ciphertexts.
 3. **Public Signed Journal (`/posts`)**: Blog posts are stored in plaintext Markdown but signed with ECDSA so readers can verify author authenticity.
-4. **Relay Connectivity**: The official Zen relays are `wss://delay.scobrudot.dev/zen` and `wss://zen.akao.io:8420/zen`.
+4. **Relay Connectivity**: Default relays are `wss://delay.scobrudot.dev/zen` (**the author's personal Delay relay**, best-effort, no SLA) and `wss://zen.akao.io:8420/zen` (public ZEN network). If the user specifies a custom relay, ALWAYS use it (`--relay` / `ZENOS_RELAYS`); use `--no-default-relays` only if the user asks for their relay exclusively — and warn that the ZenVault/smollog web apps only see that data if the custom relay peers with the default network.
 5. **Deterministic Seed**: The seed is `username + password`. Never alter credential casing without user confirmation.

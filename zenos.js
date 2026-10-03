@@ -34,14 +34,77 @@ async function initZenModule() {
 
 ZEN = await initZenModule();
 
+/**
+ * Default relays shipped with ZenOS.
+ * - delay.scobrudot.dev → personal Delay (shogun-relay) instance run by the author (scobru).
+ *   Community / best-effort: no SLA, no uptime or data-retention guarantees.
+ * - zen.akao.io         → public relay of the upstream ZEN network.
+ * For production or full sovereignty, run your own relay (see RELAYS.md).
+ */
 export const DEFAULT_RELAYS = [
   'wss://delay.scobrudot.dev/zen',
   'wss://zen.akao.io:8420/zen'
 ];
 
+const env = (globalThis.process && globalThis.process.env) || {};
+
+function toList(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  return String(value).split(',');
+}
+
+/**
+ * Normalize a relay URL: trims it, adds `/zen` if no path is given.
+ * Accepts ws://, wss://, http://, https://.
+ */
+export function normalizeRelay(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return null;
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch (_) {
+    throw new Error('Invalid relay URL: ' + raw);
+  }
+  if (!['ws:', 'wss:', 'http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error('Unsupported relay protocol (use ws/wss/http/https): ' + raw);
+  }
+  if (parsed.pathname === '' || parsed.pathname === '/') parsed.pathname = '/zen';
+  return parsed.toString().replace(/\/$/, '');
+}
+
+/**
+ * Build the final relay list.
+ *
+ * @param {object}   opts
+ * @param {string[]|string} [opts.peers]       Replace the default list entirely.
+ * @param {string[]|string} [opts.extraPeers]  Custom relays added on top of the base list.
+ * @param {boolean}  [opts.useDefaultRelays]   Set false to drop DEFAULT_RELAYS (only custom ones).
+ *
+ * Env vars (Node only):
+ *   ZENOS_RELAYS               comma-separated custom relays, always added
+ *   ZENOS_ONLY_CUSTOM_RELAYS   "true" → do not use DEFAULT_RELAYS
+ */
+export function resolvePeers(opts = {}) {
+  const onlyCustomEnv = ['1', 'true', 'yes'].includes(String(env.ZENOS_ONLY_CUSTOM_RELAYS || '').toLowerCase());
+  const useDefaults = opts.useDefaultRelays !== undefined ? !!opts.useDefaultRelays : !onlyCustomEnv;
+
+  const base = opts.peers ? toList(opts.peers) : (useDefaults ? DEFAULT_RELAYS : []);
+  const all = [...base, ...toList(opts.extraPeers), ...toList(env.ZENOS_RELAYS)]
+    .map(normalizeRelay)
+    .filter(Boolean);
+
+  const peers = [...new Set(all)];
+  if (!peers.length) {
+    throw new Error('No relays configured. Pass peers/extraPeers or set ZENOS_RELAYS.');
+  }
+  return peers;
+}
+
 export class ZenOS {
   constructor(options = {}) {
-    this.peers = options.peers || DEFAULT_RELAYS;
+    this.peers = resolvePeers(options);
     this.zen = new ZEN({
       peers: this.peers,
       localStorage: options.localStorage || false,
