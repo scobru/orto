@@ -37,6 +37,9 @@ Usage:
   node cli.js migrate --user <user> --pass <pass>   # copy vault/calendar/bookmarks from the earlier identities
   node cli.js vault-write --user <user> --pass <pass> --title <title> --body <body> [--cat <cat>] [--pinned]
   node cli.js vault-read --user <user> --pass <pass> [--cat <cat>] [--query <q>] [--timeout <ms>]
+  node cli.js calendar-read --user <user> --pass <pass> [--from <date>] [--to <date>]
+  node cli.js event-link   --user <user> --pass <pass> --event <soul> --note <soul>     # link a note to an event
+  node cli.js event-unlink --user <user> --pass <pass> --event <soul> --note <soul>
   node cli.js bookmarks-import --user <user> --pass <pass> --file <export.html>   # Brave/Chrome/Firefox export
   node cli.js bookmarks-read --user <user> --pass <pass> [--folder <path>] [--query <q>] [--timeout <ms>]
   node cli.js bookmarks-export --user <user> --pass <pass> [--folder <path>] [--file <out.html>]   # importable by Brave/Chrome/Firefox
@@ -91,6 +94,24 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       if (!flags.user || !flags.pass) throw new Error('--user and --pass are required.');
       await os.login(flags.user, flags.pass);
       console.log(JSON.stringify({ pub: os.pub, legacyPubs: os.legacyPairs.map(p => p.pub), ...await os.migrateLegacy() }, null, 2));
+      setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    case 'calendar-read': {
+      if (!flags.user || !flags.pass) throw new Error('--user and --pass are required.');
+      await os.login(flags.user, flags.pass);
+      console.log(JSON.stringify(await os.readCalendarEvents({ from: flags.from, to: flags.to, timeoutMs: 15000 }), null, 2));
+      process.exit(0);
+      break;
+    }
+
+    case 'event-link':
+    case 'event-unlink': {
+      if (!flags.user || !flags.pass || !flags.event || !flags.note) throw new Error('--user, --pass, --event and --note are required.');
+      await os.login(flags.user, flags.pass);
+      const fn = cmd === 'event-link' ? 'linkToEvent' : 'unlinkFromEvent';
+      console.log(JSON.stringify(await os[fn](flags.event, { kind: 'note', soul: flags.note }), null, 2));
       setTimeout(() => process.exit(0), 500);
       break;
     }
