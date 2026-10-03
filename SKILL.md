@@ -71,7 +71,35 @@ Or by public key:
 node cli.js blog-read --pub "0oQit1EicIMgYeM9rVRMjmgP9MoQjfK0XJLq6imoJ1CR0"
 ```
 
-### 6. Custom Relays
+### 6. Calendar — Encrypted Events
+
+Events live at `~pub/calendar/<soul>`; the whole event (title, times, notes) is one encrypted object. Times are epoch ms or any date string.
+
+```javascript
+await os.writeCalendarEvent({ title: "Dentist", start: "2026-10-05T10:00", end: "2026-10-05T11:00", notes: "bring card" });
+const week = await os.readCalendarEvents({ from: "2026-10-05", to: "2026-10-12" });   // decrypts, then filters by date
+await os.writeCalendarEvent({ soul: week[0].soul, ...week[0], title: "Dentist (moved)" }); // pass `soul` to update
+await os.deleteCalendarEvent(week[0].soul);
+```
+
+### 7. Bookmarks — Encrypted, Importable, Organisable
+
+Bookmarks live at `~pub/bookmarks/<soul>` (soul = hash of the URL, so the same URL is never stored twice). Each one is `{ url, title, folder, tags, addedAt }`, encrypted. `folder` is a path like `Dev/Tools`.
+
+```bash
+node cli.js bookmarks-import --user <user> --pass <pass> --file bookmarks.html   # Brave / Chrome / Firefox export
+node cli.js bookmarks-read   --user <user> --pass <pass> [--folder Dev] [--query rust] [--timeout 30000]
+node cli.js bookmarks-update --user <user> --pass <pass> --file changes.json     # [{ "soul": "...", "folder": "...", "title": "...", "tags": ["..."] }]
+```
+
+**"Organise my bookmarks" workflow** (for an agent):
+1. `os.readBookmarks({ timeoutMs: 30000 })` (or `bookmarks-read`). With thousands of bookmarks raise the timeout, and check the count against what the user expects before acting.
+2. Decide the new structure from titles, URLs and the existing folders. Prefer a shallow tree (2 levels), keep existing folder names the user already uses, and put anything unsure in `Unsorted` rather than guessing.
+3. Show the user a short summary (folders with counts, and a sample of moves) and wait for a go-ahead: the change rewrites many records.
+4. Apply it with `os.updateBookmarks([{ soul, folder, title?, tags? }, ...])` (or `bookmarks-update`). Omitted fields are kept, `url` and `addedAt` never change, unknown souls come back in `missing`.
+5. Re-read and compare the count: it must be unchanged. There is no undo, so keep the list from step 1 (it holds every old folder) until the user is happy.
+
+### 8. Custom Relays
 If the user provides their own relay, pass it on **every** command (or set `ZENOS_RELAYS` once):
 ```bash
 # add to the default relays
@@ -114,6 +142,11 @@ await os.publishBlogPost({
   content: "Content goes here...",
   tags: ["ai", "p2p"]
 });
+
+// 4. Calendar and bookmarks (encrypted)
+await os.writeCalendarEvent({ title: "Standup", start: Date.now() + 3600000 });
+const marks = await os.readBookmarks({ timeoutMs: 30000 });
+await os.updateBookmarks([{ soul: marks[0].soul, folder: "Dev/Tools" }]);
 
 // Custom relays
 const custom = new ZenOS({ extraPeers: ["wss://relay.example.com/zen"] });              // defaults + custom
