@@ -1591,6 +1591,18 @@
     .bm-del:hover { color: var(--bear-red); }
     @media (max-width: 768px) { .bm-pane { flex-direction: column; } .bm-folders { width: auto; max-height: 30%; border-right: 0; border-bottom: 1px solid var(--border-color); } }
 
+    /* ── Note <-> event links ── */
+    .note-events { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: -4px 0 14px; }
+    .note-events:empty { display: none; }
+    .ev-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 9px; border-radius: 999px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-secondary); cursor: pointer; }
+    .ev-chip:hover { background: var(--active-bg); color: var(--text-primary); }
+    .ev-chip i { font-size: 13px; }
+    .ev-links { display: flex; flex-direction: column; gap: 6px; }
+    .ev-links .row { align-items: center; }
+    .ev-links select { background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 7px; padding: 7px 8px; font: inherit; font-size: 13px; min-width: 0; }
+    .ev-link-x { background: none; border: 0; color: var(--text-muted); cursor: pointer; padding: 0 0 0 2px; font-size: 14px; }
+    .ev-link-x:hover { color: var(--bear-red); }
+
     @media (max-width: 1024px) {
       .note-list-pane {
         width: 290px;
@@ -1968,6 +1980,9 @@
               <button class="popover-item" onclick="togglePinActiveNote()">
                 <span><i class="ti ti-pin"></i> <span id="menu-pin-label">Pin Note</span></span>
               </button>
+              <button class="popover-item" onclick="calNewEventForNote()">
+                <span><i class="ti ti-calendar-plus"></i> Add to calendar</span>
+              </button>
               <button class="popover-item" onclick="copyNoteMarkdown()">
                 <span><i class="ti ti-copy"></i> Copy Markdown</span>
               </button>
@@ -1988,6 +2003,7 @@
             <!-- Large Editable Title -->
             <input type="text" id="editor-title" class="note-title-input" placeholder="Untitled Note"
               oninput="handleTitleInput(this.value)">
+            <div class="note-events" id="note-events"></div>
 
             <!-- View Mode (Bear Rich Markdown Render) -->
             <div id="markdown-rendered-view" class="markdown-rendered-view" ondblclick="enterEditMode()">
@@ -2617,6 +2633,7 @@
           pinLabel.textContent = note.pinned ? 'Unpin Note' : 'Pin Note';
         }
       }
+      renderNoteEvents();
 
       // Switch view vs edit mode
       if (isEditMode) {
@@ -3309,6 +3326,7 @@ print("Welcome to ZenVault Bear Style!")
         }
         document.getElementById('count-calendar').textContent = Object.keys(calEvents).length;
         if (calMode) renderCalendar();
+        renderNoteEvents();
       });
     }
 
@@ -3406,8 +3424,48 @@ print("Welcome to ZenVault Bear Style!")
     }
     function calEditEvent(soul) { openEventModal({ soul, ...calEvents[soul] }); }
 
+    // ── Note <-> event links: stored inside the encrypted event as links: [{ kind: 'note', soul }] ──
+    let evLinks = [];
+    const noteTitle = (soul) => localNotes[soul] ? (localNotes[soul].title || 'Untitled Note') : null;
+    const eventsForNote = (soul) => Object.entries(calEvents).filter(([, e]) => (e.links || []).some(l => l.kind === 'note' && l.soul === soul)).map(([id, e]) => ({ soul: id, ...e })).sort((a, b) => a.start - b.start);
+
+    function renderEvLinks() {
+      const box = document.getElementById('ev-links'); if (!box) return;
+      const linked = new Set(evLinks.filter(l => l.kind === 'note').map(l => l.soul));
+      const options = Object.entries(localNotes).filter(([id, n]) => !n.trash && !linked.has(id)).sort((a, b) => (b[1].timestamp || 0) - (a[1].timestamp || 0)).slice(0, 300);
+      box.innerHTML = `<div class="note-events">${evLinks.filter(l => l.kind === 'note').map(l => {
+        const t = noteTitle(l.soul);
+        return `<span class="ev-chip" ${t ? `onclick="openLinkedNote('${escapeHtml(l.soul)}')"` : ''}><i class="ti ti-notes"></i>${escapeHtml(t || '(deleted note)')}<button class="ev-link-x" title="Unlink" onclick="event.stopPropagation();unlinkNoteFromModal('${escapeHtml(l.soul)}')">&times;</button></span>`;
+      }).join('')}</div>
+        <div class="row"><select id="ev-note-pick"><option value="">Link a note…</option>${options.map(([id, n]) => `<option value="${escapeHtml(id)}">${escapeHtml(n.title || 'Untitled Note')}</option>`).join('')}</select>
+        <button class="cal-btn" style="flex:0 0 auto" onclick="linkNoteFromModal()">Link</button></div>`;
+    }
+    function linkNoteFromModal() {
+      const soul = document.getElementById('ev-note-pick').value; if (!soul) return;
+      evLinks.push({ kind: 'note', soul }); renderEvLinks();
+    }
+    function unlinkNoteFromModal(soul) { evLinks = evLinks.filter(l => !(l.kind === 'note' && l.soul === soul)); renderEvLinks(); }
+    function openLinkedNote(soul) {
+      closeEventModal(); closeCalendar(); closeBlog(); closeBookmarks(); selectNote(soul);
+    }
+    // events linked to the open note, shown under its title; click one to open it
+    function renderNoteEvents() {
+      const box = document.getElementById('note-events'); if (!box) return;
+      const loc = navigator.language || 'en-US';
+      box.innerHTML = selectedNoteId && selectedNoteId !== 'new' ? eventsForNote(selectedNoteId).map(e =>
+        `<span class="ev-chip" onclick="calEditEvent('${escapeHtml(e.soul)}')" title="Open event"><i class="ti ti-calendar-event"></i>${escapeHtml(new Date(e.start).toLocaleDateString(loc, { day: 'numeric', month: 'short' }))}${e.allDay ? '' : ' ' + escapeHtml(fmtTime(e.start))} · ${escapeHtml(e.title)}</span>`).join('') : '';
+    }
+    // "Add to calendar" on the open note: new event titled after it, already linked
+    function calNewEventForNote() {
+      if (!selectedNoteId || selectedNoteId === 'new' || !localNotes[selectedNoteId]) return showToast('Save the note first');
+      closePopovers && closePopovers();
+      const start = new Date(); start.setMinutes(0, 0, 0); start.setHours(start.getHours() + 1);
+      openEventModal({ soul: null, title: noteTitle(selectedNoteId), start: start.getTime(), end: start.getTime() + 3600000, allDay: false, location: '', notes: '', color: CAL_COLORS[0], links: [{ kind: 'note', soul: selectedNoteId }] });
+    }
+
     function openEventModal(ev) {
       closeEventModal();
+      evLinks = (ev.links || []).map(l => ({ ...l }));
       const bg = document.createElement('div');
       bg.className = 'cal-modal-bg'; bg.id = 'cal-modal-bg';
       bg.onclick = (e) => { if (e.target === bg) closeEventModal(); };
@@ -3418,6 +3476,7 @@ print("Welcome to ZenVault Bear Style!")
         <label>End<input type="${ev.allDay ? 'date' : 'datetime-local'}" id="ev-end" value="${toInput(ev.end ?? ev.start, ev.allDay)}"></label></div>
         <input type="text" id="ev-loc" placeholder="Location" value="${escapeHtml(ev.location || '')}">
         <textarea id="ev-notes" rows="3" placeholder="Notes">${escapeHtml(ev.notes || '')}</textarea>
+        <div class="ev-links" id="ev-links"></div>
         <div class="cal-colors" id="ev-colors">${CAL_COLORS.map(c => `<span style="--c:${c}" data-c="${c}" class="${c === (ev.color || CAL_COLORS[0]) ? 'sel' : ''}"></span>`).join('')}</div>
         <div class="cal-actions">${ev.soul ? '<button class="cal-btn" id="ev-del" style="margin-right:auto">Delete</button>' : ''}
           <button class="cal-btn" id="ev-cancel">Cancel</button><button class="cal-btn primary" id="ev-save">Save</button></div></div>`;
@@ -3431,6 +3490,7 @@ print("Welcome to ZenVault Bear Style!")
       $('ev-cancel').onclick = closeEventModal;
       if ($('ev-del')) $('ev-del').onclick = () => deleteCalEvent(ev.soul);
       $('ev-save').onclick = () => saveCalEvent(ev.soul);
+      renderEvLinks();
       $('ev-title').focus();
     }
     const closeEventModal = () => { const m = document.getElementById('cal-modal-bg'); if (m) m.remove(); };
@@ -3444,23 +3504,23 @@ print("Welcome to ZenVault Bear Style!")
       if (!title) return showToast('Title required');
       if (Number.isNaN(start)) return showToast('Invalid start date');
       if (Number.isNaN(end) || end < start) end = start;
-      const ev = { title, start, end, allDay, location: $('ev-loc').value.trim(), notes: $('ev-notes').value.trim(), color: $('ev-colors').querySelector('.sel')?.dataset.c || CAL_COLORS[0] };
+      const ev = { title, start, end, allDay, location: $('ev-loc').value.trim(), notes: $('ev-notes').value.trim(), color: $('ev-colors').querySelector('.sel')?.dataset.c || CAL_COLORS[0], links: evLinks };
       const id = soul || ('cal-' + Date.now() + '-' + Math.random().toString(36).substring(7));
       const data = await ZEN.encrypt(ev, pair);
       zen.get('~' + pair.pub).get('calendar').get(id).put({ data, updatedAt: Date.now(), encrypted: true }, (ack) => {
         if (ack && ack.err) showToast('Save failed: ' + ack.err);
       }, { authenticator: pair });
       calEvents[id] = ev; // optimistic; relay echo confirms
-      closeEventModal(); renderCalendar(); showToast('Event encrypted & saved');
+      closeEventModal(); renderCalendar(); renderNoteEvents(); showToast('Event encrypted & saved');
     }
 
     function deleteCalEvent(soul) {
       zen.get('~' + pair.pub).get('calendar').get(soul).put(null, null, { authenticator: pair });
       delete calEvents[soul];
-      closeEventModal(); renderCalendar(); showToast('Event deleted');
+      closeEventModal(); renderCalendar(); renderNoteEvents(); showToast('Event deleted');
     }
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeEventModal(); });
-    Object.assign(window, { openCalendar, calToday, calNav, calSetView, calNewEvent, calEditEvent, calColClick });
+    Object.assign(window, { openCalendar, calToday, calNav, calSetView, calNewEvent, calEditEvent, calColClick, calNewEventForNote, linkNoteFromModal, unlinkNoteFromModal, openLinkedNote });
 
 
     // ═══════════════════════════════════════════════════════════════
