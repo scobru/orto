@@ -7,6 +7,8 @@
 // 1. Self-contained bundle in same directory (./zen.min.js)
 // 2. Sibling repo (../zen/zen.min.js)
 // 3. Browser / CDN fallback
+import { deriveMasterPair } from './identity.js';
+
 let ZEN;
 async function initZenModule() {
   // 1. Same directory bundle (self-contained)
@@ -135,10 +137,10 @@ async function bookmarkSoul(url) {
 }
 
 /**
- * Derive the ZenOS identity. Same scheme as smollog, so one login = one pub everywhere:
- * seed = hex(PBKDF2-SHA256(password, "scobru:zen:blog:" + lowercase(username), 100000, 256 bits)).
+ * Identity used between the first unification and FID: smollog's PBKDF2 scheme. Kept only so
+ * migrateLegacy() can find data written under it.
  */
-export async function derivePair(username, password) {
+export async function legacySmollogPair(username, password) {
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey('raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits(
@@ -164,27 +166,41 @@ export class ZenOS {
   }
 
   /**
-   * Authenticate / derive keypair from username and password (smollog-compatible, see derivePair).
-   * Also keeps `legacyPair`, the pre-unification identity (seed = user + pass), for migrateLegacy().
+   * Authenticate / derive keypair from username and password with the FID derivation
+   * (identity.js: `alias:passphrase`), shared with FID, smollog and ZenVault.
+   * Also keeps `legacyPairs`, the earlier identities (smollog PBKDF2, then plain `user + pass`),
+   * for migrateLegacy().
    */
   async login(username, password) {
     if (!username || !password) {
       throw new Error('Username and password are required');
     }
     this.username = username.trim();
-    this.pair = await derivePair(this.username, password);
-    this.legacyPair = await ZEN.pair(null, { seed: this.username + password.trim() });
+    this.pair = await deriveMasterPair(ZEN, this.username, password);
+    this.legacyPairs = [
+      await legacySmollogPair(this.username, password),
+      await ZEN.pair(null, { seed: this.username + password.trim() })
+    ];
     return this.pair;
   }
 
   /**
-   * Copy encrypted data (vault, calendar, bookmarks) from the legacy identity to the current one,
+   * Copy encrypted data (vault, calendar, bookmarks) from each legacy identity to the current one,
    * re-encrypting with the new key. Idempotent: souls already present under the new pub are skipped.
    * @returns {Promise<{migrated:number, skipped:number, failed:number}>}
    */
   async migrateLegacy(timeoutMs = 5000) {
     if (!this.pair) throw new Error('Not authenticated.');
-    const { pair, legacyPair } = this;
+    const total = { migrated: 0, skipped: 0, failed: 0 };
+    for (const legacyPair of this.legacyPairs) {
+      const r = await this._migrateFrom(legacyPair, timeoutMs);
+      for (const k of Object.keys(total)) total[k] += r[k];
+    }
+    return total;
+  }
+
+  async _migrateFrom(legacyPair, timeoutMs) {
+    const { pair } = this;
     const readAll = (pub, path) => new Promise((resolve) => {
       const nodes = new Map();
       setTimeout(() => resolve(nodes), timeoutMs);
