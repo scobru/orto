@@ -2044,9 +2044,11 @@
   <!-- P2P and Encryption Module -->
   <script type="module">
     import ZEN from 'https://cdn.jsdelivr.net/gh/scobru/zen@main/zen.min.js';
+    // The one shared alias+passphrase -> keypair derivation (scobru/fid), pinned to a commit so it can't change under us
+    import { deriveMasterPair } from 'https://cdn.jsdelivr.net/gh/scobru/fid@7887fc3468a77943da8ef18a70c3936d1dc45a2a/identity.js';
 
     let zen;
-    let pair, legacyPair;
+    let pair, legacyPairs = [];
     let isAuthenticated = false;
 
     // Local decrypted notes storage
@@ -2104,8 +2106,9 @@
     }
 
 
-    // ── Identity: same derivation as smollog (and ZenOS), so one login = one pub everywhere ──
-    async function derivePair(username, password) {
+    // ── Identity: the FID derivation (identity.js) is the one in use. This is the smollog PBKDF2 scheme
+    // that ZenVault used for a short time, kept only so migrateLegacy() can find data written under it. ──
+    async function legacySmollogPair(username, password) {
       const enc = new TextEncoder();
       const key = await crypto.subtle.importKey('raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']);
       const bits = await crypto.subtle.deriveBits(
@@ -2114,9 +2117,14 @@
       return ZEN.pair(null, { seed: [...new Uint8Array(bits)].map(b => b.toString(16).padStart(2, '0')).join('') });
     }
 
-    // Copy vault/calendar/bookmarks written under the old `user + pass` identity to the current one,
-    // re-encrypting with the new key. Idempotent: souls already under the new pub are skipped.
+    // Copy vault/calendar/bookmarks written under each earlier identity (smollog PBKDF2, plain `user + pass`)
+    // to the current one, re-encrypting with the new key. Idempotent: souls already under the new pub are skipped.
     async function migrateLegacy() {
+      let migrated = 0;
+      for (const legacyPair of legacyPairs) migrated += await migrateFrom(legacyPair);
+      if (migrated) showToast('Migrated ' + migrated + ' items from your previous identity');
+    }
+    async function migrateFrom(legacyPair) {
       const readAll = (pub, path) => new Promise((resolve) => {
         const nodes = new Map();
         setTimeout(() => resolve(nodes), 4000);
@@ -2151,7 +2159,7 @@
           migrated += results.filter(Boolean).length;
         }
       } catch (e) { console.warn('Legacy migration failed:', e); }
-      if (migrated) showToast('Migrated ' + migrated + ' items from your previous identity');
+      return migrated;
     }
 
     // ── Authentication / Decrypt Master Vault ──
@@ -2166,8 +2174,8 @@
         btn.innerHTML = '<i class="ti ti-loader animate-spin"></i> Decrypting...';
         btn.disabled = true;
 
-        pair = await derivePair(userInput, passInput);
-        legacyPair = await ZEN.pair(null, { seed: userInput + passInput.trim() }); // identity used before the smollog-compatible login
+        pair = await deriveMasterPair(ZEN, userInput, passInput);
+        legacyPairs = [await legacySmollogPair(userInput, passInput), await ZEN.pair(null, { seed: userInput + passInput.trim() })];
         isAuthenticated = true;
 
         sessionStorage.setItem('zen_user', userInput);
