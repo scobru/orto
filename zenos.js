@@ -107,8 +107,9 @@ export class ZenOS {
     this.peers = resolvePeers(options);
     this.zen = new ZEN({
       peers: this.peers,
-      localStorage: options.localStorage || false,
-      radisk: options.radisk || false,
+      // ponytail: `localStorage:false` makes signed puts never ack in zen; only pass when set
+      ...(options.localStorage !== undefined && { localStorage: options.localStorage }),
+      ...(options.radisk !== undefined && { radisk: options.radisk }),
       axe: options.axe !== undefined ? options.axe : true
     });
     this.pair = null;
@@ -222,6 +223,80 @@ export class ZenOS {
     if (!this.pair) throw new Error('Not authenticated.');
     return new Promise((resolve, reject) => {
       this.userRoot.get('vault').get(soul).put(null, (ack) => {
+        if (ack && ack.err) reject(new Error(ack.err));
+        else resolve({ soul, status: 'deleted' });
+      }, { authenticator: this.pair });
+    });
+  }
+
+  // ─── Calendar (Encrypted Events) ───────────────────────────────────
+
+  /**
+   * Write an encrypted calendar event to `~pub/calendar/<soul>`.
+   * The whole event (title, start, end, ...) is one encrypted object;
+   * only `updatedAt` and `encrypted` stay in clear. Pass `soul` to update.
+   * @param {{title:string, start:number|string, end?:number|string, allDay?:boolean,
+   *          notes?:string, location?:string, soul?:string}} event
+   */
+  async writeCalendarEvent({ soul = null, ...event }) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    if (!event.title || event.start == null) throw new Error('title and start are required');
+
+    const eventSoul = soul || ('cal-' + Date.now() + '-' + Math.random().toString(36).substring(7));
+    const start = new Date(event.start).getTime();
+    if (Number.isNaN(start)) throw new Error('Invalid start date');
+    const end = event.end != null ? new Date(event.end).getTime() : start;
+    const data = await ZEN.encrypt({ ...event, start, end }, this.pair);
+    const payload = { data, updatedAt: Date.now(), encrypted: true };
+
+    return new Promise((resolve, reject) => {
+      this.userRoot.get('calendar').get(eventSoul).put(payload, (ack) => {
+        if (ack && ack.err) reject(new Error(ack.err));
+        else resolve({ soul: eventSoul, status: 'saved', updatedAt: payload.updatedAt });
+      }, { authenticator: this.pair });
+    });
+  }
+
+  /**
+   * Read and decrypt calendar events, optionally within [from, to] (ms or date string).
+   * Filtering happens after decryption, since times are encrypted.
+   */
+  async readCalendarEvents({ from = null, to = null, timeoutMs = 5000 } = {}) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    const lo = from != null ? new Date(from).getTime() : -Infinity;
+    const hi = to != null ? new Date(to).getTime() : Infinity;
+
+    const events = [];
+    const seen = new Set();
+    return new Promise((resolve) => {
+      setTimeout(() => resolve(events.sort((a, b) => a.start - b.start)), timeoutMs);
+
+      const add = async (node, soul) => {
+        if (!node || !node.data || seen.has(soul)) return;
+        seen.add(soul);
+        try {
+          const ev = await ZEN.decrypt(node.data, this.pair); // ZEN returns the parsed object
+          if (ev.end >= lo && ev.start <= hi) events.push({ soul, ...ev, updatedAt: node.updatedAt });
+        } catch (_) {
+          // ignore corrupted or un-decryptable records
+        }
+      };
+
+      this.userRoot.get('calendar').map().once((node, soul) => {
+        if (!soul) return;
+        if (node && node.data) add(node, soul);
+        else this.userRoot.get('calendar').get(soul).once((full) => add(full, soul));
+      });
+    });
+  }
+
+  /**
+   * Delete a calendar event.
+   */
+  async deleteCalendarEvent(soul) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    return new Promise((resolve, reject) => {
+      this.userRoot.get('calendar').get(soul).put(null, (ack) => {
         if (ack && ack.err) reject(new Error(ack.err));
         else resolve({ soul, status: 'deleted' });
       }, { authenticator: this.pair });
