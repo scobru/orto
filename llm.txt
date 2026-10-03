@@ -44,11 +44,16 @@ Connect to any or all of these official ZenVault relays:
 
 ## 3. Cryptographic Key Derivation
 
-ZenVault uses deterministic SEA/ZEN pair generation using the concatenated seed:
+ZenVault uses deterministic ZEN pair generation. The seed is a PBKDF2-SHA256 derivation of the password, salted with `scobru:zen:blog:` + the lowercased username. This is the same scheme as smollog and ZenOS, so one login is one `pub` in every app (username casing does not matter, password casing does):
 
 ```javascript
-const seed = username + password;
-const pair = await ZEN.pair(null, { seed });
+async function derivePair(username, password) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: enc.encode('scobru:zen:blog:' + username.trim().toLowerCase()), iterations: 100000, hash: 'SHA-256' }, key, 256);
+  return ZEN.pair(null, { seed: [...new Uint8Array(bits)].map(b => b.toString(16).padStart(2, '0')).join('') });
+}
+const pair = await derivePair(username, password);
 ```
 
 The resulting `pair` object contains:
@@ -130,8 +135,7 @@ async function writeNoteToVault({ username, password, title, body, category = 'a
   });
 
   // 2. Derive master keypair from user credentials
-  const seed = username + password;
-  const pair = await ZEN.pair(null, { seed });
+  const pair = await derivePair(username, password); // see section 3
 
   // 3. Encrypt payload
   const encTitle = await ZEN.encrypt(title, pair);
@@ -189,7 +193,7 @@ async function readAllNotes({ username, password, timeoutMs = 4000 }) {
     ]
   });
 
-  const pair = await ZEN.pair(null, { seed: username + password });
+  const pair = await derivePair(username, password); // see section 3
   const notes = [];
 
   return new Promise((resolve) => {
@@ -234,7 +238,7 @@ async function appendToNote({ username, password, noteId, textToAppend }) {
     peers: ["wss://delay.scobrudot.dev/zen", "wss://zen.akao.io:8420/zen"]
   });
 
-  const pair = await ZEN.pair(null, { seed: username + password });
+  const pair = await derivePair(username, password); // see section 3
   const noteRef = zen.get('~' + pair.pub).get('vault').get(noteId);
 
   return new Promise((resolve, reject) => {
@@ -277,6 +281,6 @@ zen.get('~' + pair.pub).get('vault').get(noteId).put(null, (ack) => {
 ## 7. Troubleshooting & Best Practices for Agents
 
 1. **Wait for P2P propagation**: GunDB/ZEN propagates asynchronously over WebSockets. Always wrap `.put()` in a Promise and allow 500-1500ms before disconnecting process.
-2. **Deterministic pairs**: The string passed to `{ seed: username + password }` is case-sensitive. Maintain consistent case when prompting users for credentials.
+2. **Deterministic pairs**: The username is case-insensitive, the password is case-sensitive. Notes written under the old `username + password` seed are copied to the new identity by the web app at login.
 3. **No server error codes**: GunDB uses `{ ack: { err: ... } }` callbacks rather than HTTP 4xx/5xx status codes.
 4. **Idempotence**: Note IDs can be generated using a consistent slug (e.g. `vault-daily-2026-10-03`) if you want the agent to overwrite or maintain a single daily note.

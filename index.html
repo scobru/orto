@@ -2046,7 +2046,7 @@
     import ZEN from 'https://cdn.jsdelivr.net/gh/scobru/zen@main/zen.min.js';
 
     let zen;
-    let pair;
+    let pair, legacyPair;
     let isAuthenticated = false;
 
     // Local decrypted notes storage
@@ -2103,10 +2103,61 @@
       });
     }
 
+
+    // ── Identity: same derivation as smollog (and ZenOS), so one login = one pub everywhere ──
+    async function derivePair(username, password) {
+      const enc = new TextEncoder();
+      const key = await crypto.subtle.importKey('raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']);
+      const bits = await crypto.subtle.deriveBits(
+        { name: 'PBKDF2', salt: enc.encode('scobru:zen:blog:' + username.trim().toLowerCase()), iterations: 100000, hash: 'SHA-256' },
+        key, 256);
+      return ZEN.pair(null, { seed: [...new Uint8Array(bits)].map(b => b.toString(16).padStart(2, '0')).join('') });
+    }
+
+    // Copy vault/calendar/bookmarks written under the old `user + pass` identity to the current one,
+    // re-encrypting with the new key. Idempotent: souls already under the new pub are skipped.
+    async function migrateLegacy() {
+      const readAll = (pub, path) => new Promise((resolve) => {
+        const nodes = new Map();
+        setTimeout(() => resolve(nodes), 4000);
+        const root = zen.get('~' + pub).get(path);
+        root.map().once((node, soul) => {
+          if (!soul) return;
+          if (node && typeof node === 'object') nodes.set(soul, node);
+          else root.get(soul).once((full) => full && nodes.set(soul, full));
+        });
+      });
+      const enc = (v) => ZEN.encrypt(v, pair), dec = (v) => ZEN.decrypt(v, legacyPair);
+      const convert = {
+        vault: [n => n.title, async n => ({ title: await enc(await dec(n.title)), body: await enc(await dec(n.body)), cat: await enc(await dec(n.cat)), pinned: !!n.pinned, trash: !!n.trash, timestamp: n.timestamp, encrypted: true })],
+        calendar: [n => n.data, async n => ({ data: await enc(await dec(n.data)), updatedAt: n.updatedAt, encrypted: true })],
+        bookmarks: [n => n.data, async n => ({ data: await enc(await dec(n.data)), updatedAt: n.updatedAt, encrypted: true })]
+      };
+      let migrated = 0;
+      try {
+        for (const [path, [probe, toNew]] of Object.entries(convert)) {
+          const [old, cur] = await Promise.all([readAll(legacyPair.pub, path), readAll(pair.pub, path)]);
+          // puts resolve on ack or after 8s, so an unreachable relay can't hang the migration
+          const results = await Promise.all([...old].filter(([soul, node]) => probe(node) && !cur.has(soul)).map(async ([soul, node]) => {
+            try {
+              const payload = await toNew(node);
+              await new Promise((resolve, reject) => {
+                const t = setTimeout(resolve, 8000);
+                zen.get('~' + pair.pub).get(path).get(soul).put(payload, (ack) => { clearTimeout(t); ack && ack.err ? reject(new Error(ack.err)) : resolve(); }, { authenticator: pair });
+              });
+              return true;
+            } catch (e) { console.warn('Migration skipped', path, soul, e.message); return false; }
+          }));
+          migrated += results.filter(Boolean).length;
+        }
+      } catch (e) { console.warn('Legacy migration failed:', e); }
+      if (migrated) showToast('Migrated ' + migrated + ' items from your previous identity');
+    }
+
     // ── Authentication / Decrypt Master Vault ──
     async function login() {
       const userInput = document.getElementById('user-input').value.trim() || sessionStorage.getItem('zen_user');
-      const passInput = document.getElementById('pass-input').value.trim() || sessionStorage.getItem('zen_pass');
+      const passInput = document.getElementById('pass-input').value || sessionStorage.getItem('zen_pass');
       if (!userInput || !passInput) return;
 
       try {
@@ -2115,7 +2166,8 @@
         btn.innerHTML = '<i class="ti ti-loader animate-spin"></i> Decrypting...';
         btn.disabled = true;
 
-        pair = await ZEN.pair(null, { seed: userInput + passInput });
+        pair = await derivePair(userInput, passInput);
+        legacyPair = await ZEN.pair(null, { seed: userInput + passInput.trim() }); // identity used before the smollog-compatible login
         isAuthenticated = true;
 
         sessionStorage.setItem('zen_user', userInput);
@@ -2139,6 +2191,7 @@
         loadCalendar();
         loadBlog();
         loadBookmarks();
+        migrateLegacy();
       } catch (e) {
         console.error("Login Error:", e);
         alert("Decryption failed: " + e.message);
