@@ -1,7 +1,7 @@
 // Calendar roundtrip: encrypted at rest in graph, decrypts on read, range filter, delete.
 import assert from 'assert';
 import http from 'http';
-import { ZenOS, parseBookmarksHtml, legacySmollogPair } from './zenos.js';
+import { ZenOS, parseBookmarksHtml, bookmarksToHtml, legacySmollogPair } from './zenos.js';
 import { deriveMasterPair } from './identity.js';
 
 // local in-process relay so the test needs no network
@@ -48,6 +48,14 @@ const dev = bms.find(b => b.title === 'Dev B');
 assert.deepEqual(await os.updateBookmarks([{ soul: dev.soul, folder: 'Work/Dev', tags: ['x'] }, { soul: 'bm-nope', folder: 'Z' }]), { updated: 1, missing: ['bm-nope'], failed: 0 });
 const moved = (await os.readBookmarks({ folder: 'Work', timeoutMs: 500 }))[0];
 assert(moved.title === 'Dev B' && moved.url === dev.url && moved.addedAt === dev.addedAt && moved.tags[0] === 'x');
+// export is the inverse of import: parse(export(x)) gives x back, entities and tags included
+const exported = await os.exportBookmarksHtml({ timeoutMs: 500 });
+const back = parseBookmarksHtml(exported);
+const key = (b) => [b.url, b.title, b.folder, b.addedAt, (b.tags || []).join(',')].join('|');
+const now = await os.readBookmarks({ timeoutMs: 500 });
+assert.deepEqual(back.map(key).sort(), now.map(key).sort());
+assert(exported.includes('Example &amp; A') && exported.includes('TAGS="x"'));
+assert.equal(parseBookmarksHtml(bookmarksToHtml([{ url: 'https://a.example/?q="1"&r=<2>', title: 'T <b> "q"', folder: 'A/B', addedAt: 5000, tags: [] }]))[0].url, 'https://a.example/?q="1"&r=<2>');
 await os.deleteBookmark(bms[0].soul);
 assert.equal((await os.readBookmarks({ timeoutMs: 500 })).length, 1);
 

@@ -89,6 +89,7 @@ Bookmarks live at `~pub/bookmarks/<soul>` (soul = hash of the URL, so the same U
 ```bash
 node cli.js bookmarks-import --user <user> --pass <pass> --file bookmarks.html   # Brave / Chrome / Firefox export
 node cli.js bookmarks-read   --user <user> --pass <pass> [--folder Dev] [--query rust] [--timeout 30000]
+node cli.js bookmarks-export --user <user> --pass <pass> [--folder Dev] [--file out.html]   # Netscape HTML, importable by Brave / Chrome / Firefox
 node cli.js bookmarks-update --user <user> --pass <pass> --file changes.json     # [{ "soul": "...", "folder": "...", "title": "...", "tags": ["..."] }]
 ```
 
@@ -97,7 +98,7 @@ node cli.js bookmarks-update --user <user> --pass <pass> --file changes.json    
 2. Decide the new structure from titles, URLs and the existing folders. Prefer a shallow tree (2 levels), keep existing folder names the user already uses, and put anything unsure in `Unsorted` rather than guessing.
 3. Show the user a short summary (folders with counts, and a sample of moves) and wait for a go-ahead: the change rewrites many records.
 4. Apply it with `os.updateBookmarks([{ soul, folder, title?, tags? }, ...])` (or `bookmarks-update`). Omitted fields are kept, `url` and `addedAt` never change, unknown souls come back in `missing`.
-5. Re-read and compare the count: it must be unchanged. There is no undo, so keep the list from step 1 (it holds every old folder) until the user is happy.
+5. Re-read and compare the count: it must be unchanged. There is no undo, so before step 4 save a backup with `bookmarks-export --file backup.html` (re-importable) and keep the list from step 1 until the user is happy.
 
 ### 8. Custom Relays
 If the user provides their own relay, pass it on **every** command (or set `ZENOS_RELAYS` once):

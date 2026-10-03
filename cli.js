@@ -39,6 +39,7 @@ Usage:
   node cli.js vault-read --user <user> --pass <pass> [--cat <cat>] [--query <q>] [--timeout <ms>]
   node cli.js bookmarks-import --user <user> --pass <pass> --file <export.html>   # Brave/Chrome/Firefox export
   node cli.js bookmarks-read --user <user> --pass <pass> [--folder <path>] [--query <q>] [--timeout <ms>]
+  node cli.js bookmarks-export --user <user> --pass <pass> [--folder <path>] [--file <out.html>]   # importable by Brave/Chrome/Firefox
   node cli.js bookmarks-update --user <user> --pass <pass> --file <changes.json>  # [{soul, title?, folder?, tags?}]
   node cli.js blog-publish --user <user> --pass <pass> --title <title> --content <content> [--tags <tags>]
   node cli.js blog-read [--pub <pub>] [--alias <alias>] [--user <user> --pass <pass>]
@@ -107,6 +108,15 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       await os.login(flags.user, flags.pass);
       const marks = await os.readBookmarks({ folder: flags.folder, query: flags.query, timeoutMs: flags.timeout ? Number(flags.timeout) : 15000 });
       console.log(JSON.stringify(marks, null, 2));
+      process.exit(0);
+      break;
+    }
+
+    case 'bookmarks-export': {
+      if (!flags.user || !flags.pass) throw new Error('--user and --pass are required.');
+      await os.login(flags.user, flags.pass);
+      const html = await os.exportBookmarksHtml({ folder: flags.folder });
+      if (flags.file) fs.writeFileSync(flags.file, html); else process.stdout.write(html);
       process.exit(0);
       break;
     }
