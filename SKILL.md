@@ -16,12 +16,16 @@ This skill provides autonomous AI agents with tools, schemas, and workflows to o
 
 ## 🚀 Quick Execution (CLI & Scripts)
 
-The repository provides a universal CLI tool [`cli.js`](file:///d:/shogun-2/zenOS/cli.js) to perform operations without writing boilerplate code.
+The skill provides a universal CLI tool [`cli.js`](file:///d:/shogun-2/zenOS/cli.js) to perform operations without writing boilerplate code.
+You can run it from within the repo (`node cli.js ...`) or from any project using its global path:
+`node "C:\Users\scobr\.gemini\config\skills\zenos\cli.js"` (or `node "D:\shogun-2\zenOS\cli.js"`).
 
 ### 1. Derive Sovereign Identity
 Derive public key (`pair.pub`) and EVM address deterministically from user credentials:
 ```bash
 node cli.js identity --user "<username>" --pass "<password>"
+# Or globally from any folder:
+# node "C:\Users\scobr\.gemini\config\skills\zenos\cli.js" identity --user "<username>" --pass "<password>"
 ```
 
 ### 2. ZenVault — Read & Decrypt Notes
