@@ -1,0 +1,282 @@
+# ZenVault — LLM & Autonomous Agent Integration Guide (llm.txt)
+
+> **Instructions for AI Agents, LLMs, and Automation Scripts:**
+> You do NOT need a browser, headless browser, or UI to interact with ZenVault.
+> You can read, write, update, and search notes directly inside the decentralized P2P graph database (ZEN / GunDB) using deterministic cryptographic keys derived from user credentials (`username` and `password`).
+
+---
+
+## 1. Core Architecture & Philosophy
+
+ZenVault is a **zero-knowledge, end-to-end encrypted (E2EE) decentralized private vault**.
+- **No central server or database**: Data lives across a peer-to-peer graph overlay.
+- **Relays are blind routers**: All content payload (`title`, `body`, `cat`) is encrypted with AES-GCM 256 before touching the network. Relays only relay encrypted ciphertexts.
+- **Deterministic Keypairs**: An agent given `username` and `password` derives the exact same cryptographic keypair (`pair`) as the human user in the browser.
+
+---
+
+## 2. Relay Endpoints & Dependencies
+
+### P2P WebSocket Relays
+Connect to any or all of these official ZenVault relays:
+```json
+[
+  "wss://delay.scobrudot.dev/zen",
+  "wss://zen.akao.io:8420/zen",
+  "wss://zen0.akao.io:8420/zen",
+  "wss://zen1.akao.io:8420/zen"
+]
+```
+
+### Libraries
+- **Browser / Deno / Bun / ESM**:
+  ```javascript
+  import ZEN from 'https://cdn.jsdelivr.net/gh/scobru/zen@main/zen.min.js';
+  ```
+- **Node.js**:
+  You can use ZEN ESM import, or standard `gun` with `gun/sea` and standard WebCrypto:
+  ```javascript
+  import Gun from 'gun';
+  import SEA from 'gun/sea';
+  ```
+
+---
+
+## 3. Cryptographic Key Derivation
+
+ZenVault uses deterministic SEA/ZEN pair generation using the concatenated seed:
+
+```javascript
+const seed = username + password;
+const pair = await ZEN.pair(null, { seed });
+```
+
+The resulting `pair` object contains:
+- `pair.pub`: User's public key (hex identity)
+- `pair.priv`: User's private signing key
+- `pair.epub`: Public key for ECDH encryption
+- `pair.epriv`: Private key for ECDH encryption
+
+---
+
+## 4. Graph Path & Data Schema
+
+### Graph Root Path
+All user notes are stored under the authenticated root path:
+```
+zen.get('~' + pair.pub).get('vault')
+```
+
+### Individual Note Key (Soul)
+Each note has a unique identifier:
+```javascript
+const noteId = 'vault-' + Date.now() + '-' + Math.random().toString(36).substring(7);
+const noteNode = zen.get('~' + pair.pub).get('vault').get(noteId);
+```
+
+### Note Payload Specification
+All sensitive fields **MUST be encrypted** with `ZEN.encrypt(text, pair)`.
+
+| Field | Type | Encrypted? | Description |
+|---|---|---|---|
+| `title` | `string` | **YES** | Encrypted note title (e.g. `🐻 Research Notes`) |
+| `body` | `string` | **YES** | Encrypted Markdown content |
+| `cat` | `string` | **YES** | Category or primary tag (e.g. `work`, `research`, or `private`) |
+| `timestamp` | `number` | **NO** | Milliseconds Unix Epoch (`Date.now()`) |
+| `pinned` | `boolean` | **NO** | `true` if note is pinned to top, `false` otherwise |
+| `trash` | `boolean` | **NO** | `true` if note is soft-deleted, `false` otherwise |
+| `encrypted` | `boolean` | **NO** | Always `true` |
+
+---
+
+## 5. Bear Markdown & Content Formatting for Agents
+
+When generating content for the user's vault, follow Bear 2 style conventions:
+
+1. **Title with Emojis**: Start titles with a fitting emoji:
+   `🐻 Project Alpha`, `💡 Startup Idea`, `💻 Rust Microservice`, `🍕 Favorite Recipes`.
+2. **Hashtags (`#tag` / `#category/subtag`)**:
+   Include hashtags anywhere in the body or title (e.g. `#work`, `#personal/finance`, `#todo`). ZenVault automatically indexes them in the sidebar tag tree.
+3. **Interactive Task Checklists**:
+   Use standard `- [ ] task` and `- [x] completed task`. ZenVault renders them as interactive checkboxes in the UI.
+4. **Thumbnail Images**:
+   Include markdown images `![Alt text](https://images.unsplash.com/...)`. ZenVault automatically extracts the first image and displays an inline preview thumbnail in the note card list!
+5. **Tables**:
+   Format structured data using clean Markdown tables:
+   ```markdown
+   | Parameter | Type | Default |
+   |---|---|---|
+   | timeout | number | 5000 |
+   ```
+
+---
+
+## 6. Complete Autonomous Agent Code Examples
+
+### Example 1: Write a New Encrypted Note (Node / ESM / Deno)
+
+```javascript
+import ZEN from 'https://cdn.jsdelivr.net/gh/scobru/zen@main/zen.min.js';
+
+async function writeNoteToVault({ username, password, title, body, category = 'agent', pinned = false }) {
+  // 1. Initialize P2P connection to relays
+  const zen = new ZEN({
+    peers: [
+      "wss://delay.scobrudot.dev/zen",
+      "wss://zen.akao.io:8420/zen",
+      "wss://zen0.akao.io:8420/zen",
+      "wss://zen1.akao.io:8420/zen"
+    ]
+  });
+
+  // 2. Derive master keypair from user credentials
+  const seed = username + password;
+  const pair = await ZEN.pair(null, { seed });
+
+  // 3. Encrypt payload
+  const encTitle = await ZEN.encrypt(title, pair);
+  const encBody = await ZEN.encrypt(body, pair);
+  const encCat = await ZEN.encrypt(category, pair);
+
+  // 4. Generate unique note key
+  const noteId = 'vault-' + Date.now() + '-' + Math.random().toString(36).substring(7);
+
+  const payload = {
+    title: encTitle,
+    body: encBody,
+    cat: encCat,
+    pinned: !!pinned,
+    trash: false,
+    timestamp: Date.now(),
+    encrypted: true
+  };
+
+  // 5. Store and propagate to decentralized P2P graph
+  return new Promise((resolve, reject) => {
+    zen.get('~' + pair.pub).get('vault').get(noteId).put(payload, (ack) => {
+      if (ack && ack.err) {
+        reject(new Error("P2P storage failed: " + ack.err));
+      } else {
+        resolve({ noteId, status: "success", timestamp: payload.timestamp });
+      }
+    }, { authenticator: pair });
+  });
+}
+
+// Usage:
+// await writeNoteToVault({
+//   username: "scobru",
+//   password: "mypassword123",
+//   title: "🤖 Agent Summary: Market Analysis",
+//   category: "finance",
+//   body: "### Executive Summary\nAnalysis complete. #finance #automated\n- [x] Gather data\n- [ ] Deploy strategy"
+// });
+```
+
+---
+
+### Example 2: Read & Decrypt All Notes from Vault
+
+```javascript
+import ZEN from 'https://cdn.jsdelivr.net/gh/scobru/zen@main/zen.min.js';
+
+async function readAllNotes({ username, password, timeoutMs = 4000 }) {
+  const zen = new ZEN({
+    peers: [
+      "wss://delay.scobrudot.dev/zen",
+      "wss://zen.akao.io:8420/zen",
+      "wss://zen0.akao.io:8420/zen"
+    ]
+  });
+
+  const pair = await ZEN.pair(null, { seed: username + password });
+  const notes = [];
+
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      resolve(notes);
+    }, timeoutMs);
+
+    zen.get('~' + pair.pub).get('vault').map().once(async (node, id) => {
+      if (!node) return; // deleted node
+
+      try {
+        const title = await ZEN.decrypt(node.title, pair);
+        const body = await ZEN.decrypt(node.body, pair);
+        const cat = await ZEN.decrypt(node.cat, pair);
+
+        notes.push({
+          id,
+          title,
+          body,
+          cat,
+          pinned: !!node.pinned,
+          trash: !!node.trash,
+          timestamp: node.timestamp
+        });
+      } catch (e) {
+        // Skip un-decryptable or corrupted nodes
+      }
+    });
+  });
+}
+```
+
+---
+
+### Example 3: Append Content or Update Existing Note
+
+```javascript
+import ZEN from 'https://cdn.jsdelivr.net/gh/scobru/zen@main/zen.min.js';
+
+async function appendToNote({ username, password, noteId, textToAppend }) {
+  const zen = new ZEN({
+    peers: ["wss://delay.scobrudot.dev/zen", "wss://zen.akao.io:8420/zen"]
+  });
+
+  const pair = await ZEN.pair(null, { seed: username + password });
+  const noteRef = zen.get('~' + pair.pub).get('vault').get(noteId);
+
+  return new Promise((resolve, reject) => {
+    noteRef.once(async (node) => {
+      if (!node) return reject(new Error("Note not found"));
+
+      const currentTitle = await ZEN.decrypt(node.title, pair);
+      const currentBody = await ZEN.decrypt(node.body, pair);
+      const currentCat = await ZEN.decrypt(node.cat, pair);
+
+      const updatedBody = currentBody + "\n\n" + textToAppend;
+      const encBody = await ZEN.encrypt(updatedBody, pair);
+
+      noteRef.put({
+        ...node,
+        body: encBody,
+        timestamp: Date.now()
+      }, (ack) => {
+        if (ack && ack.err) reject(new Error(ack.err));
+        else resolve({ status: "updated", noteId });
+      }, { authenticator: pair });
+    });
+  });
+}
+```
+
+---
+
+### Example 4: Delete a Note
+
+To erase a note from the decentralized graph:
+```javascript
+zen.get('~' + pair.pub).get('vault').get(noteId).put(null, (ack) => {
+  console.log("Note purged from graph");
+}, { authenticator: pair });
+```
+
+---
+
+## 7. Troubleshooting & Best Practices for Agents
+
+1. **Wait for P2P propagation**: GunDB/ZEN propagates asynchronously over WebSockets. Always wrap `.put()` in a Promise and allow 500-1500ms before disconnecting process.
+2. **Deterministic pairs**: The string passed to `{ seed: username + password }` is case-sensitive. Maintain consistent case when prompting users for credentials.
+3. **No server error codes**: GunDB uses `{ ack: { err: ... } }` callbacks rather than HTTP 4xx/5xx status codes.
+4. **Idempotence**: Note IDs can be generated using a consistent slug (e.g. `vault-daily-2026-10-03`) if you want the agent to overwrite or maintain a single daily note.
