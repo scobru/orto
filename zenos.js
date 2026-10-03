@@ -134,6 +134,21 @@ async function bookmarkSoul(url) {
   return 'bm-' + [...new Uint8Array(h)].slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+/**
+ * Derive the ZenOS identity. Same scheme as smollog, so one login = one pub everywhere:
+ * seed = hex(PBKDF2-SHA256(password, "scobru:zen:blog:" + lowercase(username), 100000, 256 bits)).
+ */
+export async function derivePair(username, password) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: enc.encode('scobru:zen:blog:' + username.trim().toLowerCase()), iterations: 100000, hash: 'SHA-256' },
+    key, 256
+  );
+  const seed = [...new Uint8Array(bits)].map(b => b.toString(16).padStart(2, '0')).join('');
+  return ZEN.pair(null, { seed });
+}
+
 export class ZenOS {
   constructor(options = {}) {
     this.peers = resolvePeers(options);
@@ -149,15 +164,62 @@ export class ZenOS {
   }
 
   /**
-   * Authenticate / derive keypair from username and password.
+   * Authenticate / derive keypair from username and password (smollog-compatible, see derivePair).
+   * Also keeps `legacyPair`, the pre-unification identity (seed = user + pass), for migrateLegacy().
    */
   async login(username, password) {
     if (!username || !password) {
       throw new Error('Username and password are required');
     }
     this.username = username.trim();
-    this.pair = await ZEN.pair(null, { seed: this.username + password.trim() });
+    this.pair = await derivePair(this.username, password);
+    this.legacyPair = await ZEN.pair(null, { seed: this.username + password.trim() });
     return this.pair;
+  }
+
+  /**
+   * Copy encrypted data (vault, calendar, bookmarks) from the legacy identity to the current one,
+   * re-encrypting with the new key. Idempotent: souls already present under the new pub are skipped.
+   * @returns {Promise<{migrated:number, skipped:number, failed:number}>}
+   */
+  async migrateLegacy(timeoutMs = 5000) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    const { pair, legacyPair } = this;
+    const readAll = (pub, path) => new Promise((resolve) => {
+      const nodes = new Map();
+      setTimeout(() => resolve(nodes), timeoutMs);
+      const root = this.zen.get('~' + pub).get(path);
+      root.map().once((node, soul) => {
+        if (!soul) return;
+        if (node && typeof node === 'object') nodes.set(soul, node);
+        else root.get(soul).once((full) => full && nodes.set(soul, full));
+      });
+    });
+    const enc = (v) => ZEN.encrypt(v, pair);
+    const dec = (v) => ZEN.decrypt(v, legacyPair);
+    const convert = {
+      vault: async (n) => ({ title: await enc(await dec(n.title)), body: await enc(await dec(n.body)), cat: await enc(await dec(n.cat)), pinned: !!n.pinned, trash: !!n.trash, timestamp: n.timestamp, encrypted: true }),
+      calendar: async (n) => ({ data: await enc(await dec(n.data)), updatedAt: n.updatedAt, encrypted: true }),
+      bookmarks: async (n) => ({ data: await enc(await dec(n.data)), updatedAt: n.updatedAt, encrypted: true })
+    };
+    const field = { vault: 'title', calendar: 'data', bookmarks: 'data' };
+
+    const stats = { migrated: 0, skipped: 0, failed: 0 };
+    for (const path of Object.keys(convert)) {
+      const [old, cur] = await Promise.all([readAll(legacyPair.pub, path), readAll(pair.pub, path)]);
+      for (const [soul, node] of old) {
+        if (!node[field[path]]) continue;
+        if (cur.has(soul)) { stats.skipped++; continue; }
+        try {
+          const payload = await convert[path](node);
+          await new Promise((resolve, reject) => {
+            this.zen.get('~' + pair.pub).get(path).get(soul).put(payload, (ack) => ack && ack.err ? reject(new Error(ack.err)) : resolve(), { authenticator: pair });
+          });
+          stats.migrated++;
+        } catch (_) { stats.failed++; }
+      }
+    }
+    return stats;
   }
 
   get pub() {

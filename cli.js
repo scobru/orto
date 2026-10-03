@@ -34,6 +34,7 @@ async function main() {
 ZenOS CLI — Sovereign Agent Tools
 Usage:
   node cli.js identity --user <user> --pass <pass>
+  node cli.js migrate --user <user> --pass <pass>   # copy vault/calendar/bookmarks from the old (user+pass) identity
   node cli.js vault-write --user <user> --pass <pass> --title <title> --body <body> [--cat <cat>] [--pinned]
   node cli.js vault-read --user <user> --pass <pass> [--cat <cat>] [--query <q>] [--timeout <ms>]
   node cli.js blog-publish --user <user> --pass <pass> --title <title> --content <content> [--tags <tags>]
@@ -79,6 +80,14 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
         curve: pair.curve
       }, null, 2));
       process.exit(0);
+      break;
+    }
+
+    case 'migrate': {
+      if (!flags.user || !flags.pass) throw new Error('--user and --pass are required.');
+      await os.login(flags.user, flags.pass);
+      console.log(JSON.stringify({ pub: os.pub, legacyPub: os.legacyPair.pub, ...await os.migrateLegacy() }, null, 2));
+      setTimeout(() => process.exit(0), 500);
       break;
     }
 

@@ -1,7 +1,7 @@
 // Calendar roundtrip: encrypted at rest in graph, decrypts on read, range filter, delete.
 import assert from 'assert';
 import http from 'http';
-import { ZenOS, parseBookmarksHtml } from './zenos.js';
+import { ZenOS, parseBookmarksHtml, derivePair } from './zenos.js';
 
 // local in-process relay so the test needs no network
 const ZEN = (await import('./zen.min.js')).default;
@@ -44,5 +44,23 @@ const braw = await new Promise((r) => os.userRoot.get('bookmarks').get(bms[0].so
 assert(!/example|Dev/.test(JSON.stringify(braw)), 'bookmark plaintext leaked');
 await os.deleteBookmark(bms[0].soul);
 assert.equal((await os.readBookmarks({ timeoutMs: 500 })).length, 1);
+
+// Identity: smollog-compatible vector, case-insensitive username, differs from legacy user+pass
+assert.equal((await derivePair('Scobru', 'pw')).pub, '0Dxl7yX7XKZU5pbgBRpQaVCMeSZwNJsqypyQvo5Lu5dr0');
+assert.equal((await derivePair('scobru', 'pw')).pub, (await derivePair(' SCOBRU ', 'pw')).pub);
+assert.notEqual(os.pub, os.legacyPair.pub);
+
+// Migration: old-format data under the legacy pub shows up (re-encrypted) under the new pub, idempotently
+const L = os.legacyPair, lput = (path, soul, v) => new Promise((r) => os.zen.get('~' + L.pub).get(path).get(soul).put(v, r, { authenticator: L }));
+await lput('vault', 'vault-old', { title: await ZEN.encrypt('Old title', L), body: await ZEN.encrypt('Old body', L), cat: await ZEN.encrypt('c', L), pinned: true, trash: false, timestamp: 1, encrypted: true });
+await lput('calendar', 'cal-old', { data: await ZEN.encrypt({ title: 'Old ev', start: 5, end: 6 }, L), updatedAt: 1, encrypted: true });
+await lput('bookmarks', 'bm-old', { data: await ZEN.encrypt({ url: 'https://old.example', title: 'Old bm', folder: '', tags: [], addedAt: 1 }, L), updatedAt: 1, encrypted: true });
+assert.equal((await os.readVaultNotes(500)).length, 0, 'nothing under new pub yet');
+assert.deepEqual(await os.migrateLegacy(1000), { migrated: 3, skipped: 0, failed: 0 });
+assert.deepEqual(await os.migrateLegacy(1000), { migrated: 0, skipped: 3, failed: 0 });
+const [n] = await os.readVaultNotes(500);
+assert(n.title === 'Old title' && n.body === 'Old body' && n.pinned);
+assert.equal((await os.readCalendarEvents({ timeoutMs: 500 })).find(e => e.title === 'Old ev').soul, 'cal-old');
+assert((await os.readBookmarks({ timeoutMs: 500 })).some(b => b.title === 'Old bm'));
 console.log('ok');
 process.exit(0);

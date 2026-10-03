@@ -111,8 +111,8 @@ const zen = new ZEN({
 ZenOS uses deterministic key derivation so that an agent and the user in the browser produce the **identical public and private keypair**:
 
 ```javascript
-const seed = username + password;
-const pair = await ZEN.pair(null, { seed });
+const pair = await derivePair(username, password); // exported by zenos.js
+// = ZEN.pair(null, { seed: hex(PBKDF2-SHA256(password, 'scobru:zen:blog:' + username.trim().toLowerCase(), 100000, 256 bits)) })
 ```
 
 The resulting `pair` object contains:
@@ -294,7 +294,7 @@ async function runAutonomousWorkflow() {
 
   const username = "scobru";
   const password = "your_secure_password";
-  const pair = await ZEN.pair(null, { seed: username + password });
+  const pair = await derivePair(username, password); // zenos.js; see section 3
   console.log("ZenOS Agent authenticated for:", pair.pub);
 
   // 1. Fetch research from Vault
@@ -331,4 +331,4 @@ async function runAutonomousWorkflow() {
 1. **Always use `{ authenticator: pair }` on `.put()`**: The P2P relay requires cryptographic proof of authority to modify any child of `~pair.pub`.
 2. **Handle network latency**: GunDB/ZEN propagates graph changes over WebSockets asynchronously. Always await `.put()` callbacks and allow 500-1500ms before exiting CLI processes.
 3. **Graceful degradation**: Wrap `ZEN.decrypt` in `try / catch` to ignore old, corrupted, or non-encrypted legacy nodes.
-4. **Deterministic identity**: Never change credential casing without user confirmation, as `{ seed: user + pass }` is case-sensitive.
+4. **Deterministic identity**: The username is case-insensitive, the password is case-sensitive. Never change the password casing without user confirmation. Data from the old `user + pass` seed is copied with `os.migrateLegacy()`.
