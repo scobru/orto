@@ -4,16 +4,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Zen Vault | Scobru</title>
-  <meta name="description" content="Zen Vault - End-to-End Encrypted Private Vault by Scobru.">
+  <title>ZenVault — Bear Style Private Notes</title>
+  <meta name="description" content="ZenVault - End-to-End Encrypted Private Markdown Notes inspired by Bear.">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
-    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap"
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
   <style>
     *,
@@ -25,65 +26,104 @@
     }
 
     :root {
-      --font-sans: 'Outfit', sans-serif;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-heading: 'Outfit', 'Inter', -apple-system, sans-serif;
       --font-mono: 'IBM Plex Mono', monospace;
 
-      --accent: #e01e37;
-      --accent-hover: #c1121f;
-      --accent-light: rgba(224, 30, 55, 0.08);
+      /* Bear Red Signature Accent */
+      --bear-red: #e04b4b;
+      --bear-red-hover: #c93b3b;
+      --bear-red-light: rgba(224, 75, 75, 0.09);
+      --bear-red-glow: rgba(224, 75, 75, 0.25);
       --badge-zen: #00b4d8;
     }
 
-    /* Light Theme */
+    /* ── Light Theme (Bear Red Graphite) ── */
     [data-theme="light"] {
-      --bg-app: #f4f5f6;
-      --bg-sidebar: #ffffff;
+      --bg-sidebar: #1e2025;
+      --text-sidebar: #8e939d;
+      --text-sidebar-title: #ffffff;
+      --text-sidebar-hover: #ffffff;
+      --bg-sidebar-hover: rgba(255, 255, 255, 0.06);
+      --bg-sidebar-active: rgba(255, 255, 255, 0.12);
+      --border-sidebar: rgba(255, 255, 255, 0.08);
+
+      --bg-list: #fbfbfc;
       --bg-card: #ffffff;
+      --bg-card-hover: #f5f6f8;
+      --bg-card-selected: #f0f2f5;
+      --border-list: #eaebed;
+
       --bg-editor: #ffffff;
-      --text-primary: #111827;
-      --text-secondary: #4b5563;
-      --text-muted: #9ca3af;
-      --border-color: rgba(0, 0, 0, 0.08);
-      --border-color-hover: rgba(0, 0, 0, 0.16);
-      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
-      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
-      --input-bg: #f9fafb;
+      --text-primary: #1c1f24;
+      --text-secondary: #575c66;
+      --text-muted: #959ba6;
+      --border-color: #eaebed;
+
+      --bg-toolbar: rgba(255, 255, 255, 0.92);
+      --border-toolbar: rgba(0, 0, 0, 0.08);
+      --shadow-toolbar: 0 12px 32px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.04);
+
+      --code-bg: #f4f5f7;
+      --table-border: #e3e5e8;
+      --table-header-bg: #f8f9fa;
+      --tag-bg: rgba(224, 75, 75, 0.08);
+      --tag-text: #e04b4b;
+      --input-bg: #f8f9fa;
       --active-bg: #f3f4f6;
     }
 
-    /* Dark Theme */
+    /* ── Dark Theme (Bear Charcoal) ── */
     [data-theme="dark"] {
-      --bg-app: #0d0e12;
-      --bg-sidebar: #13151a;
-      --bg-card: #181b22;
-      --bg-editor: #181b22;
-      --text-primary: #f9fafb;
-      --text-secondary: #9ca3af;
+      --bg-sidebar: #16171c;
+      --text-sidebar: #7f8490;
+      --text-sidebar-title: #f5f6f8;
+      --text-sidebar-hover: #f5f6f8;
+      --bg-sidebar-hover: rgba(255, 255, 255, 0.05);
+      --bg-sidebar-active: rgba(255, 255, 255, 0.1);
+      --border-sidebar: rgba(255, 255, 255, 0.06);
+
+      --bg-list: #1d1f25;
+      --bg-card: #1d1f25;
+      --bg-card-hover: #242730;
+      --bg-card-selected: #292d37;
+      --border-list: #262932;
+
+      --bg-editor: #22252c;
+      --text-primary: #f2f4f7;
+      --text-secondary: #9da3af;
       --text-muted: #6b7280;
-      --border-color: rgba(255, 255, 255, 0.08);
-      --border-color-hover: rgba(255, 255, 255, 0.15);
-      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
-      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
-      --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 10px 10px -5px rgba(0, 0, 0, 0.3);
-      --input-bg: #111317;
-      --active-bg: #1f232b;
+      --border-color: #2b2e38;
+
+      --bg-toolbar: rgba(30, 33, 40, 0.92);
+      --border-toolbar: rgba(255, 255, 255, 0.1);
+      --shadow-toolbar: 0 12px 32px rgba(0, 0, 0, 0.45);
+
+      --code-bg: #18191f;
+      --table-border: #2f333e;
+      --table-header-bg: #282b34;
+      --tag-bg: rgba(224, 75, 75, 0.16);
+      --tag-text: #ff6b6b;
+      --input-bg: #181a20;
+      --active-bg: #262933;
     }
 
     body {
       font-family: var(--font-sans);
-      background: var(--bg-app);
+      background: var(--bg-editor);
       color: var(--text-primary);
       width: 100vw;
       height: 100vh;
       overflow: hidden;
       display: flex;
-      transition: background 0.3s ease, color 0.3s ease;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      transition: background 0.25s ease, color 0.25s ease;
     }
 
     ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
+      width: 5px;
+      height: 5px;
     }
 
     ::-webkit-scrollbar-track {
@@ -91,19 +131,19 @@
     }
 
     ::-webkit-scrollbar-thumb {
-      background: var(--border-color);
+      background: rgba(150, 150, 150, 0.25);
       border-radius: 4px;
     }
 
     ::-webkit-scrollbar-thumb:hover {
-      background: var(--text-muted);
+      background: rgba(150, 150, 150, 0.45);
     }
 
     .hidden {
       display: none !important;
     }
 
-    /* ── Dashboard Layout ── */
+    /* ── App 3-Column Layout ── */
     .dashboard-wrapper {
       display: flex;
       width: 100%;
@@ -111,108 +151,99 @@
       position: relative;
     }
 
-    /* ── Sidebar ── */
+    /* ════════════════════════════════════════════════════════════
+       COLUMN 1: Bear Sidebar (Graphite Dark)
+    ════════════════════════════════════════════════════════════ */
     .sidebar {
-      width: 260px;
+      width: 240px;
       background: var(--bg-sidebar);
-      border-right: 1px solid var(--border-color);
+      border-right: 1px solid var(--border-sidebar);
       display: flex;
       flex-direction: column;
       flex-shrink: 0;
-      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s ease;
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       z-index: 100;
+      user-select: none;
     }
 
     .sidebar-header {
-      padding: 24px;
+      padding: 16px 18px 12px;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
 
-    .sidebar-logo {
+    /* macOS Traffic Light Buttons */
+    .mac-window-controls {
       display: flex;
       align-items: center;
-      gap: 10px;
-      font-weight: 700;
-      font-size: 20px;
-      letter-spacing: -0.5px;
-      color: var(--text-primary);
+      gap: 7px;
     }
 
-    .sidebar-logo i {
-      color: var(--accent);
-      font-size: 22px;
+    .mac-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+      cursor: pointer;
+      position: relative;
+      transition: opacity 0.2s ease, transform 0.15s ease;
+    }
+
+    .mac-dot:hover {
+      transform: scale(1.08);
+    }
+
+    .mac-dot-close {
+      background-color: #ff5f56;
+      border: 1px solid rgba(0, 0, 0, 0.15);
+    }
+
+    .mac-dot-minimize {
+      background-color: #ffbd2e;
+      border: 1px solid rgba(0, 0, 0, 0.15);
+    }
+
+    .mac-dot-zoom {
+      background-color: #27c93f;
+      border: 1px solid rgba(0, 0, 0, 0.15);
+    }
+
+    .sidebar-header-action {
+      background: transparent;
+      border: none;
+      color: var(--text-sidebar);
+      font-size: 17px;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.2s, background-color 0.2s;
+    }
+
+    .sidebar-header-action:hover {
+      color: var(--text-sidebar-hover);
+      background: var(--bg-sidebar-hover);
     }
 
     .hamburger-close {
       background: transparent;
       border: none;
-      color: var(--text-primary);
-      font-size: 20px;
+      color: var(--text-sidebar);
+      font-size: 18px;
       cursor: pointer;
       display: none;
-    }
-
-    .sync-status {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 12px;
-      margin: 0 20px 16px;
-      background: var(--active-bg);
-      border-radius: 8px;
-      font-size: 11px;
-      font-family: var(--font-mono);
-      color: var(--text-secondary);
-      border: 1px solid var(--border-color);
-    }
-
-    .status-indicator-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background-color: #e01e37;
-      box-shadow: 0 0 6px #e01e37;
-      display: inline-block;
-      flex-shrink: 0;
-      transition: all 0.3s ease;
-    }
-
-    .new-note-btn {
-      background: var(--accent);
-      color: #ffffff;
-      border: none;
-      padding: 12px 16px;
-      border-radius: 12px;
-      font-family: var(--font-sans);
-      font-weight: 600;
-      font-size: 14px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      margin: 0 20px 20px;
-      transition: background-color 0.2s, transform 0.2s;
-      box-shadow: 0 4px 12px rgba(224, 30, 55, 0.2);
-    }
-
-    .new-note-btn:hover {
-      background: var(--accent-hover);
-      transform: translateY(-1px);
-    }
-
-    .new-note-btn:active {
-      transform: translateY(0);
     }
 
     .sidebar-nav {
       flex: 1;
       overflow-y: auto;
+      padding: 6px 12px;
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 2px;
     }
 
     .nav-section-title {
@@ -220,72 +251,137 @@
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      color: var(--text-muted);
-      margin: 10px 24px 6px;
+      color: #636873;
+      margin: 14px 10px 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-section-title .section-action {
+      font-size: 14px;
+      cursor: pointer;
+      color: #7b818d;
+      transition: color 0.2s;
+    }
+
+    .nav-section-title .section-action:hover {
+      color: #ffffff;
     }
 
     .nav-item {
       display: flex;
       align-items: center;
-      padding: 10px 16px;
-      color: var(--text-secondary);
+      padding: 7px 10px;
+      color: var(--text-sidebar);
       text-decoration: none;
-      font-size: 14px;
-      font-weight: 500;
-      border-radius: 8px;
-      margin: 2px 20px;
-      gap: 12px;
-      transition: background-color 0.2s, color 0.2s;
+      font-size: 13.5px;
+      font-weight: 400;
+      border-radius: 7px;
+      gap: 10px;
+      transition: background-color 0.15s ease, color 0.15s ease;
+      cursor: pointer;
     }
 
     .nav-item:hover {
-      background: var(--active-bg);
-      color: var(--text-primary);
+      background: var(--bg-sidebar-hover);
+      color: var(--text-sidebar-hover);
     }
 
     .nav-item.active {
-      background: var(--accent-light);
-      color: var(--accent);
-      font-weight: 600;
+      background: var(--bg-sidebar-active);
+      color: #ffffff;
+      font-weight: 500;
+    }
+
+    .nav-icon {
+      font-size: 16px;
+      width: 18px;
+      text-align: center;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: inherit;
+    }
+
+    .nav-text {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .nav-count {
-      margin-left: auto;
       font-size: 11px;
-      background: var(--active-bg);
-      color: var(--text-secondary);
-      padding: 2px 6px;
-      border-radius: 10px;
+      color: #6a707c;
       font-family: var(--font-mono);
+      padding: 1px 6px;
+      border-radius: 8px;
     }
 
     .nav-item.active .nav-count {
-      background: var(--accent);
-      color: #ffffff;
+      color: #d1d5db;
     }
 
-    .categories-list {
+    /* Tag Items */
+    .tag-emoji {
+      font-size: 14px;
+      margin-right: -2px;
+    }
+
+    .tag-pin-icon {
+      font-size: 12px;
+      color: var(--bear-red);
+      opacity: 0.8;
+      margin-left: auto;
+    }
+
+    /* Sidebar Footer */
+    .sidebar-footer {
+      padding: 14px 14px;
+      border-top: 1px solid var(--border-sidebar);
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 10px;
+      background: rgba(0, 0, 0, 0.12);
     }
 
-    .sidebar-footer {
-      padding: 20px;
-      border-top: 1px solid var(--border-color);
+    .sync-status-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 7px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: #8c929e;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background-color: #2ec4b6;
+      box-shadow: 0 0 6px #2ec4b6;
+      flex-shrink: 0;
+    }
+
+    .sidebar-actions-row {
       display: flex;
       gap: 8px;
     }
 
-    .sidebar-action-btn {
+    .sidebar-btn {
       flex: 1;
-      background: var(--active-bg);
-      border: 1px solid var(--border-color);
-      color: var(--text-secondary);
-      padding: 10px;
-      border-radius: 8px;
-      font-family: var(--font-sans);
-      font-size: 13px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--text-sidebar);
+      padding: 7px 10px;
+      border-radius: 7px;
+      font-size: 12px;
       font-weight: 500;
       cursor: pointer;
       display: flex;
@@ -295,647 +391,855 @@
       transition: all 0.2s ease;
     }
 
-    .sidebar-action-btn:hover {
-      background: var(--border-color);
-      color: var(--text-primary);
-    }
-
-    /* ── Middle Note List ── */
-    .note-list-pane {
-      flex: 1;
-      background: var(--bg-app);
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      overflow: hidden;
-    }
-
-    .list-header {
-      height: 72px;
-      border-bottom: 1px solid var(--border-color);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 24px;
-      background: var(--bg-sidebar);
-      flex-shrink: 0;
-    }
-
-    .list-header-left {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex: 1;
-    }
-
-    .sidebar-toggle {
-      background: transparent;
-      border: none;
-      color: var(--text-primary);
-      font-size: 20px;
-      cursor: pointer;
-      display: none;
-    }
-
-    .search-box {
-      position: relative;
-      width: 100%;
-      max-width: 320px;
-    }
-
-    .search-icon {
-      position: absolute;
-      left: 12px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: var(--text-muted);
-      font-size: 16px;
-    }
-
-    .search-box input {
-      width: 100%;
-      background: var(--bg-app);
-      border: 1px solid var(--border-color);
-      color: var(--text-primary);
-      padding: 10px 12px 10px 36px;
-      border-radius: 10px;
-      font-family: var(--font-sans);
-      font-size: 14px;
-      transition: all 0.2s ease;
-    }
-
-    .search-box input:focus {
-      outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px var(--accent-light);
-      background: var(--bg-sidebar);
-    }
-
-    .list-header-right {
-      display: flex;
-      gap: 6px;
-    }
-
-    .view-toggle-btn {
-      background: var(--bg-app);
-      border: 1px solid var(--border-color);
-      width: 38px;
-      height: 38px;
-      border-radius: 8px;
-      color: var(--text-secondary);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      font-size: 16px;
-      transition: all 0.2s ease;
-    }
-
-    .view-toggle-btn:hover {
-      background: var(--active-bg);
-      color: var(--text-primary);
-    }
-
-    .view-toggle-btn.active {
-      background: var(--accent-light);
-      color: var(--accent);
-      border-color: var(--accent);
-    }
-
-    .list-content {
-      flex: 1;
-      padding: 24px;
-      overflow-y: auto;
-    }
-
-    .active-filter-bar {
-      display: flex;
-      align-items: center;
-      margin-bottom: 16px;
-    }
-
-    #active-filter-label {
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--text-primary);
-      text-transform: capitalize;
-    }
-
-    .notes-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 16px;
-    }
-
-    /* ── Note Card ── */
-    .note-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: 16px;
-      padding: 18px;
-      box-shadow: var(--shadow-sm);
-      cursor: pointer;
-      position: relative;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-      min-height: 140px;
-    }
-
-    .note-card:hover {
-      transform: translateY(-2px);
-      border-color: var(--accent);
-      box-shadow: var(--shadow-md);
-    }
-
-    .note-card.selected {
-      border-color: var(--accent);
-      background: var(--accent-light);
-    }
-
-    .note-card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .note-card-cat {
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--accent);
-      background: var(--accent-light);
-      padding: 2px 6px;
-      border-radius: 4px;
-      max-width: 100px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .note-card-date {
-      font-size: 11px;
-      color: var(--text-muted);
-      font-family: var(--font-mono);
-    }
-
-    .note-card-title {
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--text-primary);
-      margin: 4px 0 0 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .note-card-preview {
-      font-size: 13px;
-      color: var(--text-secondary);
-      line-height: 1.4;
-      font-family: var(--font-mono);
-      overflow: hidden;
-      display: -webkit-box;
-      -webkit-line-clamp: 3;
-      -webkit-box-orient: vertical;
-      word-break: break-all;
-      margin: 0;
-    }
-
-    .note-card-actions {
-      position: absolute;
-      bottom: 12px;
-      right: 12px;
-      display: flex;
-      gap: 6px;
-      opacity: 0;
-      transition: opacity 0.2s ease;
-    }
-
-    .note-card:hover .note-card-actions {
-      opacity: 1;
-    }
-
-    .card-action-btn {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      color: var(--text-secondary);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      font-size: 13px;
-      transition: all 0.2s ease;
-    }
-
-    .card-action-btn:hover {
-      background: var(--accent-light);
-      color: var(--accent);
-      border-color: var(--accent);
-      transform: scale(1.1);
-    }
-
-    /* ── List Layout View ── */
-    .notes-grid.list-layout {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .notes-grid.list-layout .note-card {
-      flex-direction: row;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 14px 20px;
-      min-height: auto;
-    }
-
-    .notes-grid.list-layout .note-card-header {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 4px;
-      width: 120px;
-      flex-shrink: 0;
-    }
-
-    .notes-grid.list-layout .note-card-title {
-      margin: 0;
-      flex: 1;
-      width: 180px;
-    }
-
-    .notes-grid.list-layout .note-card-preview {
-      flex: 2;
-      -webkit-line-clamp: 1;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      word-break: break-all;
-    }
-
-    .notes-grid.list-layout .note-card-actions {
-      position: static;
-      opacity: 1;
-    }
-
-    /* ── Editor Pane ── */
-    .editor-pane {
-      width: 450px;
-      background: var(--bg-editor);
-      border-left: 1px solid var(--border-color);
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      overflow: hidden;
-      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      flex-shrink: 0;
-    }
-
-    .editor-pane.closed {
-      width: 0;
-      border-left: none;
-      transform: translateX(100%);
-    }
-
-    .editor-placeholder-state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      padding: 40px;
-      color: var(--text-muted);
-      text-align: center;
-      gap: 16px;
-    }
-
-    .placeholder-icon {
-      font-size: 48px;
-      color: var(--border-color-hover);
-    }
-
-    .editor-content-wrapper {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      width: 450px;
-    }
-
-    .note-viewer-mode,
-    .note-editor-mode {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-    }
-
-    .editor-toolbar {
-      height: 72px;
-      border-bottom: 1px solid var(--border-color);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 20px;
-      background: var(--bg-card);
-      flex-shrink: 0;
-    }
-
-    .toolbar-actions {
-      display: flex;
-      gap: 8px;
-    }
-
-    .icon-btn {
-      background: transparent;
-      border: none;
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      color: var(--text-secondary);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      font-size: 18px;
-      transition: all 0.2s ease;
-    }
-
-    .icon-btn:hover {
-      background: var(--active-bg);
-      color: var(--text-primary);
-    }
-
-    .viewer-body {
-      padding: 24px;
-      overflow-y: auto;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .viewer-meta {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .note-date {
-      font-size: 12px;
-      color: var(--text-muted);
-      font-family: var(--font-mono);
-    }
-
-    .note-date i {
-      vertical-align: middle;
-      margin-right: 2px;
-    }
-
-    .note-view-title {
-      font-size: 22px;
-      font-weight: 700;
-      color: var(--text-primary);
-      line-height: 1.3;
-      margin: 0;
-      word-break: break-word;
-    }
-
-    .note-view-body {
-      font-family: var(--font-mono);
-      font-size: 14px;
-      color: var(--text-secondary);
-      line-height: 1.6;
-      white-space: pre-wrap;
-      word-break: break-word;
-      border-top: 1px dashed var(--border-color);
-      padding-top: 16px;
-    }
-
-    /* ── Form Styles ── */
-    .editor-form {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      padding: 24px;
-      flex: 1;
-      overflow-y: auto;
-    }
-
-    .form-group-row {
-      display: flex;
-      gap: 12px;
-    }
-
-    .editor-input-title {
-      width: 100%;
-      min-width: 0;
-      background: var(--input-bg);
-      border: 1px solid var(--border-color);
-      color: var(--text-primary);
-      padding: 12px 16px;
-      border-radius: 10px;
-      font-family: var(--font-sans);
-      font-size: 16px;
-      font-weight: 600;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-
-    .editor-input-cat {
-      width: 100%;
-      min-width: 0;
-      background: var(--input-bg);
-      border: 1px solid var(--border-color);
-      color: var(--text-primary);
-      padding: 12px 16px;
-      border-radius: 10px;
-      font-family: var(--font-sans);
-      font-size: 14px;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-
-    .editor-textarea {
-      flex: 1;
-      background: var(--input-bg);
-      border: 1px solid var(--border-color);
-      color: var(--text-primary);
-      padding: 16px;
-      border-radius: 10px;
-      font-family: var(--font-mono);
-      font-size: 14px;
-      line-height: 1.5;
-      resize: none;
-      min-height: 350px;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-
-    .editor-input-title:focus,
-    .editor-input-cat:focus,
-    .editor-textarea:focus {
-      outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px var(--accent-light);
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 10px 18px;
-      border-radius: 10px;
-      font-family: var(--font-sans);
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      border: 1px solid transparent;
-      transition: all 0.2s ease;
-      white-space: nowrap;
-    }
-
-    .btn-accent {
-      background: var(--accent);
+    .sidebar-btn:hover {
+      background: rgba(255, 255, 255, 0.12);
       color: #ffffff;
     }
 
-    .btn-accent:hover {
-      background: var(--accent-hover);
-    }
-
-    .btn-secondary {
-      background: var(--active-bg);
-      color: var(--text-primary);
-      border-color: var(--border-color);
-    }
-
-    .btn-secondary:hover {
-      background: var(--border-color);
-    }
-
-    .btn-danger-text {
-      background: transparent;
-      color: var(--accent);
-    }
-
-    .btn-danger-text:hover {
-      background: var(--accent-light);
-    }
-
-    .btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    /* ── Empty State ── */
-    .empty-state {
+    /* ════════════════════════════════════════════════════════════
+       COLUMN 2: Bear Middle Notes List
+    ════════════════════════════════════════════════════════════ */
+    .note-list-pane {
+      width: 320px;
+      background: var(--bg-list);
+      border-right: 1px solid var(--border-list);
       display: flex;
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 60px 20px;
-      text-align: center;
-      color: var(--text-secondary);
-      gap: 16px;
+      height: 100%;
+      flex-shrink: 0;
+      overflow: hidden;
+      user-select: none;
     }
 
-    .empty-icon {
-      font-size: 56px;
+    .list-header {
+      height: 52px;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-list);
+      background: var(--bg-list);
+      flex-shrink: 0;
+    }
+
+    .list-title-dropdown {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 6px;
+      transition: background 0.15s;
+    }
+
+    .list-title-dropdown:hover {
+      background: var(--bg-card-selected);
+    }
+
+    .list-title-dropdown i {
+      font-size: 13px;
       color: var(--text-muted);
     }
 
-    .empty-state h3 {
-      font-size: 18px;
+    .list-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .header-icon-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      width: 32px;
+      height: 32px;
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.15s ease;
+    }
+
+    .header-icon-btn:hover {
+      background: var(--bg-card-selected);
+      color: var(--text-primary);
+    }
+
+    .header-icon-btn.active {
+      color: var(--bear-red);
+      background: var(--bear-red-light);
+    }
+
+    /* Collapsible Search Input */
+    .list-search-wrapper {
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border-list);
+      background: var(--bg-list);
+      display: flex;
+      align-items: center;
+      position: relative;
+    }
+
+    .list-search-input {
+      width: 100%;
+      background: var(--input-bg);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 7px 28px 7px 30px;
+      border-radius: 8px;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      transition: all 0.2s ease;
+    }
+
+    .list-search-input:focus {
+      outline: none;
+      border-color: var(--bear-red);
+      background: var(--bg-card);
+      box-shadow: 0 0 0 2px var(--bear-red-light);
+    }
+
+    .list-search-icon {
+      position: absolute;
+      left: 22px;
+      color: var(--text-muted);
+      font-size: 14px;
+      pointer-events: none;
+    }
+
+    .list-search-clear {
+      position: absolute;
+      right: 22px;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 13px;
+      cursor: pointer;
+      padding: 2px;
+    }
+
+    .list-search-clear:hover {
+      color: var(--text-primary);
+    }
+
+    /* Notes Scroll Container */
+    .notes-scroll-area {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Note Card in Bear style */
+    .note-card {
+      padding: 14px 18px 14px 20px;
+      border-bottom: 1px solid var(--border-list);
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+      position: relative;
+      background: var(--bg-card);
+      display: flex;
+      gap: 12px;
+    }
+
+    .note-card:hover {
+      background: var(--bg-card-hover);
+    }
+
+    .note-card.selected {
+      background: var(--bg-card-selected);
+    }
+
+    /* Bear's signature red left indicator line */
+    .note-card.selected::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 4px;
+      background-color: var(--bear-red);
+      border-top-right-radius: 2px;
+      border-bottom-right-radius: 2px;
+    }
+
+    .note-card-main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .note-card-title-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .note-card-title {
+      font-size: 14.5px;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.3;
+    }
+
+    .note-card-pin {
+      color: var(--bear-red);
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+
+    .note-card-preview {
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      line-height: 1.45;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      word-break: break-word;
+    }
+
+    /* Bear tag pill inside preview */
+    .bear-tag-pill {
+      color: var(--tag-text);
+      background: var(--tag-bg);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      display: inline-block;
+      margin: 0 1px;
+    }
+
+    .note-card-footer {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 4px;
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+
+    .note-card-date {
+      font-family: var(--font-sans);
+    }
+
+    /* Inline image thumbnail in note card */
+    .note-card-thumb {
+      width: 60px;
+      height: 48px;
+      border-radius: 6px;
+      overflow: hidden;
+      flex-shrink: 0;
+      align-self: flex-start;
+      margin-top: 2px;
+      background: var(--input-bg);
+      border: 1px solid var(--border-color);
+    }
+
+    .note-card-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* List Empty State */
+    .list-empty-state {
+      padding: 48px 24px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      color: var(--text-muted);
+    }
+
+    .list-empty-icon {
+      font-size: 40px;
+      color: var(--text-muted);
+      opacity: 0.6;
+    }
+
+    .list-empty-state h4 {
+      font-size: 15px;
       font-weight: 600;
       color: var(--text-primary);
     }
 
-    .empty-state p {
-      font-size: 14px;
+    .list-empty-state p {
+      font-size: 13px;
       color: var(--text-secondary);
-      max-width: 320px;
-      margin: 0 auto;
+      line-height: 1.4;
+      max-width: 220px;
     }
 
-    /* ── Overlay Backdrops ── */
-    .sidebar-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.4);
-      backdrop-filter: blur(4px);
-      z-index: 90;
-      transition: opacity 0.3s ease;
+    .empty-action-btn {
+      margin-top: 6px;
+      background: var(--bear-red);
+      color: #ffffff;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
     }
 
-    /* ── Login screen ── */
+    .empty-action-btn:hover {
+      background: var(--bear-red-hover);
+    }
+
+    .empty-demo-btn {
+      background: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+      padding: 7px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .empty-demo-btn:hover {
+      color: var(--text-primary);
+      border-color: var(--text-muted);
+    }
+
+    /* ════════════════════════════════════════════════════════════
+       COLUMN 3: Bear Editor Canvas
+    ════════════════════════════════════════════════════════════ */
+    .editor-pane {
+      flex: 1;
+      background: var(--bg-editor);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .editor-pane.empty-selection {
+      align-items: center;
+      justify-content: center;
+    }
+
+    .editor-placeholder-view {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      color: var(--text-muted);
+      text-align: center;
+      padding: 32px;
+    }
+
+    .editor-placeholder-icon {
+      font-size: 64px;
+      color: var(--bear-red);
+      opacity: 0.25;
+    }
+
+    /* Editor Top Action Bar */
+    .editor-header {
+      height: 52px;
+      padding: 0 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-color);
+      flex-shrink: 0;
+    }
+
+    .editor-header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .editor-header-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      position: relative;
+    }
+
+    .editor-tool-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      width: 34px;
+      height: 34px;
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.15s ease;
+      position: relative;
+    }
+
+    .editor-tool-btn:hover {
+      background: var(--bg-card-selected);
+      color: var(--text-primary);
+    }
+
+    .editor-tool-btn.active {
+      color: var(--bear-red);
+      background: var(--bear-red-light);
+    }
+
+    .mode-label-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 6px;
+      background: var(--active-bg);
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+
+    /* Popover Menu (Info / Stats / More actions) */
+    .bear-popover {
+      position: absolute;
+      top: 42px;
+      right: 0;
+      width: 250px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      box-shadow: var(--shadow-toolbar);
+      padding: 12px;
+      z-index: 500;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .popover-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 8px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      border-radius: 6px;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      width: 100%;
+      text-align: left;
+    }
+
+    .popover-item:hover {
+      background: var(--bg-card-selected);
+      color: var(--text-primary);
+    }
+
+    .popover-item i {
+      font-size: 15px;
+      margin-right: 8px;
+    }
+
+    .popover-divider {
+      height: 1px;
+      background: var(--border-color);
+      margin: 4px 0;
+    }
+
+    .popover-stat-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 8px;
+      font-size: 12.5px;
+      color: var(--text-secondary);
+    }
+
+    .popover-stat-value {
+      font-weight: 600;
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+    }
+
+    /* Editor Document Canvas (Centered Bear writing column) */
+    .editor-scroll-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 36px 24px 100px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .editor-canvas {
+      width: 100%;
+      max-width: 720px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Large H1 Title */
+    .note-title-input {
+      font-family: var(--font-heading);
+      font-size: 30px;
+      font-weight: 700;
+      color: var(--text-primary);
+      border: none;
+      background: transparent;
+      outline: none;
+      width: 100%;
+      line-height: 1.25;
+      padding: 0;
+      letter-spacing: -0.02em;
+    }
+
+    .note-title-input::placeholder {
+      color: var(--text-muted);
+      opacity: 0.5;
+    }
+
+    /* Markdown Editor Textarea */
+    .markdown-textarea {
+      width: 100%;
+      min-height: calc(100vh - 280px);
+      border: none;
+      background: transparent;
+      outline: none;
+      resize: none;
+      font-family: var(--font-mono);
+      font-size: 14.5px;
+      line-height: 1.65;
+      color: var(--text-primary);
+      padding: 0;
+    }
+
+    /* Markdown Rendered View (Bear Style) */
+    .markdown-rendered-view {
+      font-family: var(--font-sans);
+      font-size: 15.5px;
+      line-height: 1.7;
+      color: var(--text-primary);
+      word-break: break-word;
+    }
+
+    .markdown-rendered-view h1,
+    .markdown-rendered-view h2,
+    .markdown-rendered-view h3,
+    .markdown-rendered-view h4 {
+      font-family: var(--font-heading);
+      color: var(--text-primary);
+      font-weight: 700;
+      margin-top: 1.5em;
+      margin-bottom: 0.5em;
+      line-height: 1.3;
+    }
+
+    .markdown-rendered-view h1 {
+      font-size: 24px;
+    }
+
+    .markdown-rendered-view h2 {
+      font-size: 20px;
+    }
+
+    .markdown-rendered-view h3 {
+      font-size: 17px;
+    }
+
+    .markdown-rendered-view p {
+      margin-bottom: 1.1em;
+    }
+
+    .markdown-rendered-view a {
+      color: var(--bear-red);
+      text-decoration: none;
+      font-weight: 500;
+      border-bottom: 1px dotted var(--bear-red);
+      transition: color 0.15s;
+    }
+
+    .markdown-rendered-view a:hover {
+      color: var(--bear-red-hover);
+      border-bottom-style: solid;
+    }
+
+    .markdown-rendered-view strong {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .markdown-rendered-view em {
+      font-style: italic;
+    }
+
+    .markdown-rendered-view blockquote {
+      border-left: 3px solid var(--bear-red);
+      padding: 4px 0 4px 16px;
+      margin: 1.2em 0;
+      color: var(--text-secondary);
+      font-style: italic;
+    }
+
+    .markdown-rendered-view ul,
+    .markdown-rendered-view ol {
+      margin: 0.8em 0 1.2em 1.6em;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    /* Task list items & Interactive checkboxes */
+    .markdown-rendered-view li.task-list-item {
+      list-style-type: none;
+      margin-left: -1.2em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .bear-checkbox {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 17px;
+      height: 17px;
+      border: 1.5px solid #a0a6b2;
+      border-radius: 4px;
+      background: transparent;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      vertical-align: middle;
+      transition: all 0.15s ease;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .bear-checkbox:hover {
+      border-color: var(--bear-red);
+    }
+
+    .bear-checkbox:checked {
+      background-color: var(--bear-red);
+      border-color: var(--bear-red);
+    }
+
+    .bear-checkbox:checked::after {
+      content: '';
+      width: 4px;
+      height: 8px;
+      border: solid #ffffff;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+      margin-bottom: 2px;
+    }
+
+    .markdown-rendered-view hr {
+      border: none;
+      border-top: 1px solid var(--border-color);
+      margin: 2em 0;
+    }
+
+    .markdown-rendered-view code {
+      font-family: var(--font-mono);
+      font-size: 13.5px;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 5px;
+      color: var(--text-primary);
+    }
+
+    .markdown-rendered-view pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 1.2em 0;
+    }
+
+    .markdown-rendered-view pre code {
+      background: transparent;
+      padding: 0;
+      border-radius: 0;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    /* Bear Markdown Tables */
+    .markdown-rendered-view table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      margin: 1.4em 0;
+      border: 1px solid var(--table-border);
+      border-radius: 8px;
+      overflow: hidden;
+      font-size: 14px;
+    }
+
+    .markdown-rendered-view th,
+    .markdown-rendered-view td {
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--table-border);
+      border-right: 1px solid var(--table-border);
+    }
+
+    .markdown-rendered-view th:last-child,
+    .markdown-rendered-view td:last-child {
+      border-right: none;
+    }
+
+    .markdown-rendered-view tr:last-child td {
+      border-bottom: none;
+    }
+
+    .markdown-rendered-view th {
+      background: var(--table-header-bg);
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .markdown-rendered-view tr:hover td {
+      background: var(--active-bg);
+    }
+
+    .markdown-rendered-view img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 10px;
+      margin: 1em 0;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+      display: block;
+    }
+
+    .markdown-rendered-view mark {
+      background-color: rgba(255, 230, 0, 0.35);
+      color: inherit;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+
+    /* ════════════════════════════════════════════════════════════
+       FLOATING BEAR 2 MARKDOWN TOOLBAR
+    ════════════════════════════════════════════════════════════ */
+    .floating-bear-bar {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg-toolbar);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border-toolbar);
+      border-radius: 9999px;
+      box-shadow: var(--shadow-toolbar);
+      padding: 6px 12px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      z-index: 200;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    .bar-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      height: 32px;
+      min-width: 32px;
+      padding: 0 8px;
+      border-radius: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      cursor: pointer;
+      font-size: 13.5px;
+      font-weight: 500;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .bar-btn:hover {
+      background: var(--bg-card-selected);
+      color: var(--text-primary);
+    }
+
+    .bar-divider {
+      width: 1px;
+      height: 18px;
+      background: var(--border-color);
+      margin: 0 2px;
+    }
+
+    /* ════════════════════════════════════════════════════════════
+       LOCK / DECRYPTION SCREEN (Bear Vault Style)
+    ════════════════════════════════════════════════════════════ */
     .login-screen-wrapper {
       position: fixed;
       inset: 0;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: var(--bg-app);
-      padding: 20px;
-      z-index: 1000;
-      overflow-y: auto;
+      background: var(--bg-sidebar);
+      padding: 24px;
+      z-index: 10000;
     }
 
     .login-card {
       background: var(--bg-card);
       border: 1px solid var(--border-color);
-      border-radius: 28px;
+      border-radius: 24px;
       width: 100%;
-      max-width: 400px;
-      padding: 40px;
-      box-shadow: var(--shadow-lg);
+      max-width: 410px;
+      padding: 44px 36px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
       text-align: center;
       display: flex;
       flex-direction: column;
-      gap: 24px;
+      gap: 22px;
       position: relative;
-      overflow: hidden;
     }
 
-    .login-card::before {
-      content: '';
-      position: absolute;
-      top: -60px;
-      left: -60px;
-      width: 120px;
-      height: 120px;
-      background: var(--accent);
-      filter: blur(80px);
-      opacity: 0.15;
-      pointer-events: none;
-    }
-
-    .login-logo {
-      width: 72px;
-      height: 72px;
+    .login-bear-logo {
+      width: 68px;
+      height: 68px;
       border-radius: 20px;
-      background: var(--accent-light);
-      color: var(--accent);
+      background: var(--bear-red);
+      color: #ffffff;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 32px;
       margin: 0 auto;
-      box-shadow: 0 8px 16px rgba(224, 30, 55, 0.1);
+      box-shadow: 0 8px 24px var(--bear-red-glow);
     }
 
     .login-title-group h1 {
-      font-size: 24px;
+      font-family: var(--font-heading);
+      font-size: 26px;
       font-weight: 700;
       color: var(--text-primary);
-      margin-bottom: 8px;
-      letter-spacing: -0.5px;
+      margin-bottom: 6px;
+      letter-spacing: -0.02em;
     }
 
     .login-title-group p {
-      font-size: 13px;
+      font-size: 13.5px;
       color: var(--text-secondary);
       line-height: 1.5;
     }
@@ -943,7 +1247,7 @@
     .login-form {
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 14px;
     }
 
     .input-wrapper {
@@ -965,7 +1269,7 @@
       border: 1px solid var(--border-color);
       color: var(--text-primary);
       padding: 12px 16px 12px 42px;
-      border-radius: 10px;
+      border-radius: 12px;
       font-family: var(--font-sans);
       font-size: 14px;
       transition: all 0.2s ease;
@@ -973,47 +1277,43 @@
 
     .login-input:focus {
       outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px var(--accent-light);
+      border-color: var(--bear-red);
+      box-shadow: 0 0 0 3px var(--bear-red-light);
       background: var(--bg-card);
     }
 
     .login-btn {
       width: 100%;
-      background: var(--accent);
+      background: var(--bear-red);
       color: #ffffff;
       border: none;
-      padding: 14px;
-      border-radius: 10px;
+      padding: 13px;
+      border-radius: 12px;
       font-family: var(--font-sans);
       font-weight: 600;
-      font-size: 15px;
+      font-size: 14.5px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
-      transition: background-color 0.2s, transform 0.2s;
+      transition: background-color 0.2s, transform 0.15s;
     }
 
     .login-btn:hover {
-      background: var(--accent-hover);
+      background: var(--bear-red-hover);
       transform: translateY(-1px);
     }
 
-    .login-btn:active {
-      transform: translateY(0);
-    }
-
     .login-footer-desc {
-      font-size: 11px;
+      font-size: 11.5px;
       color: var(--text-muted);
       line-height: 1.5;
       border-top: 1px dashed var(--border-color);
-      padding-top: 16px;
+      padding-top: 14px;
     }
 
-    /* ── Toast Notification ── */
+    /* Toast Notification */
     .toast {
       position: fixed;
       bottom: 24px;
@@ -1021,19 +1321,18 @@
       background: var(--bg-card);
       color: var(--text-primary);
       border: 1px solid var(--border-color);
-      padding: 12px 20px;
+      padding: 11px 18px;
       border-radius: 10px;
-      font-family: var(--font-sans);
-      font-size: 14px;
+      font-size: 13.5px;
       font-weight: 500;
-      box-shadow: var(--shadow-lg);
+      box-shadow: var(--shadow-toolbar);
       display: flex;
       align-items: center;
       gap: 10px;
       z-index: 10000;
       opacity: 0;
-      transform: translateY(20px);
-      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      transform: translateY(16px);
+      transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
       pointer-events: none;
     }
 
@@ -1042,119 +1341,57 @@
       transform: translateY(0);
     }
 
-    /* Animations */
-    @keyframes spin {
-      from {
-        transform: rotate(0deg);
-      }
-
-      to {
-        transform: rotate(360deg);
-      }
-    }
-
     .animate-spin {
       animation: spin 1s linear infinite;
-      display: inline-block;
     }
 
-    /* ── Responsive breakpoints ── */
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    /* ════════════════════════════════════════════════════════════
+       RESPONSIVE ADAPTATIONS
+    ════════════════════════════════════════════════════════════ */
     @media (max-width: 1024px) {
-      .editor-pane {
-        position: absolute;
-        top: 0;
-        right: 0;
-        width: 100%;
-        max-width: 480px;
-        z-index: 200;
-        box-shadow: -10px 0 30px rgba(0, 0, 0, 0.15);
-      }
-
-      .editor-pane.closed {
-        width: 100%;
-        max-width: 480px;
-        transform: translateX(100%);
-        box-shadow: none;
-      }
-
-      .editor-content-wrapper {
-        width: 100%;
+      .note-list-pane {
+        width: 280px;
       }
     }
 
     @media (max-width: 768px) {
-      .form-group-row {
-        flex-direction: column;
-        gap: 16px;
-      }
-
       .sidebar {
         position: absolute;
         top: 0;
         left: 0;
-        height: 100%;
+        bottom: 0;
         transform: translateX(-100%);
       }
 
       .sidebar.open {
         transform: translateX(0);
-        box-shadow: 10px 0 30px rgba(0, 0, 0, 0.15);
-      }
-
-      .sidebar-toggle {
-        display: block;
+        box-shadow: 10px 0 30px rgba(0, 0, 0, 0.25);
       }
 
       .hamburger-close {
         display: block;
       }
 
+      .note-list-pane {
+        width: 100%;
+      }
+
+      .note-list-pane.mobile-hidden {
+        display: none;
+      }
+
       .editor-pane {
-        max-width: 100%;
+        display: none;
       }
 
-      .editor-pane.closed {
-        max-width: 100%;
-      }
-
-      /* Stacked Header Layout on Mobile */
-      .list-header {
-        height: auto;
-        padding: 12px;
-        flex-direction: column;
-        gap: 12px;
-        align-items: stretch;
-      }
-      .list-header-left {
-        width: 100%;
-        justify-content: space-between;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
-      .list-header-right {
-        width: 100%;
+      .editor-pane.mobile-active {
         display: flex;
-        justify-content: center;
-      }
-      .search-box {
-        max-width: 100%;
         width: 100%;
-        order: 10;
-      }
-
-      /* Adjust Editor textarea height for mobile keyboards */
-      .editor-textarea {
-        min-height: 200px;
-      }
-    }
-
-    @media (max-width: 480px) {
-      .notes-grid {
-        grid-template-columns: 1fr;
-        gap: 12px;
-      }
-      .list-content {
-        padding: 12px;
       }
     }
   </style>
@@ -1162,15 +1399,15 @@
 
 <body>
 
-  <!-- Decryption / Lock Screen -->
+  <!-- Decryption / Master Unlock Screen -->
   <div id="login-screen" class="login-screen-wrapper">
     <div class="login-card">
-      <div class="login-logo">
-        <i class="ti ti-shield-lock"></i>
+      <div class="login-bear-logo">
+        <i class="ti ti-paw"></i>
       </div>
       <div class="login-title-group">
         <h1>ZenVault</h1>
-        <p>Zero-Knowledge E2E Encrypted Private storage.<br>Enter credentials to decrypt your local notes.</p>
+        <p>Zero-Knowledge E2E Encrypted Notes<br>Enter your master credentials to unlock.</p>
       </div>
       <div class="login-form">
         <div class="input-wrapper">
@@ -1183,196 +1420,284 @@
             autocomplete="current-password">
         </div>
         <button id="login-btn" class="login-btn">
-          <i class="ti ti-lock-open"></i> Decrypt & Enter
+          <i class="ti ti-lock-open"></i> Unlock Vault
         </button>
       </div>
       <p class="login-footer-desc">
-        <i class="ti ti-info-circle"></i> Decryption keys are derived locally in your browser using Web Crypto APIs.
-        Master credentials never touch any server.
+        <i class="ti ti-shield-check"></i> AES-GCM 256 keys derived locally in your browser. Master credentials never leave your device.
       </p>
     </div>
   </div>
 
-  <!-- Dashboard App Layout -->
+  <!-- Main 3-Column Bear Dashboard -->
   <div id="dashboard" class="dashboard-wrapper hidden">
-    <!-- Sidebar Backdrop Overlay on Mobile -->
-    <div id="sidebar-overlay" class="sidebar-overlay hidden" onclick="toggleSidebar()"></div>
 
-    <!-- Sidebar Left Panel -->
-    <aside class="sidebar">
+    <!-- Mobile Backdrop -->
+    <div id="sidebar-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:95;"
+      onclick="toggleSidebar()"></div>
+
+    <!-- ════════════════════════════════════════════════════════════
+         COLUMN 1: Sidebar (Bear Dark Graphite)
+    ════════════════════════════════════════════════════════════ -->
+    <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
-        <div class="sidebar-logo">
-          <i class="ti ti-shield-lock"></i>
-          <span>ZenVault</span>
+        <!-- macOS window dots -->
+        <div class="mac-window-controls">
+          <span class="mac-dot mac-dot-close" onclick="logout()" title="Lock Vault"></span>
+          <span class="mac-dot mac-dot-minimize" onclick="toggleSidebar()" title="Collapse Sidebar"></span>
+          <span class="mac-dot mac-dot-zoom" onclick="createNewNote()" title="New Note"></span>
         </div>
+        <button class="sidebar-header-action" onclick="toggleTheme()" title="Switch Light/Dark Theme">
+          <i class="ti ti-adjustments-horizontal"></i>
+        </button>
         <button class="hamburger-close" onclick="toggleSidebar()" aria-label="Close menu">
           <i class="ti ti-x"></i>
         </button>
       </div>
 
-      <!-- Sync Status Indicator -->
-      <div class="sync-status">
-        <span class="status-indicator-dot" id="status-ping"></span>
-        <span id="status-footer-text">Connecting P2P...</span>
-      </div>
-
-      <!-- Create New Note FAB -->
-      <button class="new-note-btn" onclick="createNewNote()">
-        <i class="ti ti-plus"></i> New Note
-      </button>
-
-      <!-- Sidebar Navigation / Folders -->
+      <!-- Navigation & Filters -->
       <nav class="sidebar-nav">
-        <div class="nav-section-title">Navigation</div>
-        <a href="#" class="nav-item active" id="nav-all" onclick="setCategoryFilter('all')">
-          <i class="ti ti-notes"></i>
-          <span class="nav-text">All Notes</span>
+        <div class="nav-section-title">
+          <span>Notes</span>
+        </div>
+
+        <a class="nav-item active" id="filter-all" onclick="setFilter('all')">
+          <span class="nav-icon"><i class="ti ti-notes"></i></span>
+          <span class="nav-text">Notes</span>
           <span class="nav-count" id="count-all">0</span>
         </a>
 
-        <div class="nav-section-title">Categories</div>
-        <div id="sidebar-categories" class="categories-list">
-          <!-- Dynamically populated categories -->
+        <a class="nav-item" id="filter-untagged" onclick="setFilter('untagged')">
+          <span class="nav-icon"><i class="ti ti-tag-off"></i></span>
+          <span class="nav-text">Untagged</span>
+          <span class="nav-count" id="count-untagged">0</span>
+        </a>
+
+        <a class="nav-item" id="filter-todo" onclick="setFilter('todo')">
+          <span class="nav-icon"><i class="ti ti-checkbox"></i></span>
+          <span class="nav-text">Todo</span>
+          <span class="nav-count" id="count-todo">0</span>
+        </a>
+
+        <a class="nav-item" id="filter-today" onclick="setFilter('today')">
+          <span class="nav-icon"><i class="ti ti-calendar-event"></i></span>
+          <span class="nav-text">Today</span>
+          <span class="nav-count" id="count-today">0</span>
+        </a>
+
+        <a class="nav-item" id="filter-pinned" onclick="setFilter('pinned')">
+          <span class="nav-icon"><i class="ti ti-pin"></i></span>
+          <span class="nav-text">Pinned</span>
+          <span class="nav-count" id="count-pinned">0</span>
+        </a>
+
+        <a class="nav-item" id="filter-trash" onclick="setFilter('trash')">
+          <span class="nav-icon"><i class="ti ti-trash"></i></span>
+          <span class="nav-text">Trash</span>
+          <span class="nav-count" id="count-trash">0</span>
+        </a>
+
+        <!-- Tags Hierarchy Section -->
+        <div class="nav-section-title">
+          <span>Tags</span>
+          <span class="section-action" onclick="promptNewTag()" title="New Tag"><i class="ti ti-plus"></i></span>
+        </div>
+        <div id="sidebar-tags-list">
+          <!-- Dynamically populated tags with Bear icons -->
         </div>
       </nav>
 
       <!-- Sidebar Footer -->
       <div class="sidebar-footer">
-        <button class="sidebar-action-btn" onclick="toggleTheme()" title="Toggle Light/Dark Theme">
-          <i class="ti ti-sun" id="theme-icon"></i>
-          <span>Theme</span>
-        </button>
-        <button class="sidebar-action-btn" onclick="logout()" title="Lock Vault">
-          <i class="ti ti-lock"></i>
-          <span>Lock</span>
-        </button>
+        <div class="sync-status-badge">
+          <span class="status-dot" id="status-ping"></span>
+          <span id="status-footer-text">Connecting P2P...</span>
+        </div>
+        <div class="sidebar-actions-row">
+          <button class="sidebar-btn" onclick="toggleTheme()" title="Switch Light/Dark Theme">
+            <i class="ti ti-sun-moon"></i>
+            <span id="theme-btn-label">Theme</span>
+          </button>
+          <button class="sidebar-btn" onclick="logout()" title="Lock Vault">
+            <i class="ti ti-lock"></i>
+            <span>Lock</span>
+          </button>
+        </div>
       </div>
     </aside>
 
-    <!-- Middle Panel: Notes Grid/List -->
-    <main class="note-list-pane">
+    <!-- ════════════════════════════════════════════════════════════
+         COLUMN 2: Bear Notes List
+    ════════════════════════════════════════════════════════════ -->
+    <main class="note-list-pane" id="note-list-pane">
       <header class="list-header">
-        <div class="list-header-left">
-          <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Open menu">
-            <i class="ti ti-menu-2"></i>
-          </button>
-          <div class="search-box">
-            <i class="ti ti-search search-icon"></i>
-            <input type="text" id="search-input" placeholder="Search title, content, tags..."
-              oninput="handleSearch(this.value)">
-          </div>
+        <div class="list-title-dropdown" id="list-title-display" onclick="toggleSearchInput()">
+          <span id="active-filter-title">Notes</span>
+          <i class="ti ti-chevron-down"></i>
         </div>
-        <div class="list-header-right">
-          <button class="view-toggle-btn active" id="grid-view-btn" onclick="setViewMode('grid')" title="Grid View">
-            <i class="ti ti-layout-grid"></i>
+        <div class="list-header-actions">
+          <button class="header-icon-btn" onclick="createNewNote()" title="Compose New Note (Ctrl+N)">
+            <i class="ti ti-edit"></i>
           </button>
-          <button class="view-toggle-btn" id="list-view-btn" onclick="setViewMode('list')" title="List View">
-            <i class="ti ti-layout-list"></i>
+          <button class="header-icon-btn" id="search-toggle-btn" onclick="toggleSearchInput()" title="Search (Ctrl+F)">
+            <i class="ti ti-search"></i>
           </button>
         </div>
       </header>
 
-      <div class="list-content">
-        <div class="active-filter-bar">
-          <span id="active-filter-label">All Notes</span>
-        </div>
+      <!-- Search Bar -->
+      <div class="list-search-wrapper" id="list-search-wrapper">
+        <i class="ti ti-search list-search-icon"></i>
+        <input type="text" id="search-input" class="list-search-input" placeholder="Search notes, #tags..."
+          oninput="handleSearch(this.value)">
+        <button class="list-search-clear hidden" id="search-clear-btn" onclick="clearSearch()">
+          <i class="ti ti-x"></i>
+        </button>
+      </div>
 
-        <!-- Notes Grid container -->
-        <div id="notes-container" class="notes-grid">
-          <!-- Dynamically rendered cards -->
-        </div>
+      <!-- Notes List -->
+      <div class="notes-scroll-area" id="notes-container">
+        <!-- Rendered Note Cards -->
+      </div>
 
-        <!-- Empty state placeholder -->
-        <div id="empty-state" class="empty-state hidden">
-          <i class="ti ti-notes-off empty-icon"></i>
-          <h3>No Notes Found</h3>
-          <p>Create your first secure encrypted note to get started.</p>
-          <button class="btn btn-accent" style="margin-top: 8px;" onclick="createNewNote()">+ Add Note</button>
-        </div>
+      <!-- Empty State -->
+      <div id="list-empty-state" class="list-empty-state hidden">
+        <i class="ti ti-notebook list-empty-icon"></i>
+        <h4>No Notes Found</h4>
+        <p>No notes in this view. Write a new note or load Bear sample notes.</p>
+        <button class="empty-action-btn" onclick="createNewNote()">
+          <i class="ti ti-plus"></i> New Note
+        </button>
+        <button class="empty-demo-btn" onclick="loadBearDemoNotes()">
+          <i class="ti ti-sparkles"></i> Load Bear Demo Notes
+        </button>
       </div>
     </main>
 
-    <!-- Right Panel: Note Editor / Viewer -->
-    <section class="editor-pane closed" id="editor-pane">
-      <!-- Unselected Note state -->
-      <div id="editor-placeholder" class="editor-placeholder-state">
-        <i class="ti ti-file-shield placeholder-icon"></i>
-        <p>Select a note from the list to view or edit, or create a new one.</p>
+    <!-- ════════════════════════════════════════════════════════════
+         COLUMN 3: Bear Editor Canvas
+    ════════════════════════════════════════════════════════════ -->
+    <section class="editor-pane" id="editor-pane">
+      <!-- Unselected Note Placeholder -->
+      <div id="editor-placeholder" class="editor-placeholder-view">
+        <i class="ti ti-paw editor-placeholder-icon"></i>
+        <h3>ZenVault</h3>
+        <p style="color:var(--text-secondary);max-width:280px;font-size:14px;">Select a note from the list, or create a new encrypted note.</p>
+        <button class="empty-action-btn" onclick="createNewNote()">
+          <i class="ti ti-plus"></i> New Note
+        </button>
       </div>
 
-      <!-- Active Note view/edit state -->
-      <div id="editor-content" class="editor-content-wrapper hidden">
-
-        <!-- Viewer Mode -->
-        <div id="note-viewer" class="note-viewer-mode">
-          <div class="editor-toolbar">
-            <button class="icon-btn close-btn" onclick="closeEditor()" title="Close Panel">
-              <i class="ti ti-arrow-left"></i>
+      <!-- Active Note Content Wrapper -->
+      <div id="editor-content-wrapper" class="hidden" style="display:flex;flex-direction:column;height:100%;width:100%;position:relative;">
+        <!-- Top Toolbar -->
+        <header class="editor-header">
+          <div class="editor-header-left">
+            <button class="editor-tool-btn" id="mobile-back-btn" onclick="mobileBackToList()" title="Back to Notes" style="display:none;">
+              <i class="ti ti-chevron-left"></i>
             </button>
-            <div class="toolbar-actions">
-              <button class="btn btn-secondary" onclick="enterEditMode()">
-                <i class="ti ti-edit"></i> Edit
+            <span class="mode-label-badge" id="mode-badge" onclick="toggleEditViewMode()">Preview Mode</span>
+          </div>
+
+          <div class="editor-header-right">
+            <!-- Format / Mode Toggle (B I U icon) -->
+            <button class="editor-tool-btn" id="preview-mode-toggle" onclick="toggleEditViewMode()" title="Toggle Markdown / Preview (Ctrl+E)">
+              <span style="font-weight:700;font-size:14px;letter-spacing:-0.5px;">B<span style="font-style:italic;">I</span><span style="text-decoration:underline;">U</span></span>
+            </button>
+
+            <!-- Info button (i) -->
+            <button class="editor-tool-btn" id="info-btn" onclick="toggleInfoPopover(event)" title="Note Information">
+              <i class="ti ti-info-circle"></i>
+            </button>
+
+            <!-- More Actions (...) -->
+            <button class="editor-tool-btn" id="more-menu-btn" onclick="toggleMoreMenu(event)" title="More Actions">
+              <i class="ti ti-dots-vertical"></i>
+            </button>
+
+            <!-- Info Popover -->
+            <div id="info-popover" class="bear-popover hidden" onclick="event.stopPropagation()">
+              <div class="popover-stat-row"><span>Words</span><span id="stat-words" class="popover-stat-value">0</span></div>
+              <div class="popover-stat-row"><span>Characters</span><span id="stat-chars" class="popover-stat-value">0</span></div>
+              <div class="popover-stat-row"><span>Paragraphs</span><span id="stat-paragraphs" class="popover-stat-value">0</span></div>
+              <div class="popover-stat-row"><span>Read Time</span><span id="stat-readtime" class="popover-stat-value">0 min</span></div>
+              <div class="popover-divider"></div>
+              <div class="popover-stat-row"><span>Modified</span><span id="stat-modified" style="font-size:11px;color:var(--text-muted);">Just now</span></div>
+            </div>
+
+            <!-- More Menu Popover -->
+            <div id="more-menu-popover" class="bear-popover hidden" onclick="event.stopPropagation()">
+              <button class="popover-item" onclick="togglePinActiveNote()">
+                <span><i class="ti ti-pin"></i> <span id="menu-pin-label">Pin Note</span></span>
               </button>
-              <button class="btn btn-danger-text" onclick="deleteActiveNote()">
-                <i class="ti ti-trash"></i> Delete
+              <button class="popover-item" onclick="copyNoteMarkdown()">
+                <span><i class="ti ti-copy"></i> Copy Markdown</span>
+              </button>
+              <button class="popover-item" onclick="exportNoteAsMarkdown()">
+                <span><i class="ti ti-download"></i> Export .md File</span>
+              </button>
+              <div class="popover-divider"></div>
+              <button class="popover-item" onclick="deleteActiveNote()" style="color:var(--bear-red);">
+                <span><i class="ti ti-trash"></i> Delete Note</span>
               </button>
             </div>
           </div>
-          <div class="viewer-body">
-            <div class="viewer-meta">
-              <span class="category-pill" id="view-note-cat">Private</span>
-              <span class="note-date" id="view-note-date">July 1, 2026</span>
+        </header>
+
+        <!-- Document Canvas -->
+        <div class="editor-scroll-container">
+          <div class="editor-canvas">
+            <!-- Large Editable Title -->
+            <input type="text" id="editor-title" class="note-title-input" placeholder="Untitled Note"
+              oninput="handleTitleInput(this.value)">
+
+            <!-- View Mode (Bear Rich Markdown Render) -->
+            <div id="markdown-rendered-view" class="markdown-rendered-view" ondblclick="enterEditMode()">
+              <!-- Formatted Markdown Output -->
             </div>
-            <h2 id="view-note-title" class="note-view-title">My secret note</h2>
-            <div id="view-note-body" class="note-view-body">
-              <!-- Full Note Content -->
-            </div>
+
+            <!-- Edit Mode (Raw Markdown Textarea) -->
+            <textarea id="editor-textarea" class="markdown-textarea hidden"
+              placeholder="Write your private note here with markdown: #headings, **bold**, - [ ] todos, #tags..."
+              oninput="handleBodyInput(this.value)"></textarea>
           </div>
         </div>
 
-        <!-- Editor Mode -->
-        <div id="note-editor" class="note-editor-mode hidden">
-          <div class="editor-toolbar">
-            <button class="icon-btn close-btn" onclick="cancelEditorEdit()" title="Cancel">
-              <i class="ti ti-x"></i> Cancel
-            </button>
-            <div class="toolbar-actions">
-              <button class="btn btn-accent" onclick="saveActiveNote()">
-                <i class="ti ti-device-floppy"></i> Save
-              </button>
-            </div>
-          </div>
-          <form class="editor-form" onsubmit="event.preventDefault();">
-            <input type="text" id="editor-note-title" placeholder="Secret Title" class="editor-input-title" required>
-            <input type="text" id="editor-note-cat" placeholder="Tag / Category" class="editor-input-cat">
-            <textarea id="editor-note-body" placeholder="Write your private encrypted note here..."
-              class="editor-textarea" required></textarea>
-          </form>
+        <!-- Floating Bear 2 Markdown Toolbar (Docked at bottom center) -->
+        <div class="floating-bear-bar" id="floating-bear-bar">
+          <button class="bar-btn" onclick="formatToolbarAction('h1')" title="Heading 1">H1</button>
+          <button class="bar-btn" onclick="formatToolbarAction('h2')" title="Heading 2">H2</button>
+          <button class="bar-btn" onclick="formatToolbarAction('todo')" title="Todo Task"><i class="ti ti-checkbox"></i></button>
+          <button class="bar-btn" onclick="formatToolbarAction('list')" title="Bullet List"><i class="ti ti-list"></i></button>
+          <div class="bar-divider"></div>
+          <button class="bar-btn" onclick="formatToolbarAction('bold')" title="Bold (Ctrl+B)"><b>B</b></button>
+          <button class="bar-btn" onclick="formatToolbarAction('italic')" title="Italic (Ctrl+I)"><i>I</i></button>
+          <button class="bar-btn" onclick="formatToolbarAction('highlight')" title="Highlighter"><i class="ti ti-highlight"></i></button>
+          <button class="bar-btn" onclick="formatToolbarAction('link')" title="Insert Link (Ctrl+K)"><i class="ti ti-link"></i></button>
+          <button class="bar-btn" onclick="formatToolbarAction('table')" title="Insert Table"><i class="ti ti-table"></i></button>
+          <button class="bar-btn" onclick="formatToolbarAction('image')" title="Insert Image"><i class="ti ti-photo"></i></button>
+          <button class="bar-btn" onclick="formatToolbarAction('code')" title="Code Block"><i class="ti ti-code"></i></button>
         </div>
-
       </div>
     </section>
+
   </div>
 
   <!-- Theme Script -->
   <script>
-    let currentTheme = localStorage.getItem('theme') || 'light';
+    let currentTheme = localStorage.getItem('zenvault_theme') || 'light';
 
     function applyTheme() {
       document.documentElement.setAttribute('data-theme', currentTheme);
-      const themeIcon = document.getElementById('theme-icon');
-      if (themeIcon) {
-        if (currentTheme === 'light') {
-          themeIcon.className = 'ti ti-sun';
-        } else {
-          themeIcon.className = 'ti ti-moon';
-        }
+      const label = document.getElementById('theme-btn-label');
+      if (label) {
+        label.textContent = currentTheme === 'light' ? 'Dark' : 'Light';
       }
     }
 
     function toggleTheme() {
-      currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
-      localStorage.setItem('theme', currentTheme);
+      currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+      localStorage.setItem('zenvault_theme', currentTheme);
       applyTheme();
     }
 
@@ -1388,14 +1713,15 @@
     let pair;
     let isAuthenticated = false;
 
-    // Local decrypted notes store
+    // Local decrypted notes storage
     const localNotes = {};
     let selectedNoteId = null;
-    let isEditing = false;
-    let viewMode = localStorage.getItem('zenvault_viewmode') || 'grid';
-    let activeCategory = 'all';
+    let isEditMode = false;
+    let currentFilter = 'all'; // 'all', 'untagged', 'todo', 'today', 'pinned', 'trash', or 'tag:tagname'
     let searchQuery = '';
+    let autoSaveTimeout = null;
 
+    // Relay list
     const relays = ["wss://delay.scobrudot.dev/zen", "wss://zen.akao.io:8420/zen", "wss://zen0.akao.io:8420/zen", "wss://zen1.akao.io:8420/zen"];
     localStorage.removeItem('zenPeers');
 
@@ -1403,10 +1729,48 @@
       peers: relays,
     });
 
-    // Handle authentication / unlock
+    // Tag emoji mapping (Like Bear in the user's screenshot)
+    const tagEmojiMap = {
+      'bear': '🐻',
+      'personal': '👤',
+      'family': '👥',
+      'health': '❤️',
+      'blog': '🪶',
+      'code': '💻',
+      'recipe': '🍳',
+      'food': '🍕',
+      'science': '🔬',
+      'study': '📚',
+      'travel': '✈️',
+      'work': '💼',
+      'idea': '💡',
+      'music': '🎵',
+      'crypto': '🪙',
+      'plants': '🪴',
+      'fitness': '🏃',
+      'books': '📖'
+    };
+
+    function getTagIcon(tagName) {
+      const lower = tagName.toLowerCase();
+      for (const [key, icon] of Object.entries(tagEmojiMap)) {
+        if (lower.includes(key)) return `<span class="tag-emoji">${icon}</span>`;
+      }
+      return '<i class="ti ti-hash nav-icon"></i>';
+    }
+
+    // Configure Marked
+    if (window.marked) {
+      window.marked.setOptions({
+        gfm: true,
+        breaks: true
+      });
+    }
+
+    // ── Authentication / Decrypt Master Vault ──
     async function login() {
-      const userInput = document.getElementById('user-input').value || sessionStorage.getItem('zen_user');
-      const passInput = document.getElementById('pass-input').value || sessionStorage.getItem('zen_pass');
+      const userInput = document.getElementById('user-input').value.trim() || sessionStorage.getItem('zen_user');
+      const passInput = document.getElementById('pass-input').value.trim() || sessionStorage.getItem('zen_pass');
       if (!userInput || !passInput) return;
 
       try {
@@ -1424,7 +1788,6 @@
         document.getElementById('login-screen').classList.add('hidden');
         document.getElementById('dashboard').classList.remove('hidden');
 
-        // Update E2EE ping indicator
         const ping = document.getElementById('status-ping');
         if (ping) {
           ping.style.backgroundColor = '#2ec4b6';
@@ -1435,26 +1798,26 @@
           statusText.textContent = 'Decrypted & Synced';
         }
 
-        applyTheme(); // Sync layout assets
+        applyTheme();
         loadNotes();
       } catch (e) {
         console.error("Login Error:", e);
         alert("Decryption failed: " + e.message);
         const btn = document.getElementById('login-btn');
         if (btn) {
-          btn.innerHTML = '<i class="ti ti-lock-open"></i> Decrypt & Enter';
+          btn.innerHTML = '<i class="ti ti-lock-open"></i> Unlock Vault';
           btn.disabled = false;
         }
       }
     }
 
-    // Load P2P Encrypted notes subscription
+    // ── Load P2P Encrypted Notes ──
     function loadNotes() {
       zen.get('~' + pair.pub).get('vault').map().on(async (note, id) => {
         if (!note) {
           delete localNotes[id];
           if (selectedNoteId === id) {
-            closeEditor();
+            selectedNoteId = null;
           }
           triggerRender();
           return;
@@ -1464,17 +1827,19 @@
         try {
           title = await ZEN.decrypt(note.title, pair);
           body = await ZEN.decrypt(note.body, pair);
-          cat = await ZEN.decrypt(note.cat, pair) || 'private';
+          cat = await ZEN.decrypt(note.cat, pair) || '';
         } catch (e) {
-          console.warn("Could not decrypt note node:", id);
+          console.warn("Could not decrypt note:", id);
           return;
         }
 
         localNotes[id] = {
           id,
-          title,
-          body,
-          cat,
+          title: title || '',
+          body: body || '',
+          cat: cat || '',
+          pinned: !!note.pinned,
+          trash: !!note.trash,
           timestamp: note.timestamp || Date.now()
         };
 
@@ -1482,90 +1847,176 @@
       });
     }
 
-    // Debounced UI updates to handle GunDB load bursts
-    let renderTimeout = null;
+    // Debounced render
+    let renderTimer = null;
     function triggerRender() {
-      if (renderTimeout) clearTimeout(renderTimeout);
-      renderTimeout = setTimeout(() => {
+      if (renderTimer) clearTimeout(renderTimer);
+      renderTimer = setTimeout(() => {
         renderApp();
-      }, 50);
+      }, 40);
     }
 
-    // Master render function
+    // Extract tags from body & cat
+    function extractTagsFromNote(note) {
+      const tags = new Set();
+      if (note.cat && note.cat !== 'all' && note.cat !== 'private') {
+        tags.add(note.cat.toLowerCase().trim());
+      }
+      if (note.body) {
+        const matches = note.body.matchAll(/(?:^|\s)#([a-zA-Z0-9_\u00C0-\u017F\/\-]+)/g);
+        for (const m of matches) {
+          tags.add(m[1].toLowerCase());
+        }
+      }
+      if (note.title) {
+        const matches = note.title.matchAll(/(?:^|\s)#([a-zA-Z0-9_\u00C0-\u017F\/\-]+)/g);
+        for (const m of matches) {
+          tags.add(m[1].toLowerCase());
+        }
+      }
+      return Array.from(tags);
+    }
+
+    // Extract thumbnail image from note markdown
+    function extractThumbnail(text) {
+      if (!text) return null;
+      const mdImg = text.match(/!\[.*?\]\((https?:\/\/[^\s\)]+)\)/i);
+      if (mdImg) return mdImg[1];
+      const directImg = text.match(/(https?:\/\/[^\s"'<>]+\.(?:png|jpg|jpeg|gif|webp|svg)(?:\?[^\s"'<>]*)?)/i);
+      if (directImg) return directImg[1];
+      return null;
+    }
+
+    // Format text snippet with highlighted tags
+    function renderSnippetWithTags(text, maxChars = 110) {
+      if (!text) return 'No additional text';
+      let clean = text.replace(/!\[.*?\]\(.*?\)/g, '');
+      clean = clean.replace(/\[(.*?)\]\(.*?\)/g, '$1');
+      clean = clean.replace(/#{1,6}\s+/g, '');
+      clean = clean.replace(/[*_~`]{1,3}/g, '');
+      clean = clean.replace(/\s+/g, ' ').trim();
+      if (clean.length > maxChars) {
+        clean = clean.substring(0, maxChars) + '...';
+      }
+      return escapeHtml(clean).replace(/(?:^|\s)(#[a-zA-Z0-9_\u00C0-\u017F\/\-]+)/g, (m, tag) => {
+        return ` <span class="bear-tag-pill">${tag}</span>`;
+      });
+    }
+
+    // ── Master Render Function ──
     function renderApp() {
-      const notesArray = Object.values(localNotes);
+      const allNotes = Object.values(localNotes);
+      const activeNotes = allNotes.filter(n => !n.trash);
+      const trashNotes = allNotes.filter(n => n.trash);
 
-      // Sort: Newest notes first
-      notesArray.sort((a, b) => b.timestamp - a.timestamp);
+      // Collect counts
+      const counts = {
+        all: activeNotes.length,
+        untagged: 0,
+        todo: 0,
+        today: 0,
+        pinned: 0,
+        trash: trashNotes.length
+      };
 
-      // Extract unique categories & update Sidebar Counts
-      const categories = {};
-      notesArray.forEach(n => {
-        categories[n.cat] = (categories[n.cat] || 0) + 1;
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+      const tagCounts = {};
+
+      activeNotes.forEach(note => {
+        const tags = extractTagsFromNote(note);
+        if (tags.length === 0) counts.untagged++;
+        if (/- \[( |x)\]/.test(note.body) && /- \[ \]/.test(note.body)) counts.todo++;
+        if (note.timestamp >= startOfToday) counts.today++;
+        if (note.pinned) counts.pinned++;
+
+        tags.forEach(t => {
+          tagCounts[t] = (tagCounts[t] || 0) + 1;
+        });
       });
 
-      // Update sidebar categories
-      const catContainer = document.getElementById('sidebar-categories');
-      catContainer.innerHTML = '';
-      Object.entries(categories).sort().forEach(([catName, count]) => {
+      // Update sidebar nav counts
+      document.getElementById('count-all').textContent = counts.all;
+      document.getElementById('count-untagged').textContent = counts.untagged;
+      document.getElementById('count-todo').textContent = counts.todo;
+      document.getElementById('count-today').textContent = counts.today;
+      document.getElementById('count-pinned').textContent = counts.pinned;
+      document.getElementById('count-trash').textContent = counts.trash;
+
+      // Update active nav item highlight
+      document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
+      if (currentFilter.startsWith('tag:')) {
+        // Tag active state handled below
+      } else {
+        const activeNavEl = document.getElementById(`filter-${currentFilter}`);
+        if (activeNavEl) activeNavEl.classList.add('active');
+      }
+
+      // Render Tags in Sidebar
+      const tagsContainer = document.getElementById('sidebar-tags-list');
+      tagsContainer.innerHTML = '';
+      Object.entries(tagCounts).sort().forEach(([tagName, count]) => {
+        const isTagActive = currentFilter === `tag:${tagName}`;
         const item = document.createElement('a');
-        item.href = '#';
-        item.className = `nav-item ${activeCategory === catName ? 'active' : ''}`;
-        item.onclick = (e) => {
-          e.preventDefault();
-          setCategoryFilter(catName);
-        };
+        item.className = `nav-item ${isTagActive ? 'active' : ''}`;
+        item.onclick = () => setFilter(`tag:${tagName}`);
+
+        const iconHtml = getTagIcon(tagName);
         item.innerHTML = `
-          <i class="ti ti-folder"></i>
-          <span class="nav-text">${escapeHtml(catName)}</span>
+          ${iconHtml}
+          <span class="nav-text">${escapeHtml(tagName)}</span>
           <span class="nav-count">${count}</span>
         `;
-        catContainer.appendChild(item);
+        tagsContainer.appendChild(item);
       });
 
-      // Update "All Notes" count
-      document.getElementById('count-all').textContent = notesArray.length;
-      document.getElementById('nav-all').className = `nav-item ${activeCategory === 'all' ? 'active' : ''}`;
+      // Filter notes for list
+      let filtered = currentFilter === 'trash' ? trashNotes : activeNotes;
 
-      // Filter Notes
-      let filtered = notesArray;
-      if (activeCategory !== 'all') {
-        filtered = filtered.filter(n => n.cat === activeCategory);
+      if (currentFilter === 'untagged') {
+        filtered = filtered.filter(n => extractTagsFromNote(n).length === 0);
+      } else if (currentFilter === 'todo') {
+        filtered = filtered.filter(n => /- \[ \]/.test(n.body));
+      } else if (currentFilter === 'today') {
+        filtered = filtered.filter(n => n.timestamp >= startOfToday);
+      } else if (currentFilter === 'pinned') {
+        filtered = filtered.filter(n => n.pinned);
+      } else if (currentFilter.startsWith('tag:')) {
+        const targetTag = currentFilter.substring(4);
+        filtered = filtered.filter(n => extractTagsFromNote(n).includes(targetTag));
       }
+
+      // Search filter
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         filtered = filtered.filter(n =>
           n.title.toLowerCase().includes(q) ||
           n.body.toLowerCase().includes(q) ||
-          n.cat.toLowerCase().includes(q)
+          extractTagsFromNote(n).some(t => t.includes(q))
         );
       }
 
-      // Render Active Filter Label
-      const filterLabel = document.getElementById('active-filter-label');
-      if (activeCategory === 'all') {
-        filterLabel.textContent = searchQuery ? `Search Results for "${searchQuery}"` : 'All Notes';
-      } else {
-        filterLabel.textContent = searchQuery ? `Search in "${activeCategory}" for "${searchQuery}"` : `Category: ${activeCategory}`;
-      }
+      // Sort: Pinned first, then newest first
+      filtered.sort((a, b) => {
+        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+        return b.timestamp - a.timestamp;
+      });
 
-      // Render Notes list / Grid cards
+      // Update Header Title
+      const titleDisplay = document.getElementById('active-filter-title');
+      if (currentFilter === 'all') titleDisplay.textContent = 'Notes';
+      else if (currentFilter === 'untagged') titleDisplay.textContent = 'Untagged';
+      else if (currentFilter === 'todo') titleDisplay.textContent = 'Todo';
+      else if (currentFilter === 'today') titleDisplay.textContent = 'Today';
+      else if (currentFilter === 'pinned') titleDisplay.textContent = 'Pinned';
+      else if (currentFilter === 'trash') titleDisplay.textContent = 'Trash';
+      else if (currentFilter.startsWith('tag:')) titleDisplay.textContent = '#' + currentFilter.substring(4);
+
+      // Render Notes List Cards
       const container = document.getElementById('notes-container');
-      const emptyState = document.getElementById('empty-state');
+      const emptyState = document.getElementById('list-empty-state');
       container.innerHTML = '';
-
-      // View toggle updates
-      const gridBtn = document.getElementById('grid-view-btn');
-      const listBtn = document.getElementById('list-view-btn');
-      if (viewMode === 'list') {
-        container.classList.add('list-layout');
-        gridBtn.classList.remove('active');
-        listBtn.classList.add('active');
-      } else {
-        container.classList.remove('list-layout');
-        gridBtn.classList.add('active');
-        listBtn.classList.remove('active');
-      }
 
       if (filtered.length === 0) {
         container.classList.add('hidden');
@@ -1580,259 +2031,604 @@
           card.className = `note-card ${isSelected ? 'selected' : ''}`;
           card.onclick = () => selectNote(note.id);
 
-          const dateStr = formatDate(note.timestamp);
+          const thumbUrl = extractThumbnail(note.body);
+          const dateStr = formatRelativeDate(note.timestamp);
 
           card.innerHTML = `
-            <div class="note-card-header">
-              <span class="note-card-cat">${escapeHtml(note.cat)}</span>
-              <span class="note-card-date">${dateStr}</span>
+            <div class="note-card-main">
+              <div class="note-card-title-row">
+                ${note.pinned ? '<i class="ti ti-pin-filled note-card-pin"></i>' : ''}
+                <h4 class="note-card-title">${escapeHtml(note.title || 'Untitled Note')}</h4>
+              </div>
+              <p class="note-card-preview">${renderSnippetWithTags(note.body)}</p>
+              <div class="note-card-footer">
+                <span class="note-card-date">${dateStr}</span>
+              </div>
             </div>
-            <h3 class="note-card-title">${escapeHtml(note.title)}</h3>
-            <p class="note-card-preview">${escapeHtml(note.body)}</p>
-            <div class="note-card-actions">
-              <button class="card-action-btn" onclick="event.stopPropagation(); editNoteFromCard('${escapeJs(note.id)}')" title="Edit Note">
-                <i class="ti ti-edit"></i>
-              </button>
-              <button class="card-action-btn" onclick="event.stopPropagation(); deleteNoteFromCard('${escapeJs(note.id)}')" title="Delete Note">
-                <i class="ti ti-trash"></i>
-              </button>
-            </div>
+            ${thumbUrl ? `
+              <div class="note-card-thumb">
+                <img src="${thumbUrl}" alt="Thumbnail" loading="lazy" onerror="this.parentElement.style.display='none'">
+              </div>
+            ` : ''}
           `;
           container.appendChild(card);
         });
       }
 
-      // Render Editor Pane details
-      renderEditorPane();
+      // If active note is selected, render editor
+      renderEditor();
     }
 
-    // Detail Panel Renderer
-    function renderEditorPane() {
-      const editorPane = document.getElementById('editor-pane');
+    // ── Editor Renderer ──
+    function renderEditor() {
       const placeholder = document.getElementById('editor-placeholder');
-      const content = document.getElementById('editor-content');
+      const content = document.getElementById('editor-content-wrapper');
 
       if (!selectedNoteId) {
-        editorPane.classList.add('closed');
         placeholder.classList.remove('hidden');
         content.classList.add('hidden');
         return;
       }
 
-      editorPane.classList.remove('closed');
       placeholder.classList.add('hidden');
       content.classList.remove('hidden');
 
-      const viewerMode = document.getElementById('note-viewer');
-      const editorMode = document.getElementById('note-editor');
+      const titleInput = document.getElementById('editor-title');
+      const textarea = document.getElementById('editor-textarea');
+      const renderedView = document.getElementById('markdown-rendered-view');
+      const modeBadge = document.getElementById('mode-badge');
+      const previewBtn = document.getElementById('preview-mode-toggle');
 
-      if (isEditing) {
-        viewerMode.classList.add('hidden');
-        editorMode.classList.remove('hidden');
+      let note = localNotes[selectedNoteId];
+      if (selectedNoteId === 'new') {
+        note = { title: '', body: '', timestamp: Date.now(), pinned: false };
+      }
 
-        const titleInput = document.getElementById('editor-note-title');
-        const catInput = document.getElementById('editor-note-cat');
-        const bodyTextarea = document.getElementById('editor-note-body');
-
-        if (selectedNoteId === 'new') {
-          // If we haven't touched values yet, keep them empty
-          if (!titleInput.dataset.modified) {
-            titleInput.value = '';
-            catInput.value = '';
-            bodyTextarea.value = '';
-          }
-        } else {
-          const note = localNotes[selectedNoteId];
-          if (note && !titleInput.dataset.modified) {
-            titleInput.value = note.title;
-            catInput.value = note.cat;
-            bodyTextarea.value = note.body;
-          }
+      if (note) {
+        if (!titleInput.dataset.focused) {
+          titleInput.value = note.title;
         }
+        if (!textarea.dataset.focused) {
+          textarea.value = note.body;
+        }
+
+        // Render preview with marked and custom interactive checkboxes
+        const parsedHtml = renderMarkdownWithInteractions(note.body || '');
+        renderedView.innerHTML = parsedHtml;
+
+        // Attach event listeners to interactive checkboxes in preview!
+        renderedView.querySelectorAll('.bear-checkbox').forEach(box => {
+          box.addEventListener('change', (e) => {
+            const index = parseInt(e.target.dataset.todoIndex, 10);
+            toggleCheckboxAtIndex(index, e.target.checked);
+          });
+        });
+
+        // Update stats
+        updateStats(note.body || '');
+
+        // Update pin menu label
+        const pinLabel = document.getElementById('menu-pin-label');
+        if (pinLabel) {
+          pinLabel.textContent = note.pinned ? 'Unpin Note' : 'Pin Note';
+        }
+      }
+
+      // Switch view vs edit mode
+      if (isEditMode) {
+        textarea.classList.remove('hidden');
+        renderedView.classList.add('hidden');
+        modeBadge.textContent = 'Edit Mode';
+        modeBadge.style.color = 'var(--bear-red)';
+        previewBtn.classList.add('active');
       } else {
-        viewerMode.classList.remove('hidden');
-        editorMode.classList.add('hidden');
-
-        // Clear modifications state
-        delete document.getElementById('editor-note-title').dataset.modified;
-
-        const note = localNotes[selectedNoteId];
-        if (note) {
-          document.getElementById('view-note-cat').textContent = note.cat;
-          document.getElementById('view-note-date').innerHTML = `<i class="ti ti-calendar-event"></i> ${formatDate(note.timestamp)}`;
-          document.getElementById('view-note-title').textContent = note.title;
-
-          const viewBody = document.getElementById('view-note-body');
-          viewBody.textContent = note.body; // Safe plain text rendering
-        }
+        textarea.classList.add('hidden');
+        renderedView.classList.remove('hidden');
+        modeBadge.textContent = 'Preview Mode';
+        modeBadge.style.color = 'var(--text-secondary)';
+        previewBtn.classList.remove('active');
       }
     }
 
-    // Editor actions
-    async function saveActiveNote() {
-      if (!isAuthenticated) return;
-      const title = document.getElementById('editor-note-title').value.trim();
-      const body = document.getElementById('editor-note-body').value.trim();
-      const cat = document.getElementById('editor-note-cat').value.trim() || 'private';
+    // Markdown Parser with Task List interactivity & Highlighted Bear Tags
+    function renderMarkdownWithInteractions(text) {
+      if (!text) return '<p style="color:var(--text-muted);font-style:italic;">Empty note. Click to start writing...</p>';
 
-      if (!title) {
-        showToast('Please enter a note title.');
-        return;
+      let rawHtml = '';
+      if (window.marked) {
+        rawHtml = window.marked.parse(text);
+      } else {
+        rawHtml = escapeHtml(text).replace(/\n/g, '<br>');
       }
-      if (!body) {
-        showToast('Please enter note content.');
-        return;
-      }
+
+      // Replace markdown checklists with interactive checkboxes
+      let todoCount = 0;
+      rawHtml = rawHtml.replace(/<input\s+disabled=""\s+type="checkbox"(?:\s+checked="")?>/g, (match) => {
+        const isChecked = match.includes('checked');
+        const idx = todoCount++;
+        return `<input type="checkbox" class="bear-checkbox" data-todo-index="${idx}" ${isChecked ? 'checked' : ''}>`;
+      });
+
+      // Highlight Bear tags in text
+      rawHtml = rawHtml.replace(/(^|\s)#([a-zA-Z0-9_\u00C0-\u017F\/\-]+)/g, (match, prefix, tag) => {
+        return `${prefix}<span class="bear-tag-pill">#${tag}</span>`;
+      });
+
+      return rawHtml;
+    }
+
+    // Toggle interactive checkbox in markdown body & auto-save
+    function toggleCheckboxAtIndex(targetIndex, newChecked) {
+      if (!selectedNoteId) return;
+      const note = localNotes[selectedNoteId];
+      if (!note) return;
+
+      let count = 0;
+      const updatedBody = note.body.replace(/- \[( |x)\]/g, (match, state) => {
+        const index = count++;
+        if (index === targetIndex) {
+          return newChecked ? '- [x]' : '- [ ]';
+        }
+        return match;
+      });
+
+      note.body = updatedBody;
+      document.getElementById('editor-textarea').value = updatedBody;
+      saveActiveNote(true);
+      triggerRender();
+    }
+
+    // Update note info statistics
+    function updateStats(text) {
+      const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+      const chars = text.length;
+      const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim().length > 0).length;
+      const readTime = Math.max(1, Math.ceil(words / 200)) + ' min read';
+
+      document.getElementById('stat-words').textContent = words.toLocaleString();
+      document.getElementById('stat-chars').textContent = chars.toLocaleString();
+      document.getElementById('stat-paragraphs').textContent = paragraphs;
+      document.getElementById('stat-readtime').textContent = readTime;
+    }
+
+    // ── Saving & Auto-Save ──
+    async function saveActiveNote(silent = false) {
+      if (!isAuthenticated || !selectedNoteId) return;
+
+      const titleInput = document.getElementById('editor-title');
+      const bodyInput = document.getElementById('editor-textarea');
+
+      const title = titleInput.value.trim() || 'Untitled Note';
+      const body = bodyInput.value;
+      const isNew = selectedNoteId === 'new';
+
+      let currentNote = isNew ? {} : (localNotes[selectedNoteId] || {});
+      const isPinned = !!currentNote.pinned;
+      const soul = isNew ? ('vault-' + Date.now() + '-' + Math.random().toString(36).substring(7)) : selectedNoteId;
 
       const encTitle = await ZEN.encrypt(title, pair);
       const encBody = await ZEN.encrypt(body, pair);
-      const encCat = await ZEN.encrypt(cat, pair);
+      const encCat = await ZEN.encrypt(currentNote.cat || '', pair);
 
-      const note = { title: encTitle, body: encBody, cat: encCat, timestamp: Date.now(), encrypted: true };
+      const notePayload = {
+        title: encTitle,
+        body: encBody,
+        cat: encCat,
+        pinned: isPinned,
+        timestamp: Date.now(),
+        encrypted: true
+      };
 
-      const isNew = selectedNoteId === 'new';
-      const soul = isNew ? ('vault-' + Date.now() + '-' + Math.random().toString(36).substring(7)) : selectedNoteId;
-
-      const saveBtn = document.querySelector('#note-editor .btn-accent');
-      const originalHtml = saveBtn.innerHTML;
-      saveBtn.innerHTML = '<i class="ti ti-loader animate-spin"></i> Saving...';
-      saveBtn.disabled = true;
-
-      zen.get('~' + pair.pub).get('vault').get(soul).put(note, (ack) => {
-        saveBtn.innerHTML = originalHtml;
-        saveBtn.disabled = false;
+      zen.get('~' + pair.pub).get('vault').get(soul).put(notePayload, (ack) => {
         if (ack && ack.err) {
-          alert("Storage failed: " + ack.err);
+          console.error("Storage failed:", ack.err);
+          if (!silent) showToast("Save failed: " + ack.err);
         } else {
-          showToast(isNew ? 'Note encrypted and secured!' : 'Secure note updated!');
-          isEditing = false;
-          selectedNoteId = soul; // Switch back to view mode of the saved note
-          triggerRender();
-        }
-      }, { authenticator: pair });
-    }
-
-    async function deleteActiveNote() {
-      if (!selectedNoteId || selectedNoteId === 'new') return;
-      await deleteNote(selectedNoteId);
-    }
-
-    async function deleteNote(soul) {
-      if (!isAuthenticated) return;
-      if (!confirm("Are you sure you want to permanently erase this encrypted note?")) return;
-
-      zen.get('~' + pair.pub).get('vault').get(soul).put(null, (ack) => {
-        if (ack && !ack.err) {
-          showToast('Note erased from network.');
-          if (selectedNoteId === soul) {
-            selectedNoteId = null;
-            isEditing = false;
+          localNotes[soul] = {
+            id: soul,
+            title,
+            body,
+            cat: currentNote.cat || '',
+            pinned: isPinned,
+            timestamp: Date.now()
+          };
+          if (isNew) {
+            selectedNoteId = soul;
           }
-          delete localNotes[soul];
+          if (!silent) showToast(isNew ? "Note encrypted & secured" : "Note saved");
           triggerRender();
-        } else if (ack && ack.err) {
-          alert("Deletion failed: " + ack.err);
         }
       }, { authenticator: pair });
     }
 
-    // Helper functions
+    // Auto-save debouncer
+    function queueAutoSave() {
+      if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
+      autoSaveTimeout = setTimeout(() => {
+        saveActiveNote(true);
+      }, 700);
+    }
+
+    function handleTitleInput(val) {
+      if (selectedNoteId) {
+        if (localNotes[selectedNoteId]) localNotes[selectedNoteId].title = val;
+        queueAutoSave();
+        triggerRender();
+      }
+    }
+
+    function handleBodyInput(val) {
+      if (selectedNoteId) {
+        if (localNotes[selectedNoteId]) localNotes[selectedNoteId].body = val;
+        updateStats(val);
+        queueAutoSave();
+      }
+    }
+
+    // ── Floating Toolbar Formatting Actions ──
+    function formatToolbarAction(action) {
+      if (!selectedNoteId) return;
+      isEditMode = true;
+      renderEditor();
+
+      const textarea = document.getElementById('editor-textarea');
+      textarea.focus();
+
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const selected = textarea.value.substring(start, end);
+      let replacement = '';
+      let cursorOffset = 0;
+
+      switch (action) {
+        case 'h1':
+          replacement = `\n# ${selected || 'Heading 1'}\n`;
+          cursorOffset = replacement.length;
+          break;
+        case 'h2':
+          replacement = `\n## ${selected || 'Heading 2'}\n`;
+          cursorOffset = replacement.length;
+          break;
+        case 'todo':
+          replacement = `\n- [ ] ${selected || 'New task'}\n`;
+          cursorOffset = replacement.length;
+          break;
+        case 'list':
+          replacement = `\n- ${selected || 'List item'}\n`;
+          cursorOffset = replacement.length;
+          break;
+        case 'bold':
+          replacement = `**${selected || 'bold text'}**`;
+          cursorOffset = replacement.length;
+          break;
+        case 'italic':
+          replacement = `*${selected || 'italic text'}*`;
+          cursorOffset = replacement.length;
+          break;
+        case 'highlight':
+          replacement = `<mark>${selected || 'highlighted'}</mark>`;
+          cursorOffset = replacement.length;
+          break;
+        case 'link':
+          const url = prompt("Enter URL:", "https://");
+          if (url) {
+            replacement = `[${selected || 'link text'}](${url})`;
+            cursorOffset = replacement.length;
+          } else {
+            return;
+          }
+          break;
+        case 'table':
+          replacement = `\n| Information | Detail | Reference |\n|---|---|---|\n| Status | Active | [Link ↗](https://) |\n| Notes | Bear format | Ready |\n`;
+          cursorOffset = replacement.length;
+          break;
+        case 'image':
+          const imgUrl = prompt("Enter Image URL:", "https://images.unsplash.com/photo-1589656966895-2f33e7653819?w=800");
+          if (imgUrl) {
+            replacement = `\n![${selected || 'Image description'}](${imgUrl})\n`;
+            cursorOffset = replacement.length;
+          } else {
+            return;
+          }
+          break;
+        case 'code':
+          replacement = `\n\`\`\`\n${selected || '// code here'}\n\`\`\`\n`;
+          cursorOffset = replacement.length;
+          break;
+      }
+
+      textarea.setRangeText(replacement, start, end, 'end');
+      handleBodyInput(textarea.value);
+    }
+
+    // ── Bear Demo / Sample Notes ──
+    async function loadBearDemoNotes() {
+      if (!isAuthenticated) return;
+
+      const samples = [
+        {
+          title: "🐻 Polar Bears",
+          cat: "bear",
+          body: `The largest #bear in the world and the Arctic's top predator, polar bears are a powerful symbol of the **strength** and **endurance** of the Arctic.
+
+![Polar Bear](https://images.unsplash.com/photo-1589656966895-2f33e7653819?w=900&auto=format&fit=crop&q=80)
+
+| Information | Detail | Reference |
+|---|---|---|
+| Status | Vulnerable | [Polar Bear Facts ↗](https://worldwildlife.org) |
+| Population | 22,000 - 31,000 | [WWF ↗](https://worldwildlife.org) |
+
+### Conservation Action
+- [x] Protect Arctic marine ecosystems
+- [ ] Monitor sea ice decline
+- [ ] Support scientific tracking programs #science`
+        },
+        {
+          title: "🪴 My green friends",
+          cat: "personal",
+          body: `Plant tracker 🌿 Plant 🪴 Watered last Spider Plant 8th April Areca Palm... #personal #plants
+
+![Houseplants](https://images.unsplash.com/photo-1485955900006-10f4d324d411?w=900&auto=format&fit=crop&q=80)
+
+### Watering Routine
+- [x] Spider Plant (twice weekly)
+- [x] Areca Palm (mist daily)
+- [ ] Repot Monstera Deliciosa into larger terracotta pot
+- [ ] Fertilize Ficus tree before spring #todo`
+        },
+        {
+          title: "💻 Coding 101 - Swift",
+          cat: "code",
+          body: `#code Swift is a powerful, intuitive programming language created by Apple for building apps for iOS, Mac, Apple TV, and Apple Watch.
+
+\`\`\`swift
+import Foundation
+
+struct Note {
+    var title: String
+    var tags: [String]
+    var isPinned: Bool
+}
+
+let bear = Note(title: "Bear 2", tags: ["#design", "#apple"], isPinned: true)
+print("Welcome to ZenVault Bear Style!")
+\`\`\`
+
+- [x] Learn Swift syntax
+- [ ] Build first SwiftUI view
+- [ ] Master async/await concurrency`
+        },
+        {
+          title: "🍕 Homemade Pizza Recipe",
+          cat: "recipe",
+          body: `#recipe Pizza Dough:
+- 1 1/2 cups (355 ml) warm water (105°F-115°F)
+- 1 package (2 1/4 tsp) active dry yeast
+- 3 3/4 cups (490g) bread flour
+- 2 tbsp extra virgin olive oil
+- 2 tsp fine sea salt
+
+![Neapolitan Pizza](https://images.unsplash.com/photo-1513104890138-7c749659a591?w=900&auto=format&fit=crop&q=80)
+
+### Preparation
+1. Whisk yeast and warm water with a pinch of sugar. Let bloom for 5 minutes.
+2. In a large bowl, mix flour and salt. Add olive oil and bloomed yeast.
+3. Knead for 10 minutes until smooth and elastic.
+4. Let rise in an oiled bowl covered with a damp towel for 2 hours.
+5. Bake at 500°F (260°C) on a preheated pizza stone!`
+        }
+      ];
+
+      showToast("Importing Bear demo notes...");
+
+      for (const sample of samples) {
+        const soul = 'vault-' + Date.now() + '-' + Math.random().toString(36).substring(7);
+        const encTitle = await ZEN.encrypt(sample.title, pair);
+        const encBody = await ZEN.encrypt(sample.body, pair);
+        const encCat = await ZEN.encrypt(sample.cat, pair);
+
+        await new Promise(resolve => {
+          zen.get('~' + pair.pub).get('vault').get(soul).put({
+            title: encTitle,
+            body: encBody,
+            cat: encCat,
+            pinned: sample.title.includes("Polar"),
+            timestamp: Date.now(),
+            encrypted: true
+          }, resolve, { authenticator: pair });
+        });
+      }
+
+      showToast("Bear demo notes loaded!");
+    }
+
+    // ── Helper Actions ──
     function selectNote(id) {
       selectedNoteId = id;
-      isEditing = false;
+      isEditMode = false;
       triggerRender();
+
+      // Mobile responsive toggle
+      if (window.innerWidth <= 768) {
+        document.getElementById('note-list-pane').classList.add('mobile-hidden');
+        document.getElementById('editor-pane').classList.add('mobile-active');
+        document.getElementById('mobile-back-btn').style.display = 'flex';
+      }
     }
 
     function createNewNote() {
       selectedNoteId = 'new';
-      isEditing = true;
+      isEditMode = true;
 
-      // Track that inputs are fresh
-      const titleInput = document.getElementById('editor-note-title');
-      const catInput = document.getElementById('editor-note-cat');
-      const bodyTextarea = document.getElementById('editor-note-body');
-
-      delete titleInput.dataset.modified;
+      const titleInput = document.getElementById('editor-title');
+      const textarea = document.getElementById('editor-textarea');
       titleInput.value = '';
-      catInput.value = '';
-      bodyTextarea.value = '';
+      textarea.value = '';
 
       triggerRender();
 
-      // Auto focus title input
       setTimeout(() => {
         titleInput.focus();
       }, 50);
 
-      // Close sidebar on mobile
-      const sidebar = document.querySelector('.sidebar');
-      if (sidebar.classList.contains('open')) {
-        toggleSidebar();
+      if (window.innerWidth <= 768) {
+        document.getElementById('note-list-pane').classList.add('mobile-hidden');
+        document.getElementById('editor-pane').classList.add('mobile-active');
+        document.getElementById('mobile-back-btn').style.display = 'flex';
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar.classList.contains('open')) toggleSidebar();
       }
     }
 
-    function editNoteFromCard(id) {
-      selectedNoteId = id;
-      isEditing = true;
-      const titleInput = document.getElementById('editor-note-title');
-      delete titleInput.dataset.modified; // Force reload note data into inputs
-      triggerRender();
+    function mobileBackToList() {
+      document.getElementById('note-list-pane').classList.remove('mobile-hidden');
+      document.getElementById('editor-pane').classList.remove('mobile-active');
     }
 
-    function deleteNoteFromCard(id) {
-      deleteNote(id);
+    function toggleEditViewMode() {
+      isEditMode = !isEditMode;
+      renderEditor();
+      if (isEditMode) {
+        document.getElementById('editor-textarea').focus();
+      }
     }
 
     function enterEditMode() {
-      isEditing = true;
-      const titleInput = document.getElementById('editor-note-title');
-      delete titleInput.dataset.modified; // Load current note data
+      isEditMode = true;
+      renderEditor();
+      document.getElementById('editor-textarea').focus();
+    }
+
+    function togglePinActiveNote() {
+      if (!selectedNoteId || selectedNoteId === 'new') return;
+      const note = localNotes[selectedNoteId];
+      if (!note) return;
+
+      note.pinned = !note.pinned;
+      saveActiveNote(true);
+      closePopovers();
+      showToast(note.pinned ? "Note pinned to top" : "Note unpinned");
       triggerRender();
     }
 
-    // Handles the Cancel button when editing or creating a note
-    function cancelEditorEdit() {
-      isEditing = false;
-      if (selectedNoteId === 'new') {
-        selectedNoteId = null;
+    function copyNoteMarkdown() {
+      if (!selectedNoteId) return;
+      const note = localNotes[selectedNoteId];
+      if (!note) return;
+
+      const fullContent = `# ${note.title}\n\n${note.body}`;
+      navigator.clipboard.writeText(fullContent).then(() => {
+        showToast("Markdown copied to clipboard");
+        closePopovers();
+      });
+    }
+
+    function exportNoteAsMarkdown() {
+      if (!selectedNoteId) return;
+      const note = localNotes[selectedNoteId];
+      if (!note) return;
+
+      const fullContent = `# ${note.title}\n\n${note.body}`;
+      const blob = new Blob([fullContent], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(note.title || 'untitled').replace(/[^a-z0-9_\-\u00C0-\u017F]/gi, '_')}.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      closePopovers();
+      showToast("Exported .md file");
+    }
+
+    function deleteActiveNote() {
+      if (!selectedNoteId || selectedNoteId === 'new') return;
+      if (!confirm("Are you sure you want to delete this note?")) return;
+
+      const soul = selectedNoteId;
+      zen.get('~' + pair.pub).get('vault').get(soul).put(null, (ack) => {
+        if (ack && !ack.err) {
+          delete localNotes[soul];
+          selectedNoteId = null;
+          showToast("Note erased from network");
+          closePopovers();
+          triggerRender();
+        } else {
+          alert("Deletion failed: " + (ack ? ack.err : 'unknown'));
+        }
+      }, { authenticator: pair });
+    }
+
+    function setFilter(filter) {
+      currentFilter = filter;
+      triggerRender();
+      if (window.innerWidth <= 768) {
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar.classList.contains('open')) toggleSidebar();
       }
-      triggerRender();
     }
 
-    function closeEditor() {
-      selectedNoteId = null;
-      isEditing = false;
-      triggerRender();
-    }
-
-    function setCategoryFilter(cat) {
-      activeCategory = cat;
-      triggerRender();
-
-      // Close sidebar overlay on mobile
-      const sidebar = document.querySelector('.sidebar');
-      if (sidebar.classList.contains('open')) {
-        toggleSidebar();
+    function promptNewTag() {
+      const tagName = prompt("Enter new tag name (e.g. personal, code, recipe):");
+      if (tagName) {
+        setFilter(`tag:${tagName.replace(/#/g, '').trim().toLowerCase()}`);
       }
     }
 
     function handleSearch(val) {
       searchQuery = val;
+      const clearBtn = document.getElementById('search-clear-btn');
+      if (val) {
+        clearBtn.classList.remove('hidden');
+      } else {
+        clearBtn.classList.add('hidden');
+      }
       triggerRender();
     }
 
-    function setViewMode(mode) {
-      viewMode = mode;
-      localStorage.setItem('zenvault_viewmode', mode);
+    function clearSearch() {
+      searchQuery = '';
+      document.getElementById('search-input').value = '';
+      document.getElementById('search-clear-btn').classList.add('hidden');
       triggerRender();
+    }
+
+    function toggleSearchInput() {
+      const input = document.getElementById('search-input');
+      input.focus();
+      input.select();
     }
 
     function toggleSidebar() {
-      const sidebar = document.querySelector('.sidebar');
+      const sidebar = document.getElementById('sidebar');
       const overlay = document.getElementById('sidebar-overlay');
       sidebar.classList.toggle('open');
       overlay.classList.toggle('hidden');
     }
+
+    function toggleInfoPopover(e) {
+      e.stopPropagation();
+      const popover = document.getElementById('info-popover');
+      const morePopover = document.getElementById('more-menu-popover');
+      morePopover.classList.add('hidden');
+      popover.classList.toggle('hidden');
+    }
+
+    function toggleMoreMenu(e) {
+      e.stopPropagation();
+      const popover = document.getElementById('more-menu-popover');
+      const infoPopover = document.getElementById('info-popover');
+      infoPopover.classList.add('hidden');
+      popover.classList.toggle('hidden');
+    }
+
+    function closePopovers() {
+      document.getElementById('info-popover').classList.add('hidden');
+      document.getElementById('more-menu-popover').classList.add('hidden');
+    }
+
+    document.addEventListener('click', closePopovers);
 
     function logout() {
       sessionStorage.removeItem('zen_user');
@@ -1840,7 +2636,6 @@
       window.location.reload();
     }
 
-    // Toast UI component helper
     function showToast(message) {
       let toast = document.getElementById('toast-notification');
       if (!toast) {
@@ -1849,14 +2644,13 @@
         toast.className = 'toast';
         document.body.appendChild(toast);
       }
-      toast.innerHTML = `<i class="ti ti-circle-check" style="color: var(--accent); font-size: 16px;"></i> ${escapeHtml(message)}`;
+      toast.innerHTML = `<i class="ti ti-circle-check" style="color:var(--bear-red);font-size:16px;"></i> ${message}`;
       toast.classList.add('show');
       setTimeout(() => {
         toast.classList.remove('show');
-      }, 3000);
+      }, 2800);
     }
 
-    // Input string utilities
     function escapeHtml(str) {
       if (!str) return '';
       return str
@@ -1867,38 +2661,74 @@
         .replace(/'/g, "&#039;");
     }
 
-    function escapeJs(str) {
-      return String(str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    }
+    function formatRelativeDate(timestamp) {
+      const diff = Date.now() - timestamp;
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'Just now';
+      if (mins < 60) return `${mins}m ago`;
+      const hours = Math.floor(mins / 60);
+      if (hours < 24) return `${hours}h ago`;
+      const days = Math.floor(hours / 24);
+      if (days === 1) return 'Yesterday';
+      if (days < 7) return `${days}d ago`;
 
-    function formatDate(timestamp) {
-      const date = new Date(timestamp);
-      return date.toLocaleDateString(navigator.language || 'it-IT', {
-        year: 'numeric',
+      return new Date(timestamp).toLocaleDateString(navigator.language || 'en-US', {
         month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+        day: 'numeric'
       });
     }
 
-    // Attach modules to window context for HTML inline accessors
+    // Keyboard shortcuts (Mac / Windows standard)
+    document.addEventListener('keydown', (e) => {
+      const isCmdOrCtrl = e.metaKey || e.ctrlKey;
+      if (isCmdOrCtrl && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        createNewNote();
+      } else if (isCmdOrCtrl && e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        toggleEditViewMode();
+      } else if (isCmdOrCtrl && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        toggleSearchInput();
+      } else if (isCmdOrCtrl && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveActiveNote(false);
+      }
+    });
+
+    // Expose helpers globally
     window.login = login;
     window.logout = logout;
     window.createNewNote = createNewNote;
+    window.selectNote = selectNote;
     window.saveActiveNote = saveActiveNote;
     window.deleteActiveNote = deleteActiveNote;
-    window.enterEditMode = enterEditMode;
-    window.cancelEditorEdit = cancelEditorEdit;
-    window.closeEditor = closeEditor;
-    window.setCategoryFilter = setCategoryFilter;
+    window.setFilter = setFilter;
+    window.promptNewTag = promptNewTag;
     window.handleSearch = handleSearch;
-    window.setViewMode = setViewMode;
+    window.clearSearch = clearSearch;
+    window.toggleSearchInput = toggleSearchInput;
     window.toggleSidebar = toggleSidebar;
-    window.editNoteFromCard = editNoteFromCard;
-    window.deleteNoteFromCard = deleteNoteFromCard;
+    window.mobileBackToList = mobileBackToList;
+    window.toggleEditViewMode = toggleEditViewMode;
+    window.enterEditMode = enterEditMode;
+    window.formatToolbarAction = formatToolbarAction;
+    window.toggleInfoPopover = toggleInfoPopover;
+    window.toggleMoreMenu = toggleMoreMenu;
+    window.togglePinActiveNote = togglePinActiveNote;
+    window.copyNoteMarkdown = copyNoteMarkdown;
+    window.exportNoteAsMarkdown = exportNoteAsMarkdown;
+    window.loadBearDemoNotes = loadBearDemoNotes;
+    window.handleTitleInput = handleTitleInput;
+    window.handleBodyInput = handleBodyInput;
 
-    // Keyboard navigation
+    // Auto-login session recovery
+    const savedUser = sessionStorage.getItem('zen_user');
+    const savedPass = sessionStorage.getItem('zen_pass');
+    if (savedUser && savedPass) {
+      login();
+    }
+
     document.getElementById('user-input').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') document.getElementById('pass-input').focus();
     });
@@ -1906,21 +2736,6 @@
       if (e.key === 'Enter') login();
     });
     document.getElementById('login-btn').addEventListener('click', login);
-
-    // Track input modification to allow typing without being overwritten by GunDB map updates
-    const inputs = ['editor-note-title', 'editor-note-cat', 'editor-note-body'];
-    inputs.forEach(id => {
-      document.getElementById(id).addEventListener('input', (e) => {
-        e.target.dataset.modified = "true";
-      });
-    });
-
-    // Auto-login session recovery check
-    const savedUser = sessionStorage.getItem('zen_user');
-    const savedPass = sessionStorage.getItem('zen_pass');
-    if (savedUser && savedPass) {
-      login();
-    }
   </script>
 </body>
 
