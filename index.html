@@ -1570,6 +1570,27 @@
     .blog-empty { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 14px; }
     @media (max-width: 768px) { .blog-pane { flex-direction: column; } .blog-list { width: auto; max-height: 38%; border-right: 0; border-bottom: 1px solid var(--border-color); } .blog-reader { padding: 18px; } }
 
+
+    /* ── Bookmarks view (encrypted, ~pub/bookmarks) ── */
+    .bm-pane { flex: 1; display: none; min-width: 0; background: var(--bg-editor); color: var(--text-primary); }
+    body.bm-mode .bm-pane { display: flex; }
+    body.bm-mode .note-list-pane, body.bm-mode .editor-pane { display: none !important; }
+    .bm-folders { width: 220px; flex-shrink: 0; border-right: 1px solid var(--border-color); overflow-y: auto; background: var(--bg-list); padding: 10px 8px; }
+    .bm-folder { display: flex; justify-content: space-between; gap: 8px; padding: 6px 10px; border-radius: 7px; font-size: 13px; cursor: pointer; color: var(--text-secondary); }
+    .bm-folder:hover { background: var(--bg-card-hover); } .bm-folder.active { background: var(--bg-card-selected); color: var(--text-primary); font-weight: 500; }
+    .bm-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .bm-bar { display: flex; gap: 8px; padding: 12px 18px; border-bottom: 1px solid var(--border-color); align-items: center; flex-wrap: wrap; }
+    .bm-bar input[type=search] { flex: 1; min-width: 140px; background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 7px; padding: 7px 10px; font: inherit; font-size: 14px; }
+    .bm-items { flex: 1; overflow-y: auto; }
+    .bm-item { display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-bottom: 1px solid var(--border-list); }
+    .bm-item:hover { background: var(--bg-card-hover); }
+    .bm-item a { flex: 1; min-width: 0; text-decoration: none; color: var(--text-primary); }
+    .bm-item b { display: block; font-weight: 500; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bm-item small { color: var(--text-muted); font-size: 12px; }
+    .bm-del { background: none; border: 0; color: var(--text-muted); cursor: pointer; font-size: 16px; padding: 4px 8px; }
+    .bm-del:hover { color: var(--bear-red); }
+    @media (max-width: 768px) { .bm-pane { flex-direction: column; } .bm-folders { width: auto; max-height: 30%; border-right: 0; border-bottom: 1px solid var(--border-color); } }
+
     @media (max-width: 1024px) {
       .note-list-pane {
         width: 290px;
@@ -1741,6 +1762,12 @@
           <span class="nav-count" id="count-blog">0</span>
         </a>
 
+        <a class="nav-item" id="nav-bookmarks" onclick="openBookmarks()">
+          <span class="nav-icon"><i class="ti ti-bookmarks"></i></span>
+          <span class="nav-text">Bookmarks</span>
+          <span class="nav-count" id="count-bookmarks">0</span>
+        </a>
+
         <a class="nav-item" id="filter-trash" onclick="setFilter('trash')">
           <span class="nav-icon"><i class="ti ti-trash"></i></span>
           <span class="nav-text">Trash</span>
@@ -1866,6 +1893,20 @@
         <div id="blog-items"></div>
       </div>
       <div class="blog-reader" id="blog-reader"></div>
+    </section>
+
+    <!-- Bookmarks pane: encrypted bookmarks, importable from Brave/Chrome/Firefox HTML export -->
+    <section class="bm-pane" id="bm-pane">
+      <div class="bm-folders" id="bm-folders"></div>
+      <div class="bm-main">
+        <div class="bm-bar">
+          <input type="search" id="bm-search" placeholder="Search bookmarks" oninput="bmSearch(this.value)">
+          <button class="cal-btn" onclick="bmAdd()"><i class="ti ti-plus"></i> Add</button>
+          <button class="cal-btn primary" onclick="document.getElementById('bm-file').click()"><i class="ti ti-upload"></i> Import</button>
+          <input type="file" id="bm-file" accept=".html,text/html" class="hidden" onchange="bmImport(this)">
+        </div>
+        <div class="bm-items" id="bm-items"></div>
+      </div>
     </section>
 
     <!-- ════════════════════════════════════════════════════════════
@@ -2097,6 +2138,7 @@
         loadNotes();
         loadCalendar();
         loadBlog();
+        loadBookmarks();
       } catch (e) {
         console.error("Login Error:", e);
         alert("Decryption failed: " + e.message);
@@ -2346,6 +2388,7 @@
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
       if (calMode) document.getElementById('nav-calendar').classList.add('active');
       if (blogMode) document.getElementById('nav-blog').classList.add('active');
+      if (bmMode) document.getElementById('nav-bookmarks').classList.add('active');
       if (!currentFilter.startsWith('tag:')) {
         const activeNavEl = document.getElementById(`filter-${currentFilter}`);
         if (activeNavEl) activeNavEl.classList.add('active');
@@ -2962,6 +3005,7 @@ print("Welcome to ZenVault Bear Style!")
     function setFilter(filter) {
       closeCalendar();
       closeBlog();
+      closeBookmarks();
       currentFilter = filter;
       triggerRender();
       if (window.innerWidth <= 768) {
@@ -3206,7 +3250,7 @@ print("Welcome to ZenVault Bear Style!")
     }
 
     function openCalendar() {
-      closeBlog();
+      closeBlog(); closeBookmarks();
       calMode = true;
       document.body.classList.add('cal-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -3372,7 +3416,7 @@ print("Welcome to ZenVault Bear Style!")
       });
     }
     function openBlog() {
-      closeCalendar();
+      closeCalendar(); closeBookmarks();
       blogMode = true;
       document.body.classList.add('blog-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -3400,6 +3444,127 @@ print("Welcome to ZenVault Bear Style!")
     }
     function blogSelect(id) { blogSelected = id; renderBlog(); }
     Object.assign(window, { openBlog, blogSelect });
+
+
+    // ═══════════════════════════════════════════════════════════════
+    // Bookmarks — events at ~pub/bookmarks/<soul>, one encrypted object
+    // in `data` (same schema as ZenOS writeBookmark). Soul = SHA-256(url),
+    // so re-importing never duplicates.
+    // ═══════════════════════════════════════════════════════════════
+    const bookmarks = {};
+    let bmMode = false, bmFolder = null, bmQuery = '';
+
+    async function bmSoul(url) {
+      const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(url));
+      return 'bm-' + [...new Uint8Array(h)].slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    // Netscape bookmarks HTML (Brave/Chrome/Firefox export); http(s) only. Mirrors ZenOS parseBookmarksHtml.
+    function parseBookmarksHtml(html) {
+      const decode = (t) => t.replace(/<[^>]*>/g, '').replace(/&(amp|lt|gt|quot|#39);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" })[e]).trim();
+      const out = [], stack = [];
+      let pending = null;
+      const re = /<A\b([^>]*)>([\s\S]*?)<\/A>|<H3\b[^>]*>([\s\S]*?)<\/H3>|<(\/?)DL\b[^>]*>/gi;
+      for (let m; (m = re.exec(html));) {
+        if (m[3] !== undefined) pending = decode(m[3]);
+        else if (m[4] !== undefined) { if (m[4]) stack.pop(); else { stack.push(pending); pending = null; } }
+        else {
+          const href = /\bHREF="([^"]*)"/i.exec(m[1]), url = href && decode(href[1]);
+          if (!url || !/^https?:\/\//i.test(url)) continue;
+          const added = /\bADD_DATE="(\d+)"/i.exec(m[1]);
+          out.push({ url, title: decode(m[2]) || url, folder: stack.filter(Boolean).join('/'), addedAt: added ? Number(added[1]) * 1000 : Date.now() });
+        }
+      }
+      return out;
+    }
+
+    function loadBookmarks() {
+      zen.get('~' + pair.pub).get('bookmarks').map().on(async (node, soul) => {
+        if (!node || !node.data) delete bookmarks[soul];
+        else {
+          try {
+            const bm = await ZEN.decrypt(node.data, pair);
+            if (bm && /^https?:\/\//i.test(bm.url)) bookmarks[soul] = bm;
+          } catch (_) { console.warn('Could not decrypt bookmark:', soul); return; }
+        }
+        document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
+        if (bmMode) bmScheduleRender();
+      });
+    }
+    // imports fire thousands of updates; coalesce renders
+    let bmTimer = null;
+    function bmScheduleRender() { clearTimeout(bmTimer); bmTimer = setTimeout(renderBookmarks, 150); }
+
+    function openBookmarks() {
+      closeCalendar(); closeBlog();
+      bmMode = true;
+      document.body.classList.add('bm-mode');
+      document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
+      document.getElementById('nav-bookmarks').classList.add('active');
+      if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('open')) toggleSidebar();
+      renderBookmarks();
+    }
+    function closeBookmarks() {
+      bmMode = false;
+      document.body.classList.remove('bm-mode');
+      document.getElementById('nav-bookmarks').classList.remove('active');
+    }
+    const bmSearch = (v) => { bmQuery = v.toLowerCase(); renderBookmarks(); };
+    const bmPickFolder = (f) => { bmFolder = f; renderBookmarks(); };
+
+    function renderBookmarks() {
+      const all = Object.entries(bookmarks).map(([soul, b]) => ({ soul, ...b }));
+      const folders = {};
+      all.forEach(b => { const f = b.folder || ''; folders[f] = (folders[f] || 0) + 1; });
+      if (bmFolder !== null && !folders[bmFolder] && !Object.keys(folders).some(f => f.startsWith(bmFolder + '/'))) bmFolder = null;
+      const fb = (name, label, n) => `<div class="bm-folder ${bmFolder === name ? 'active' : ''}" onclick="bmPickFolder(${name === null ? 'null' : `decodeURIComponent('${encodeURIComponent(name)}')`})"><span>${escapeHtml(label)}</span><span>${n}</span></div>`;
+      document.getElementById('bm-folders').innerHTML = fb(null, 'All', all.length) + Object.keys(folders).sort().map(f => fb(f, f || 'Unfiled', folders[f])).join('');
+      const shown = all
+        .filter(b => bmFolder === null || (b.folder || '') === bmFolder || (b.folder || '').startsWith(bmFolder + '/'))
+        .filter(b => !bmQuery || (b.title + ' ' + b.url).toLowerCase().includes(bmQuery))
+        .sort((a, b) => b.addedAt - a.addedAt);
+      document.getElementById('bm-items').innerHTML = shown.length ? shown.map(b => {
+        let host = ''; try { host = new URL(b.url).hostname; } catch (_) {}
+        return `<div class="bm-item"><a href="${escapeHtml(b.url)}" target="_blank" rel="noopener noreferrer"><b>${escapeHtml(b.title)}</b><small>${escapeHtml(host)}${b.folder ? ' · ' + escapeHtml(b.folder) : ''}</small></a>
+          <button class="bm-del" title="Delete" onclick="bmDelete('${b.soul}')"><i class="ti ti-trash"></i></button></div>`;
+      }).join('') : '<div class="blog-empty">No bookmarks yet.<br>Use Import to load a Brave/Chrome/Firefox export (Bookmarks → Export), or Add.</div>';
+    }
+
+    // resolve on ack, or after 10s so an offline relay can't hang an import
+    async function bmSave(b) {
+      const soul = await bmSoul(b.url);
+      const data = await ZEN.encrypt({ url: b.url, title: b.title || b.url, folder: b.folder || '', tags: b.tags || [], addedAt: b.addedAt || Date.now() }, pair);
+      bookmarks[soul] = { url: b.url, title: b.title || b.url, folder: b.folder || '', tags: b.tags || [], addedAt: b.addedAt || Date.now() };
+      return new Promise((resolve) => {
+        const t = setTimeout(resolve, 10000);
+        zen.get('~' + pair.pub).get('bookmarks').get(soul).put({ data, updatedAt: Date.now(), encrypted: true }, (ack) => { clearTimeout(t); resolve(ack && ack.err ? ack : null); }, { authenticator: pair });
+      });
+    }
+    async function bmImport(input) {
+      const file = input.files[0]; input.value = '';
+      if (!file) return;
+      const items = parseBookmarksHtml(await file.text());
+      if (!items.length) return showToast('No bookmarks found in file');
+      showToast('Encrypting ' + items.length + ' bookmarks…');
+      const res = await Promise.all(items.map(bmSave));
+      const failed = res.filter(Boolean).length;
+      document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
+      renderBookmarks();
+      showToast('Imported ' + (items.length - failed) + ' bookmarks' + (failed ? ' (' + failed + ' failed)' : ''));
+    }
+    async function bmAdd() {
+      const url = (prompt('URL (https://…)') || '').trim();
+      if (!/^https?:\/\//i.test(url)) return url && showToast('URL must start with http(s)://');
+      const title = (prompt('Title (optional)') || '').trim();
+      await bmSave({ url, title, folder: bmFolder || '' });
+      renderBookmarks(); showToast('Bookmark encrypted & saved');
+    }
+    function bmDelete(soul) {
+      zen.get('~' + pair.pub).get('bookmarks').get(soul).put(null, null, { authenticator: pair });
+      delete bookmarks[soul];
+      document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
+      renderBookmarks();
+    }
+    Object.assign(window, { openBookmarks, bmSearch, bmPickFolder, bmAdd, bmImport, bmDelete });
 
     // Auto-login session recovery
     const savedUser = sessionStorage.getItem('zen_user');
