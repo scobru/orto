@@ -3,15 +3,36 @@
  * Connects sovereign cryptographic identities with ZenVault and smollog.
  */
 
-// Universal loader: prefers local bundle in Node.js, falls back to CDN in Browser/Deno
+// Universal ZEN loader:
+// 1. Self-contained bundle in same directory (./zen.min.js)
+// 2. Sibling repo (../zen/zen.min.js)
+// 3. Browser / CDN fallback
 let ZEN;
-try {
-  const localZen = await import('../zen/zen.min.js');
-  ZEN = localZen.default || localZen;
-} catch (_) {
-  const cdnZen = await import('https://cdn.jsdelivr.net/gh/scobru/zen@main/zen.min.js');
-  ZEN = cdnZen.default || cdnZen;
+async function initZenModule() {
+  // 1. Same directory bundle (self-contained)
+  try {
+    const localUrl = new URL('./zen.min.js', import.meta.url).href;
+    const m = await import(localUrl);
+    return m.default || m;
+  } catch (_) {}
+
+  // 2. Sibling repository (../zen/zen.min.js)
+  try {
+    const siblingUrl = new URL('../zen/zen.min.js', import.meta.url).href;
+    const m = await import(siblingUrl);
+    return m.default || m;
+  } catch (_) {}
+
+  // 3. CDN import (Browser / Deno)
+  try {
+    const m = await import('https://cdn.jsdelivr.net/gh/scobru/zen@main/zen.min.js');
+    return m.default || m;
+  } catch (err) {
+    throw new Error('Failed to load ZEN library: ' + err.message);
+  }
 }
+
+ZEN = await initZenModule();
 
 export const DEFAULT_RELAYS = [
   'wss://delay.scobrudot.dev/zen',

@@ -7,20 +7,6 @@
 import fs from 'fs';
 import ZenOS, { DEFAULT_RELAYS } from './zenos.js';
 
-let ZEN;
-try {
-  const localZenPath = '../zen/zen.min.js';
-  if (fs.existsSync(localZenPath)) {
-    const m = await import(localZenPath);
-    ZEN = m.default || m;
-  }
-} catch (_) {}
-
-if (!ZEN) {
-  const m = await import('https://cdn.jsdelivr.net/gh/scobru/zen@main/zen.min.js');
-  ZEN = m.default || m;
-}
-
 function parseArgs(args) {
   const flags = {};
   for (let i = 0; i < args.length; i++) {
