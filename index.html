@@ -1499,6 +1499,55 @@
       transition: opacity 0.2s ease;
     }
 
+
+    /* ════════════════════════════════════════════════════════════
+       Calendar view (encrypted events at ~pub/calendar)
+    ════════════════════════════════════════════════════════════ */
+    .calendar-pane { flex: 1; display: none; flex-direction: column; min-width: 0; background: var(--bg-editor); color: var(--text-primary); }
+    body.cal-mode .calendar-pane { display: flex; }
+    body.cal-mode .note-list-pane, body.cal-mode .editor-pane { display: none !important; }
+    .cal-header { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--border-color); flex-wrap: wrap; }
+    .cal-title { font-family: var(--font-heading); font-size: 20px; font-weight: 600; margin: 0 8px 0 4px; flex: 1; min-width: 140px; }
+    .cal-btn { background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 7px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+    .cal-btn:hover { background: var(--active-bg); }
+    .cal-btn.primary { background: var(--bear-red); border-color: var(--bear-red); color: #fff; }
+    .cal-btn.primary:hover { background: var(--bear-red-hover); }
+    .cal-seg { display: inline-flex; border: 1px solid var(--border-color); border-radius: 7px; overflow: hidden; }
+    .cal-seg button { border: 0; background: var(--input-bg); color: var(--text-secondary); padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+    .cal-seg button.active { background: var(--bear-red); color: #fff; }
+    .cal-body { flex: 1; overflow: auto; position: relative; }
+    .cal-month { display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: auto repeat(6, minmax(104px, 1fr)); min-height: 100%; min-width: 640px; }
+    .cal-dow { padding: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); border-bottom: 1px solid var(--border-color); position: sticky; top: 0; background: var(--bg-editor); z-index: 3; }
+    .cal-cell { border-right: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); padding: 4px; min-width: 0; cursor: pointer; overflow: hidden; }
+    .cal-cell:hover { background: var(--bg-card-hover); }
+    .cal-cell.other { background: var(--bg-list); color: var(--text-muted); }
+    .cal-daynum { display: inline-flex; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 50%; font-size: 12px; margin-bottom: 2px; }
+    .cal-today .cal-daynum { background: var(--bear-red); color: #fff; }
+    .cal-chip { display: block; font-size: 11.5px; line-height: 1.5; padding: 0 6px; margin: 1px 0; border-radius: 4px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; background: var(--ev, var(--bear-red)); }
+    .cal-more { font-size: 11px; color: var(--text-muted); padding: 0 6px; }
+    .cal-time { display: grid; grid-template-columns: 52px repeat(var(--cols), 1fr); min-width: calc(52px + var(--cols) * 110px); }
+    .cal-time-head { position: sticky; top: 0; z-index: 4; background: var(--bg-editor); border-bottom: 1px solid var(--border-color); }
+    .cal-time-head .cal-hcell { padding: 6px 4px; text-align: center; font-size: 12px; color: var(--text-secondary); border-left: 1px solid var(--border-color); cursor: pointer; }
+    .cal-time-head .cal-hcell.cal-today b { background: var(--bear-red); color: #fff; }
+    .cal-time-head b { display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 50%; font-size: 14px; color: var(--text-primary); }
+    .cal-allday { border-left: 1px solid var(--border-color); padding: 2px; min-height: 22px; }
+    .cal-hours { grid-column: 1; }
+    .cal-hour { height: 48px; font-size: 10.5px; color: var(--text-muted); text-align: right; padding-right: 6px; transform: translateY(-7px); }
+    .cal-col { position: relative; border-left: 1px solid var(--border-color); height: 1152px;
+      background-image: linear-gradient(var(--border-color) 1px, transparent 1px); background-size: 100% 48px; cursor: pointer; }
+    .cal-ev { position: absolute; border-radius: 5px; padding: 2px 5px; font-size: 11.5px; color: #fff; overflow: hidden; cursor: pointer; background: var(--ev, var(--bear-red)); border: 1px solid var(--bg-editor); box-sizing: border-box; }
+    .cal-ev small { display: block; opacity: .85; }
+    .cal-now { position: absolute; left: 0; right: 0; height: 2px; background: var(--bear-red); z-index: 2; pointer-events: none; }
+    .cal-modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 16px; }
+    .cal-modal { background: var(--bg-editor); color: var(--text-primary); border-radius: 12px; padding: 20px; width: 100%; max-width: 440px; box-shadow: var(--shadow-toolbar); display: flex; flex-direction: column; gap: 10px; max-height: 100%; overflow: auto; }
+    .cal-modal input[type=text], .cal-modal input[type=date], .cal-modal input[type=datetime-local], .cal-modal textarea { width: 100%; box-sizing: border-box; background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 7px; padding: 8px 10px; font: inherit; font-size: 14px; }
+    .cal-modal label { font-size: 12px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 4px; }
+    .cal-modal .row { display: flex; gap: 8px; } .cal-modal .row > * { flex: 1; min-width: 0; }
+    .cal-colors { display: flex; gap: 8px; } .cal-colors span { width: 20px; height: 20px; border-radius: 50%; cursor: pointer; background: var(--c); border: 2px solid transparent; }
+    .cal-colors span.sel { border-color: var(--text-primary); }
+    .cal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+    @media (max-width: 768px) { .cal-title { font-size: 17px; } }
+
     @media (max-width: 1024px) {
       .note-list-pane {
         width: 290px;
@@ -1658,6 +1707,12 @@
           <span class="nav-count" id="count-pinned">0</span>
         </a>
 
+        <a class="nav-item" id="nav-calendar" onclick="openCalendar()">
+          <span class="nav-icon"><i class="ti ti-calendar"></i></span>
+          <span class="nav-text">Calendar</span>
+          <span class="nav-count" id="count-calendar">0</span>
+        </a>
+
         <a class="nav-item" id="filter-trash" onclick="setFilter('trash')">
           <span class="nav-icon"><i class="ti ti-trash"></i></span>
           <span class="nav-text">Trash</span>
@@ -1755,6 +1810,26 @@
         </button>
       </div>
     </main>
+
+    <!-- ════════════════════════════════════════════════════════════
+         Calendar pane (replaces columns 2 + 3 while active)
+    ════════════════════════════════════════════════════════════ -->
+    <section class="calendar-pane" id="calendar-pane">
+      <header class="cal-header">
+        <button class="editor-tool-btn mobile-back-btn" onclick="toggleSidebar()" title="Menu"><i class="ti ti-menu-2"></i></button>
+        <button class="cal-btn" onclick="calToday()">Today</button>
+        <button class="cal-btn" onclick="calNav(-1)" title="Previous"><i class="ti ti-chevron-left"></i></button>
+        <button class="cal-btn" onclick="calNav(1)" title="Next"><i class="ti ti-chevron-right"></i></button>
+        <h2 class="cal-title" id="cal-title"></h2>
+        <div class="cal-seg" id="cal-seg">
+          <button data-v="month" onclick="calSetView('month')">Month</button>
+          <button data-v="week" onclick="calSetView('week')">Week</button>
+          <button data-v="day" onclick="calSetView('day')">Day</button>
+        </div>
+        <button class="cal-btn primary" onclick="calNewEvent()"><i class="ti ti-plus"></i> Event</button>
+      </header>
+      <div class="cal-body" id="cal-body"></div>
+    </section>
 
     <!-- ════════════════════════════════════════════════════════════
          COLUMN 3: Bear Editor Canvas
@@ -1983,6 +2058,7 @@
 
         applyTheme();
         loadNotes();
+        loadCalendar();
       } catch (e) {
         console.error("Login Error:", e);
         alert("Decryption failed: " + e.message);
@@ -2230,6 +2306,7 @@
 
       // Update active nav item highlight
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
+      if (calMode) document.getElementById('nav-calendar').classList.add('active');
       if (!currentFilter.startsWith('tag:')) {
         const activeNavEl = document.getElementById(`filter-${currentFilter}`);
         if (activeNavEl) activeNavEl.classList.add('active');
@@ -2844,6 +2921,7 @@ print("Welcome to ZenVault Bear Style!")
     }
 
     function setFilter(filter) {
+      closeCalendar();
       currentFilter = filter;
       triggerRender();
       if (window.innerWidth <= 768) {
@@ -3054,6 +3132,187 @@ print("Welcome to ZenVault Bear Style!")
     window.loadBearDemoNotes = loadBearDemoNotes;
     window.handleTitleInput = handleTitleInput;
     window.handleBodyInput = handleBodyInput;
+
+
+    // ═══════════════════════════════════════════════════════════════
+    // Calendar — events live at ~pub/calendar/<soul> as one encrypted
+    // object in `data` (same schema as ZenOS writeCalendarEvent).
+    // ═══════════════════════════════════════════════════════════════
+    const calEvents = {};
+    let calMode = false, calView = 'month', calCursor = new Date();
+    const CAL_COLORS = ['#e04b4b', '#f4a261', '#2ec4b6', '#4895ef', '#9b5de5', '#8d99ae'];
+    const DAY_MS = 86400000;
+    const sod = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+    const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+    const pad = (n) => String(n).padStart(2, '0');
+    const dayKey = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    const toInput = (ms, allDay) => { const d = new Date(ms); const day = dayKey(d); return allDay ? day : day + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+    const fmtTime = (ms) => new Date(ms).toLocaleTimeString(navigator.language || 'en-US', { hour: '2-digit', minute: '2-digit' });
+    const weekStart = (d) => addDays(sod(d), -((sod(d).getDay() + 6) % 7)); // Monday first
+
+    function loadCalendar() {
+      zen.get('~' + pair.pub).get('calendar').map().on(async (node, soul) => {
+        if (!node || !node.data) {
+          delete calEvents[soul];
+        } else {
+          try {
+            const ev = await ZEN.decrypt(node.data, pair);
+            if (ev && ev.start != null) calEvents[soul] = ev;
+          } catch (_) { console.warn('Could not decrypt event:', soul); return; }
+        }
+        document.getElementById('count-calendar').textContent = Object.keys(calEvents).length;
+        if (calMode) renderCalendar();
+      });
+    }
+
+    function openCalendar() {
+      calMode = true;
+      document.body.classList.add('cal-mode');
+      document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
+      document.getElementById('nav-calendar').classList.add('active');
+      if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('open')) toggleSidebar();
+      renderCalendar();
+    }
+    function closeCalendar() {
+      calMode = false;
+      document.body.classList.remove('cal-mode');
+      document.getElementById('nav-calendar').classList.remove('active');
+    }
+    const calToday = () => { calCursor = new Date(); renderCalendar(); };
+    const calSetView = (v) => { calView = v; renderCalendar(); };
+    function calNav(dir) {
+      if (calView === 'month') calCursor = new Date(calCursor.getFullYear(), calCursor.getMonth() + dir, 1);
+      else calCursor = addDays(calCursor, dir * (calView === 'week' ? 7 : 1));
+      renderCalendar();
+    }
+
+    // events touching a given day, sorted
+    function eventsOn(day) {
+      const lo = sod(day).getTime(), hi = lo + DAY_MS;
+      return Object.entries(calEvents)
+        .map(([soul, ev]) => ({ soul, ...ev }))
+        .filter(ev => ev.start < hi && Math.max(ev.end ?? ev.start, ev.start + 1) > lo)
+        .sort((a, b) => (b.allDay - a.allDay) || a.start - b.start);
+    }
+
+    const chip = (ev) => `<span class="cal-chip" style="--ev:${ev.color || CAL_COLORS[0]}" onclick="event.stopPropagation();calEditEvent('${ev.soul}')" title="${escapeHtml(ev.title)}">${ev.allDay ? '' : fmtTime(ev.start) + ' '}${escapeHtml(ev.title)}</span>`;
+
+    function renderCalendar() {
+      const body = document.getElementById('cal-body');
+      const loc = navigator.language || 'en-US';
+      document.querySelectorAll('#cal-seg button').forEach(b => b.classList.toggle('active', b.dataset.v === calView));
+      const todayKey = dayKey(new Date());
+      let html = '', title = '';
+
+      if (calView === 'month') {
+        title = calCursor.toLocaleDateString(loc, { month: 'long', year: 'numeric' });
+        const first = new Date(calCursor.getFullYear(), calCursor.getMonth(), 1);
+        const start = weekStart(first);
+        html = '<div class="cal-month">';
+        for (let i = 0; i < 7; i++) html += `<div class="cal-dow">${addDays(start, i).toLocaleDateString(loc, { weekday: 'short' })}</div>`;
+        for (let i = 0; i < 42; i++) {
+          const d = addDays(start, i), evs = eventsOn(d);
+          html += `<div class="cal-cell ${d.getMonth() !== first.getMonth() ? 'other' : ''} ${dayKey(d) === todayKey ? 'cal-today' : ''}" onclick="calNewEvent('${dayKey(d)}')">
+            <span class="cal-daynum">${d.getDate()}</span>${evs.slice(0, 3).map(chip).join('')}${evs.length > 3 ? `<div class="cal-more">+${evs.length - 3} more</div>` : ''}</div>`;
+        }
+        html += '</div>';
+      } else {
+        const n = calView === 'week' ? 7 : 1;
+        const start = calView === 'week' ? weekStart(calCursor) : sod(calCursor);
+        const days = Array.from({ length: n }, (_, i) => addDays(start, i));
+        title = n === 1 ? start.toLocaleDateString(loc, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+          : start.toLocaleDateString(loc, { day: 'numeric', month: 'short' }) + ' – ' + days[6].toLocaleDateString(loc, { day: 'numeric', month: 'short', year: 'numeric' });
+        const spansDays = (ev) => ev.allDay || sod(ev.start).getTime() !== sod(Math.max(ev.end ?? ev.start, ev.start) - 1).getTime();
+        html = `<div class="cal-time" style="--cols:${n}"><div class="cal-time-head" style="grid-column:1/-1;display:grid;grid-template-columns:52px repeat(${n},1fr)">
+          <div></div>${days.map(d => `<div class="cal-hcell ${dayKey(d) === todayKey ? 'cal-today' : ''}" onclick="calNewEvent('${dayKey(d)}')">${d.toLocaleDateString(loc, { weekday: 'short' })} <b>${d.getDate()}</b></div>`).join('')}
+          <div style="font-size:10px;color:var(--text-muted);padding:4px;text-align:right">all-day</div>${days.map(d => `<div class="cal-allday">${eventsOn(d).filter(spansDays).map(chip).join('')}</div>`).join('')}</div>
+          <div class="cal-hours">${Array.from({ length: 24 }, (_, h) => `<div class="cal-hour">${h ? pad(h) + ':00' : ''}</div>`).join('')}</div>`;
+        for (const d of days) {
+          const evs = eventsOn(d).filter(e => !spansDays(e));
+          // greedy lanes so overlapping events sit side by side
+          const lanes = []; evs.forEach(e => { let l = lanes.findIndex(end => end <= e.start); if (l < 0) l = lanes.length; lanes[l] = Math.max(e.end ?? e.start, e.start + 15 * 60000); e.lane = l; });
+          const t0 = sod(d).getTime();
+          html += `<div class="cal-col" data-day="${dayKey(d)}" onclick="calColClick(event,'${dayKey(d)}')">${evs.map(e => {
+            const top = (e.start - t0) / 3600000 * 48, h = Math.max(((e.end ?? e.start) - e.start) / 3600000 * 48, 18), w = 100 / lanes.length;
+            return `<div class="cal-ev" style="--ev:${e.color || CAL_COLORS[0]};top:${top}px;height:${h}px;left:${e.lane * w}%;width:${w}%" onclick="event.stopPropagation();calEditEvent('${e.soul}')"><b>${escapeHtml(e.title)}</b><small>${fmtTime(e.start)}</small></div>`;
+          }).join('')}${dayKey(d) === todayKey ? `<div class="cal-now" style="top:${(Date.now() - t0) / 3600000 * 48}px"></div>` : ''}</div>`;
+        }
+        html += '</div>';
+      }
+      document.getElementById('cal-title').textContent = title;
+      const keep = body.scrollTop;
+      body.innerHTML = html;
+      body.scrollTop = keep || (calView !== 'month' ? 8 * 48 : 0);
+    }
+
+    function calColClick(e, day) {
+      const y = e.clientY - e.currentTarget.getBoundingClientRect().top;
+      calNewEvent(day, Math.min(23, Math.floor(y / 48)));
+    }
+
+    // ── Event modal ──
+    function calNewEvent(day = dayKey(new Date()), hour = 9) {
+      const [y, m, d] = day.split('-').map(Number);
+      const start = new Date(y, m - 1, d, hour, 0).getTime();
+      openEventModal({ soul: null, title: '', start, end: start + 3600000, allDay: false, location: '', notes: '', color: CAL_COLORS[0] });
+    }
+    function calEditEvent(soul) { openEventModal({ soul, ...calEvents[soul] }); }
+
+    function openEventModal(ev) {
+      closeEventModal();
+      const bg = document.createElement('div');
+      bg.className = 'cal-modal-bg'; bg.id = 'cal-modal-bg';
+      bg.onclick = (e) => { if (e.target === bg) closeEventModal(); };
+      bg.innerHTML = `<div class="cal-modal">
+        <input type="text" id="ev-title" placeholder="Event title" value="${escapeHtml(ev.title || '')}">
+        <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="ev-allday" ${ev.allDay ? 'checked' : ''}> All day</label>
+        <div class="row"><label>Start<input type="${ev.allDay ? 'date' : 'datetime-local'}" id="ev-start" value="${toInput(ev.start, ev.allDay)}"></label>
+        <label>End<input type="${ev.allDay ? 'date' : 'datetime-local'}" id="ev-end" value="${toInput(ev.end ?? ev.start, ev.allDay)}"></label></div>
+        <input type="text" id="ev-loc" placeholder="Location" value="${escapeHtml(ev.location || '')}">
+        <textarea id="ev-notes" rows="3" placeholder="Notes">${escapeHtml(ev.notes || '')}</textarea>
+        <div class="cal-colors" id="ev-colors">${CAL_COLORS.map(c => `<span style="--c:${c}" data-c="${c}" class="${c === (ev.color || CAL_COLORS[0]) ? 'sel' : ''}"></span>`).join('')}</div>
+        <div class="cal-actions">${ev.soul ? '<button class="cal-btn" id="ev-del" style="margin-right:auto">Delete</button>' : ''}
+          <button class="cal-btn" id="ev-cancel">Cancel</button><button class="cal-btn primary" id="ev-save">Save</button></div></div>`;
+      document.body.appendChild(bg);
+      const $ = (id) => document.getElementById(id);
+      $('ev-colors').onclick = (e) => { if (e.target.dataset.c) { [...$('ev-colors').children].forEach(c => c.classList.toggle('sel', c === e.target)); } };
+      $('ev-allday').onchange = (e) => {
+        const all = e.target.checked;
+        ['ev-start', 'ev-end'].forEach(id => { const el = $(id), ms = new Date(el.value).getTime(); el.type = all ? 'date' : 'datetime-local'; el.value = toInput(Number.isNaN(ms) ? ev.start : ms, all); });
+      };
+      $('ev-cancel').onclick = closeEventModal;
+      if ($('ev-del')) $('ev-del').onclick = () => deleteCalEvent(ev.soul);
+      $('ev-save').onclick = () => saveCalEvent(ev.soul);
+      $('ev-title').focus();
+    }
+    const closeEventModal = () => { const m = document.getElementById('cal-modal-bg'); if (m) m.remove(); };
+
+    async function saveCalEvent(soul) {
+      const $ = (id) => document.getElementById(id);
+      const title = $('ev-title').value.trim();
+      const allDay = $('ev-allday').checked;
+      const start = new Date($('ev-start').value + (allDay ? 'T00:00' : '')).getTime();
+      let end = new Date($('ev-end').value + (allDay ? 'T00:00' : '')).getTime();
+      if (!title) return showToast('Title required');
+      if (Number.isNaN(start)) return showToast('Invalid start date');
+      if (Number.isNaN(end) || end < start) end = start;
+      const ev = { title, start, end, allDay, location: $('ev-loc').value.trim(), notes: $('ev-notes').value.trim(), color: $('ev-colors').querySelector('.sel')?.dataset.c || CAL_COLORS[0] };
+      const id = soul || ('cal-' + Date.now() + '-' + Math.random().toString(36).substring(7));
+      const data = await ZEN.encrypt(ev, pair);
+      zen.get('~' + pair.pub).get('calendar').get(id).put({ data, updatedAt: Date.now(), encrypted: true }, (ack) => {
+        if (ack && ack.err) showToast('Save failed: ' + ack.err);
+      }, { authenticator: pair });
+      calEvents[id] = ev; // optimistic; relay echo confirms
+      closeEventModal(); renderCalendar(); showToast('Event encrypted & saved');
+    }
+
+    function deleteCalEvent(soul) {
+      zen.get('~' + pair.pub).get('calendar').get(soul).put(null, null, { authenticator: pair });
+      delete calEvents[soul];
+      closeEventModal(); renderCalendar(); showToast('Event deleted');
+    }
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeEventModal(); });
+    Object.assign(window, { openCalendar, calToday, calNav, calSetView, calNewEvent, calEditEvent, calColClick });
 
     // Auto-login session recovery
     const savedUser = sessionStorage.getItem('zen_user');
