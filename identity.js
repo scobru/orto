@@ -3,7 +3,7 @@
  * Shared by FID, smollog, ZenVault and ZenOS so one login is one `pub` everywhere.
  * Dependency-free: pass in the ZEN constructor you already loaded.
  *
- * Browser: import { deriveMasterPair } from 'https://cdn.jsdelivr.net/gh/scobru/fid@main/identity.js';
+ * Browser: import { deriveMasterPair } from 'https://cdn.jsdelivr.net/gh/scobru/fid@7887fc3468a77943da8ef18a70c3936d1dc45a2a/identity.js';
  *
  * The rule is the portal's: seed = alias.trim() + ':' + passphrase.trim(). Both parts are case-sensitive.
  * Changing it re-keys every FID identity, so it is pinned by tests/identity.test.mjs.
