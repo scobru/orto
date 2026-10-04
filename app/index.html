@@ -2080,7 +2080,7 @@
     import { deriveMasterPair } from 'https://cdn.jsdelivr.net/gh/scobru/fid@7887fc3468a77943da8ef18a70c3936d1dc45a2a/identity.js';
 
     let zen;
-    let pair, legacyPairs = [];
+    let pair;
     let isAuthenticated = false;
 
     // Local decrypted notes storage
@@ -2151,15 +2151,22 @@
 
     // Copy vault/calendar/bookmarks written under each earlier identity (smollog PBKDF2, plain `user + pass`)
     // to the current one, re-encrypting with the new key. Idempotent: souls already under the new pub are skipped.
-    async function migrateLegacy() {
+    // Runs once per identity: it re-reads every vault/calendar/bookmark node, which is slow on each refresh.
+    // The flag is only set once a relay actually answered (seen > 0), so an offline first load retries.
+    let migrationSeen = 0;
+    async function migrateLegacy(username, password) {
+      const doneKey = 'zenos_migrated:' + pair.pub;
+      try { if (localStorage.getItem(doneKey)) return; } catch (_) {}
+      const legacyPairs = [await legacySmollogPair(username, password), await ZEN.pair(null, { seed: username + password.trim() })];
       let migrated = 0;
       for (const legacyPair of legacyPairs) migrated += await migrateFrom(legacyPair);
+      if (migrationSeen) try { localStorage.setItem(doneKey, '1'); } catch (_) {}
       if (migrated) showToast('Migrated ' + migrated + ' items from your previous identity');
     }
     async function migrateFrom(legacyPair) {
       const readAll = (pub, path) => new Promise((resolve) => {
         const nodes = new Map();
-        setTimeout(() => resolve(nodes), 4000);
+        setTimeout(() => { migrationSeen += nodes.size; resolve(nodes); }, 4000);
         const root = zen.get('~' + pub).get(path);
         root.map().once((node, soul) => {
           if (!soul) return;
@@ -2207,7 +2214,6 @@
         btn.disabled = true;
 
         pair = await deriveMasterPair(ZEN, userInput, passInput);
-        legacyPairs = [await legacySmollogPair(userInput, passInput), await ZEN.pair(null, { seed: userInput + passInput.trim() })];
         isAuthenticated = true;
 
         sessionStorage.setItem('zen_user', userInput);
@@ -2231,7 +2237,7 @@
         loadCalendar();
         loadBlog();
         loadBookmarks();
-        migrateLegacy();
+        migrateLegacy(userInput, passInput);
       } catch (e) {
         console.error("Login Error:", e);
         alert("Decryption failed: " + e.message);
