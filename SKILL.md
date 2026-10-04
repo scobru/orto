@@ -52,88 +52,87 @@ node cli.js identity
 # node cli.js identity --user "<username>" --pass "<password>"
 ```
 
-### 2. Vault — Read & Decrypt Notes
-Fetch and decrypt all notes from the user's private vault:
+### 2. Vault — Full Notes CRUD
 ```bash
-node cli.js vault-read
+# Create or update note
+node cli.js vault-write --title "🐻 Project Summary" --body "### Summary\n- [x] Done" --cat "research" [--pinned] [--soul <soul>]
+
+# Read single note by soul
+node cli.js vault-get --soul "vault-1791155816426-8nv858"
+
+# List notes (supports --cat, --query, --pinned, --table, --count, -n, -p)
+node cli.js vault-read --cat "research" --query "summary" --table
+
+# Delete note by soul
+node cli.js vault-delete --soul "vault-1791155816426-8nv858"
 ```
 
-Filter by category or search query:
+### 3. Calendar — Full Events CRUD & Note Links
 ```bash
-node cli.js vault-read --user "<username>" --pass "<password>" --cat "research" --query "AI agent"
-```
+# Create or update event
+node cli.js calendar-write --title "Dentist" --start "2026-10-10T15:00:00Z" --end "2026-10-10T16:00:00Z" --location "Clinic" --notes "Bring card" [--allDay] [--soul <soul>]
 
-### 3. ZenVault — Write / Update an Encrypted Note
-Encrypt and save a note directly into the P2P graph:
-```bash
-node cli.js vault-write \
-  --user "<username>" \
-  --pass "<password>" \
-  --title "🐻 Project Summary" \
-  --body "### Summary\n- [x] Gather data\n- [ ] Deploy model" \
-  --cat "research" \
-  [--pinned]
-```
+# Read single event by soul
+node cli.js calendar-get --soul "cal-1791155890855-rmxf33"
 
-### 4. smollog — Publish Public Blog Post
-Publish a public, cryptographically signed Markdown article to smollog:
-```bash
-node cli.js blog-publish \
-  --user "<username>" \
-  --pass "<password>" \
-  --title "Dispatches from ZenOS" \
-  --content "### Decentralized Autonomous Publishing\n\nThis article was signed and propagated via P2P graph." \
-  --tags "zenos,agents,p2p"
-```
+# List events within date range
+node cli.js calendar-read --from 2026-10-01 --to 2026-10-31 --table
 
-### 5. smollog — Read Author Blog Posts
-Read public articles from an author's public key or alias:
-```bash
-node cli.js blog-read --alias "scobru"
-```
-Or by public key:
-```bash
-node cli.js blog-read --pub "0oQit1EicIMgYeM9rVRMjmgP9MoQjfK0XJLq6imoJ1CR0"
-```
+# Delete event by soul
+node cli.js calendar-delete --soul "cal-1791155890855-rmxf33"
 
-### 6. Calendar — Encrypted Events
-
-Events live at `~pub/calendar/<soul>`; the whole event (title, times, notes) is one encrypted object. Times are epoch ms or any date string.
-
-CLI (read and note links; create/update/delete go through the SDK below):
-```bash
-node cli.js calendar-read --from 2026-10-05 --to 2026-10-12
+# Link / unlink note or bookmark to an event
 node cli.js event-link   --event <event-soul> --note <note-soul>
 node cli.js event-unlink --event <event-soul> --note <note-soul>
+
+# Query links
+node cli.js calendar-events-for --note <note-soul>       # list events linking to note
+node cli.js calendar-notes-for  --event <event-soul>     # list notes linked to event
 ```
 
-```javascript
-await os.writeCalendarEvent({ title: "Dentist", start: "2026-10-05T10:00", end: "2026-10-05T11:00", notes: "bring card" });
-const week = await os.readCalendarEvents({ from: "2026-10-05", to: "2026-10-12" });   // decrypts, then filters by date
-await os.writeCalendarEvent({ soul: week[0].soul, ...week[0], title: "Dentist (moved)" }); // pass `soul` to update
-await os.deleteCalendarEvent(week[0].soul);
-```
-
-### 7. Bookmarks — Encrypted, Importable, Organisable
-
-Bookmarks live at `~pub/bookmarks/<soul>` (soul = hash of the URL, so the same URL is never stored twice). Each one is `{ url, title, folder, tags, addedAt }`, encrypted. `folder` is a path like `Dev/Tools`.
-
+### 4. Bookmarks — Full CRUD, Import/Export & Agent Tools
 ```bash
-node cli.js bookmarks-import --user <user> --pass <pass> --file bookmarks.html   # Brave / Chrome / Firefox export
-node cli.js bookmarks-read   --user <user> --pass <pass> [--folder Dev] [--query rust] [--limit 20] [--page 1] [--table] [--count]
-node cli.js bookmarks-export --user <user> --pass <pass> [--folder Dev] [--file out.html]   # Netscape HTML, importable by Brave / Chrome / Firefox
-node cli.js bookmarks-update --user <user> --pass <pass> --file changes.json     # [{ "soul": "...", "folder": "...", "title": "...", "tags": ["..."] }]
+# Create or update bookmark
+node cli.js bookmarks-write --url "https://github.com/scobru/zenos" --title "ZenOS Repo" --folder "Dev/Zen" --tags "github,sovereign"
+
+# Read single bookmark by URL or soul
+node cli.js bookmarks-get --url "https://github.com/scobru/zenos"
+node cli.js bookmarks-get --soul "bm-8677fe53e4fd80ae"
+
+# List bookmarks (supports --folder, --query, --table, --count, -n, -p)
+node cli.js bookmarks-read --folder "Dev" --query "zen" --table
+
+# Delete bookmark by URL or soul
+node cli.js bookmarks-delete --url "https://github.com/scobru/zenos"
+
+# Netscape HTML browser import / export
+node cli.js bookmarks-import --file bookmarks.html
+node cli.js bookmarks-export [--folder Dev] [--file out.html]
+
+# Batch update
+node cli.js bookmarks-update --file changes.json
 ```
 
-**"Organise my bookmarks" workflow** (for an agent):
-1. `os.readBookmarks({ timeoutMs: 30000 })` (or `bookmarks-read`). With thousands of bookmarks raise the timeout, and check the count against what the user expects before acting.
-2. Decide the new structure from titles, URLs and the existing folders. Prefer a shallow tree (2 levels), keep existing folder names the user already uses, and put anything unsure in `Unsorted` rather than guessing.
-3. Show the user a short summary (folders with counts, and a sample of moves) and wait for a go-ahead: the change rewrites many records.
-4. Apply it with `os.updateBookmarks([{ soul, folder, title?, tags? }, ...])` (or `bookmarks-update`). Omitted fields are kept, `url` and `addedAt` never change, unknown souls come back in `missing`.
-5. Re-read and compare the count: it must be unchanged. There is no undo, so before step 4 save a backup with `bookmarks-export --file backup.html` (re-importable) and keep the list from step 1 until the user is happy.
+### 5. smollog — Full Blog CRUD & Aliases
+```bash
+# Publish or update post
+node cli.js blog-publish --title "Dispatches from ZenOS" --content "### Sovereign Publishing\n..." --tags "zenos,agents" [--id <id>]
 
-### 8. Migrate Legacy Data
-Copy vault/calendar/bookmarks written under the earlier identity schemes into the current identity:
+# Read single post by id
+node cli.js blog-get --id "post-cli-demo" [--alias "scobru"]
+
+# List author posts
+node cli.js blog-read --alias "scobru" --table
+
+# Delete blog post
+node cli.js blog-delete --id "post-cli-demo"
+
+# Register blog alias (e.g. smollog.vercel.app/scobru)
+node cli.js blog-alias --alias "scobru"
+```
+
+### 6. Migrate Legacy Data
+Copy vault/calendar/bookmarks written under earlier identity schemes into the current identity:
 ```bash
 node cli.js migrate
 ```
@@ -168,29 +167,36 @@ import ZenOS from './zenos.js';
 const os = new ZenOS();
 await os.login(username, password);
 
-// 1. Read private vault notes
-const notes = await os.readVaultNotes();
+// 1. Vault Notes (CRUD)
+const note = await os.writeVaultNote({ title: "🤖 Agent Sync", body: "Automated report", cat: "logs", pinned: true });
+const singleNote = await os.getVaultNote(note.soul);
+const allNotes = await os.readVaultNotes();
+await os.deleteVaultNote(note.soul);
 
-// 2. Write an encrypted note
-await os.writeVaultNote({
-  title: "🤖 Agent Sync",
-  body: "Automated report generated at " + new Date().toISOString(),
-  cat: "logs"
-});
+// 2. Calendar Events (CRUD & Linking)
+const ev = await os.writeCalendarEvent({ title: "Standup", start: Date.now() + 3600000 });
+const singleEv = await os.getCalendarEvent(ev.soul);
+const weekEvs = await os.readCalendarEvents({ from: "2026-10-01", to: "2026-10-31" });
+await os.linkToEvent(ev.soul, { soul: note.soul });
+const linkedEvents = await os.eventsFor({ soul: note.soul });
+const linkedNotes = await os.notesForEvent(ev.soul);
+await os.deleteCalendarEvent(ev.soul);
 
-// 3. Publish public blog post to smollog
-await os.publishBlogPost({
-  title: "Autonomous Post",
-  content: "Content goes here...",
-  tags: ["ai", "p2p"]
-});
+// 3. Bookmarks (CRUD & Netscape HTML)
+const bm = await os.writeBookmark({ url: "https://zen.akao.io", title: "ZEN", folder: "Crypto" });
+const singleBm = await os.getBookmark(bm.soul);
+const allBms = await os.readBookmarks({ folder: "Crypto" });
+await os.deleteBookmark(bm.soul);
 
-// 4. Calendar and bookmarks (encrypted)
-await os.writeCalendarEvent({ title: "Standup", start: Date.now() + 3600000 });
-const marks = await os.readBookmarks({ timeoutMs: 30000 });
-await os.updateBookmarks([{ soul: marks[0].soul, folder: "Dev/Tools" }]);
+// 4. smollog Blog (CRUD & Alias)
+const post = await os.publishBlogPost({ title: "Autonomous Post", content: "Markdown body...", tags: ["ai", "p2p"] });
+const singlePost = await os.getBlogPost(post.id, os.pub);
+const allPosts = await os.readBlogPosts(os.pub);
+await os.deleteBlogPost(post.id);
+await os.registerAlias("scobru");
+const pub = await os.resolveAlias("scobru");
 
-// Custom relays
+// 5. Custom relays
 const custom = new ZenOS({ extraPeers: ["wss://relay.example.com/zen"] });              // defaults + custom
 const onlyOwn = new ZenOS({ extraPeers: ["wss://relay.example.com/zen"], useDefaultRelays: false });
 ```

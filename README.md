@@ -81,32 +81,58 @@ ZenOS reimagines personal computing in the decentralized AI era. Instead of silo
 
 Read the complete AI integration guide in [llm.txt](file:///d:/shogun-2/zenOS/llm.txt).
 
-### Quickstart Example
+### Quickstart Example (JavaScript SDK)
 ```javascript
 import ZenOS from './zenos.js';
 
 const os = new ZenOS();
 await os.login('scobru', 'your_password');
 
-// 1. Read private research notes
-const notes = await os.readVaultNotes();
+// 1. Vault Notes CRUD
+const note = await os.writeVaultNote({ title: 'Research', body: 'Agent notes', cat: 'ai' });
+const myNote = await os.getVaultNote(note.soul);
 
-// 2. Publish public blog post
+// 2. Calendar Events CRUD & Linking
+const ev = await os.writeCalendarEvent({ title: 'Team Sync', start: Date.now() + 3600000 });
+await os.linkToEvent(ev.soul, { soul: note.soul });
+
+// 3. Bookmarks CRUD
+await os.writeBookmark({ url: 'https://github.com/scobru/zenos', title: 'ZenOS', folder: 'Dev' });
+
+// 4. smollog Blog CRUD
 await os.publishBlogPost({
   title: '🚀 Dispatches from ZenOS',
   content: 'Automated dispatch synchronized directly to the decentralized P2P graph.',
   tags: ['zenos', 'agents', 'p2p']
 });
-### CLI Quickstart
-```bash
-# Read bookmarks with pagination and table formatting
-node cli.js bookmarks-read -c                        # Count total items: {"total": 1704}
-node cli.js bookmarks-read -n 10 -p 1                # Paginated JSON (page 1, 10 items)
-node cli.js bookmarks-read -n 10 -t                  # Render terminal table
-node cli.js bookmarks-read --query "react"           # Filter by search term
+```
 
-# Read vault notes
-node cli.js vault-read -n 5 --cat "research"
+### CLI Quickstart (Full CRUD)
+```bash
+# Vault (Notes) CRUD
+node cli.js vault-write --title "Sprint Plan" --body "Tasks..." --cat "work"
+node cli.js vault-get   --soul <soul>
+node cli.js vault-read  --table
+node cli.js vault-delete --soul <soul>
+
+# Calendar Events CRUD & Graph Links
+node cli.js calendar-write --title "Demo" --start "2026-10-10T15:00:00Z"
+node cli.js calendar-get   --soul <soul>
+node cli.js calendar-read  --table
+node cli.js event-link     --event <ev-soul> --note <note-soul>
+node cli.js calendar-delete --soul <soul>
+
+# Bookmarks CRUD & Netscape HTML
+node cli.js bookmarks-write --url "https://github.com/scobru/zenos" --title "ZenOS"
+node cli.js bookmarks-get   --url "https://github.com/scobru/zenos"
+node cli.js bookmarks-read  --table
+node cli.js bookmarks-delete --url "https://github.com/scobru/zenos"
+
+# smollog Blog CRUD
+node cli.js blog-publish --title "Hello World" --content "My post..."
+node cli.js blog-get     --id <id>
+node cli.js blog-read    --table
+node cli.js blog-delete  --id <id>
 ```
 
 ---

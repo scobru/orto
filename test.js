@@ -4,7 +4,6 @@ import http from 'http';
 import osmod from 'os';
 import path from 'path';
 
-process.env.ZENOS_CACHE = 'off';
 process.env.ZENOS_CACHE_FILE = path.join(osmod.tmpdir(), `zenos-test-cache-${Date.now()}.json`);
 
 const { ZenOS, parseBookmarksHtml, bookmarksToHtml, legacySmollogPair } = await import('./zenos.js');
@@ -14,19 +13,24 @@ const { deriveMasterPair } = await import('./identity.js');
 const ZEN = (await import('./zen.min.js')).default;
 new ZEN({ web: http.createServer().listen(8765) });
 
-const os = new ZenOS({ peers: ['ws://127.0.0.1:8765/zen'] });
+console.log('1. Starting test...');
+const os = new ZenOS({ peers: ['ws://127.0.0.1:8765/zen'], localStorage: true, radisk: true });
 await os.login('test-user', 'test-pass');
+console.log('2. Logged in');
 
 const { soul } = await os.writeCalendarEvent({ title: 'Dentist', start: '2026-10-05T10:00:00Z', end: '2026-10-05T11:00:00Z', notes: 'secret' });
+console.log('3. Wrote calendar event');
 const raw = await new Promise((r) => os.userRoot.get('calendar').get(soul).once(r));
 assert(!JSON.stringify(raw).includes('Dentist') && !JSON.stringify(raw).includes('secret'), 'plaintext leaked');
 
 let evs = await os.readCalendarEvents({ timeoutMs: 500 });
+console.log('4. Read calendar events:', evs.length);
 assert.equal(evs.length, 1);
 assert.equal(evs[0].title, 'Dentist');
 assert.equal((await os.readCalendarEvents({ from: '2026-11-01', timeoutMs: 500 })).length, 0);
 
 await os.deleteCalendarEvent(soul);
+console.log('5. Deleted calendar event');
 assert.equal((await os.readCalendarEvents({ timeoutMs: 500 })).length, 0);
 
 // Bookmarks: Brave-style export parse + encrypted import roundtrip + dedup + filters
@@ -98,5 +102,36 @@ assert(!JSON.stringify(raw2).includes(note.soul), 'link target leaked in clear')
 await assert.rejects(os.writeCalendarEvent({ soul: ev.soul, title: 'x', start: 1, links: [{ kind: 'url', soul: 'a' }] }));
 await os.unlinkFromEvent(ev.soul, { soul: note.soul });
 assert.equal((await os.eventsFor({ soul: note.soul }, 500)).length, 0);
-console.log('ok');
+
+// Vault single get & delete
+const singleNote = await os.getVaultNote(note.soul);
+assert.equal(singleNote.title, 'Meeting prep');
+await os.deleteVaultNote(note.soul);
+assert.equal(await os.getVaultNote(note.soul), null);
+
+// Bookmarks single get & delete
+const singleBm = await os.getBookmark(bms[1].soul);
+assert.ok(singleBm && singleBm.url);
+await os.deleteBookmark(bms[1].soul);
+assert.equal(await os.getBookmark(bms[1].soul), null);
+
+// Blog / smollog CRUD & alias
+const blogRes = await os.publishBlogPost({ title: 'Hello Sovereign World', content: '# Welcome to ZenOS', tags: ['zen', 'os'], id: 'post-test-1' });
+assert.equal(blogRes.id, 'post-test-1');
+const singlePost = await os.getBlogPost('post-test-1', os.pub);
+assert.equal(singlePost.title, 'Hello Sovereign World');
+assert.deepEqual(singlePost.tags, ['zen', 'os']);
+
+const blogList = await os.readBlogPosts(os.pub, 500);
+assert.ok(blogList.some(p => p.id === 'post-test-1'));
+
+await os.registerAlias('tester');
+const resolvedPub = await os.resolveAlias('tester');
+assert.equal(resolvedPub, os.pub);
+
+await os.deleteBlogPost('post-test-1');
+const deletedPost = await os.getBlogPost('post-test-1', os.pub);
+assert.equal(deletedPost, null);
+
+console.log('ok - all CRUD tests passed');
 process.exit(0);

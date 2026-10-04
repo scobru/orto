@@ -201,7 +201,7 @@ export function bookmarksToHtml(bookmarks) {
 // what an event can point at; the link lives inside the encrypted event, so there is one source of truth
 const LINK_KINDS = ['note', 'bookmark'];
 
-async function bookmarkSoul(url) {
+export async function bookmarkSoul(url) {
   const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(url));
   return 'bm-' + [...new Uint8Array(h)].slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('');
 }
@@ -233,7 +233,7 @@ export function extractCipher(data) {
     }
     return data;
   }
-  return null;
+  return data;
 }
 
 export function getGraphSnapshot(zen) {
@@ -403,11 +403,14 @@ export class ZenOS {
     const parentSoul = '~' + this.pair.pub + '/vault';
 
     const processNode = async (node, soul) => {
-      if (!node || !soul || node.trash) return;
+      if (!node || !soul) return;
+      const isTrash = extractCipher(node.trash) === true || node.trash === true;
+      if (isTrash) return;
       const titleRaw = extractCipher(node.title);
       if (!titleRaw) return;
       const bodyRaw = extractCipher(node.body);
       const catRaw = extractCipher(node.cat);
+      const pinned = extractCipher(node.pinned) === true || node.pinned === true;
       try {
         const title = await ZEN.decrypt(titleRaw, this.pair);
         const body = bodyRaw ? await ZEN.decrypt(bodyRaw, this.pair) : '';
@@ -417,7 +420,7 @@ export class ZenOS {
           title: title || '',
           body: body || '',
           cat: cat || '',
-          pinned: !!node.pinned,
+          pinned,
           timestamp: Number(extractCipher(node.timestamp) || node.timestamp) || Date.now()
         });
       } catch (_) {
@@ -484,6 +487,67 @@ export class ZenOS {
         });
       } catch (_) {}
     });
+  }
+
+  /**
+   * Read and decrypt one note by soul (null if missing, trash or not decryptable).
+   */
+  async getVaultNote(soul) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    if (!soul) throw new Error('Note soul is required.');
+
+    const allGraph = getGraphSnapshot(this.zen);
+    const parentSoul = '~' + this.pair.pub + '/vault';
+    if (isSoulDeleted(allGraph, parentSoul, soul)) return null;
+
+    const cachedNode = allGraph['~' + this.pair.pub + '/vault/' + soul];
+    if (cachedNode && cachedNode.title) {
+      const isTrash = extractCipher(cachedNode.trash) === true || cachedNode.trash === true;
+      if (!isTrash) {
+        try {
+          const titleRaw = extractCipher(cachedNode.title);
+          const bodyRaw = extractCipher(cachedNode.body);
+          const catRaw = extractCipher(cachedNode.cat);
+          const title = await ZEN.decrypt(titleRaw, this.pair);
+          const body = bodyRaw ? await ZEN.decrypt(bodyRaw, this.pair) : '';
+          const cat = catRaw ? await ZEN.decrypt(catRaw, this.pair) : '';
+          const pinned = extractCipher(cachedNode.pinned) === true || cachedNode.pinned === true;
+          return {
+            soul,
+            title: title || '',
+            body: body || '',
+            cat: cat || '',
+            pinned,
+            timestamp: Number(extractCipher(cachedNode.timestamp) || cachedNode.timestamp) || Date.now()
+          };
+        } catch (_) {}
+      }
+    }
+
+    const node = await new Promise((resolve) => {
+      const t = setTimeout(() => resolve(null), 3000);
+      this.userRoot.get('vault').get(soul).once((n) => { clearTimeout(t); resolve(n); });
+    });
+    if (!node || !node.title) return null;
+    const isTrash = extractCipher(node.trash) === true || node.trash === true;
+    if (isTrash) return null;
+    try {
+      const titleRaw = extractCipher(node.title);
+      const bodyRaw = extractCipher(node.body);
+      const catRaw = extractCipher(node.cat);
+      const title = await ZEN.decrypt(titleRaw, this.pair);
+      const body = bodyRaw ? await ZEN.decrypt(bodyRaw, this.pair) : '';
+      const cat = catRaw ? await ZEN.decrypt(catRaw, this.pair) : '';
+      const pinned = extractCipher(node.pinned) === true || node.pinned === true;
+      return {
+        soul,
+        title: title || '',
+        body: body || '',
+        cat: cat || '',
+        pinned,
+        timestamp: Number(extractCipher(node.timestamp) || node.timestamp) || Date.now()
+      };
+    } catch (_) { return null; }
   }
 
   /**
@@ -853,6 +917,39 @@ export class ZenOS {
   }
 
   /**
+   * Read and decrypt one bookmark by soul (null if missing or not decryptable).
+   */
+  async getBookmark(soul) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    if (!soul) throw new Error('Bookmark soul is required.');
+
+    const allGraph = getGraphSnapshot(this.zen);
+    const parentSoul = '~' + this.pair.pub + '/bookmarks';
+    if (isSoulDeleted(allGraph, parentSoul, soul)) return null;
+
+    const cachedNode = allGraph['~' + this.pair.pub + '/bookmarks/' + soul];
+    if (cachedNode && cachedNode.data) {
+      try {
+        const rawData = extractCipher(cachedNode.data) || cachedNode.data;
+        const bm = await ZEN.decrypt(rawData, this.pair);
+        if (bm && bm.url) return { soul, ...bm };
+      } catch (_) {}
+    }
+
+    const node = await new Promise((resolve) => {
+      const t = setTimeout(() => resolve(null), 3000);
+      this.userRoot.get('bookmarks').get(soul).once((n) => { clearTimeout(t); resolve(n); });
+    });
+    if (!node || !node.data) return null;
+    try {
+      const rawData = extractCipher(node.data) || node.data;
+      const bm = await ZEN.decrypt(rawData, this.pair);
+      if (bm && bm.url) return { soul, ...bm };
+    } catch (_) {}
+    return null;
+  }
+
+  /**
    * Delete a bookmark by soul.
    */
   async deleteBookmark(soul) {
@@ -910,17 +1007,19 @@ export class ZenOS {
     const parentSoul = '~' + targetPub + '/posts';
 
     const processPost = (post, id) => {
-      if (!post || post.deleted) {
-        if (post && post.deleted && id) posts.delete(id);
+      if (!post) return;
+      const isDeleted = extractCipher(post.deleted) === true || post.deleted === true;
+      if (isDeleted) {
+        if (id) posts.delete(id);
         return;
       }
-      const postId = post.id || id;
+      const postId = extractCipher(post.id) || post.id || id;
       if (!postId) return;
-      const title = typeof post.title === 'string' ? post.title : (post.title?.[':'] || '');
-      const content = typeof post.content === 'string' ? post.content : (post.content?.[':'] || '');
-      const tagsRaw = post.tags?.[':'] !== undefined ? post.tags[':'] : post.tags;
-      const tags = typeof tagsRaw === 'string' ? tagsRaw.split(', ').map(t => t.trim()).filter(Boolean) : (Array.isArray(tagsRaw) ? tagsRaw : []);
-      const authorAlias = post.authorAlias?.[':'] !== undefined ? post.authorAlias[':'] : (post.authorAlias || null);
+      const title = extractCipher(post.title) || '';
+      const content = extractCipher(post.content) || '';
+      const tagsRaw = extractCipher(post.tags);
+      const tags = typeof tagsRaw === 'string' ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : (Array.isArray(tagsRaw) ? tagsRaw : []);
+      const authorAlias = extractCipher(post.authorAlias) || null;
 
       posts.set(postId, {
         id: postId,
@@ -993,6 +1092,89 @@ export class ZenOS {
   }
 
   /**
+   * Read one public blog post by id and author pub/pair.
+   */
+  async getBlogPost(id, authorPub = null) {
+    if (!id) throw new Error('Post id is required.');
+    const targetPub = authorPub || this.pub;
+    if (!targetPub) throw new Error('Target public key required.');
+
+    const allGraph = getGraphSnapshot(this.zen);
+    const parentSoul = '~' + targetPub + '/posts';
+    if (isSoulDeleted(allGraph, parentSoul, id)) return null;
+
+    const cached = allGraph['~' + targetPub + '/posts/' + id];
+    if (cached) {
+      const isDeletedCached = extractCipher(cached.deleted) === true || cached.deleted === true;
+      if (!isDeletedCached) {
+        const title = extractCipher(cached.title) || '';
+        const content = extractCipher(cached.content) || '';
+        if (title || content) {
+          const tagsRaw = extractCipher(cached.tags);
+          const tags = typeof tagsRaw === 'string' ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : (Array.isArray(tagsRaw) ? tagsRaw : []);
+          const authorAlias = extractCipher(cached.authorAlias) || null;
+          return {
+            id,
+            title,
+            content,
+            tags,
+            authorAlias,
+            authorPub: targetPub,
+            createdAt: Number(extractCipher(cached.createdAt) || cached.createdAt) || Date.now(),
+            updatedAt: Number(extractCipher(cached.updatedAt) || cached.updatedAt) || Date.now()
+          };
+        }
+      }
+    }
+
+    const post = await new Promise((resolve) => {
+      const t = setTimeout(() => resolve(null), 3000);
+      this.zen.get('~' + targetPub).get('posts').get(id).once((n) => { clearTimeout(t); resolve(n); });
+    });
+    if (!post) return null;
+    const isDeleted = extractCipher(post.deleted) === true || post.deleted === true;
+    if (isDeleted) return null;
+    const title = extractCipher(post.title) || '';
+    const content = extractCipher(post.content) || '';
+    const tagsRaw = extractCipher(post.tags);
+    const tags = typeof tagsRaw === 'string' ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : (Array.isArray(tagsRaw) ? tagsRaw : []);
+    const authorAlias = extractCipher(post.authorAlias) || null;
+    return {
+      id,
+      title,
+      content,
+      tags,
+      authorAlias,
+      authorPub: targetPub,
+      createdAt: Number(extractCipher(post.createdAt) || post.createdAt) || Date.now(),
+      updatedAt: Number(extractCipher(post.updatedAt) || post.updatedAt) || Date.now()
+    };
+  }
+
+  /**
+   * Delete a blog post (marks deleted: true and syncs).
+   */
+  async deleteBlogPost(id) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    if (!id) throw new Error('Post id required.');
+
+    return new Promise((resolve, reject) => {
+      this.userRoot.get('posts').get(id).put({ deleted: true, updatedAt: Date.now() }, (ack) => {
+        if (nodeStorageFlush) nodeStorageFlush();
+        if (ack && ack.err) reject(new Error(ack.err));
+        else resolve({ id, status: 'deleted', authorPub: this.pair.pub });
+      }, { authenticator: this.pair });
+    });
+  }
+
+  /**
+   * Alias for publishBlogPost.
+   */
+  async writeBlogPost(post) {
+    return this.publishBlogPost(post);
+  }
+
+  /**
    * Register a human-friendly blog alias (e.g. smollog.vercel.app/scobru).
    */
   async registerAlias(alias = null) {
@@ -1004,6 +1186,27 @@ export class ZenOS {
       this.zen.get('smollog_aliases').get(targetAlias).put(this.pair.pub, () => {
         if (nodeStorageFlush) nodeStorageFlush();
         resolve({ alias: targetAlias, pub: this.pair.pub });
+      });
+    });
+  }
+
+  /**
+   * Resolve a human-friendly blog alias to a public key.
+   */
+  async resolveAlias(alias) {
+    if (!alias) throw new Error('Alias is required.');
+    const aliasKey = alias.trim().toLowerCase();
+    const allGraph = getGraphSnapshot(this.zen);
+    const cachedAlias = allGraph['smollog_aliases']?.[aliasKey];
+    if (cachedAlias) {
+      const val = typeof cachedAlias === 'string' ? cachedAlias : (cachedAlias?.[':'] || null);
+      if (val) return val;
+    }
+    return new Promise((resolve) => {
+      const t = setTimeout(() => resolve(null), 3000);
+      this.zen.get('smollog_aliases').get(aliasKey).once((found) => {
+        clearTimeout(t);
+        resolve(found || null);
       });
     });
   }
