@@ -9,19 +9,54 @@
 // 3. Browser / CDN fallback
 import { deriveMasterPair } from './identity.js';
 
+/**
+ * Node has no localStorage, so ZEN keeps its graph cache in memory: every run re-downloads and
+ * re-verifies (signature check, ~12ms each) the whole graph, which blocks the event loop for minutes
+ * on a few thousand bookmarks (the browser reads them from its persistent localStorage instead).
+ * ZEN picks its cache up from `window.localStorage` at load time, so expose a file-backed one only
+ * while the bundle is imported. Cache file: ZENOS_CACHE_FILE, default ~/.zenos/cache.json;
+ * ZENOS_CACHE=off disables it. It holds the same (encrypted) records the relays hold.
+ */
+async function withNodeStorage(load) {
+  const proc = globalThis.process;
+  if (!proc?.versions?.node || globalThis.window || /^(0|off|false|no)$/i.test(proc.env.ZENOS_CACHE || '')) return load();
+  const [{ default: fs }, { default: path }, { default: osmod }] = await Promise.all([import('node:fs'), import('node:path'), import('node:os')]);
+  const file = proc.env.ZENOS_CACHE_FILE || path.join(osmod.homedir(), '.zenos', 'cache.json');
+  let data = {};
+  try { data = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) {}
+  let timer = null;
+  const flush = () => {
+    clearTimeout(timer); timer = null;
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file + '.tmp', JSON.stringify(data));
+      fs.renameSync(file + '.tmp', file);
+    } catch (_) {}
+  };
+  proc.on('exit', () => { if (timer) flush(); });
+  globalThis.window = {
+    localStorage: {
+      getItem: (k) => (k in data ? data[k] : null),
+      removeItem: (k) => { delete data[k]; },
+      setItem: (k, v) => { data[k] = String(v); timer = timer || setTimeout(flush, 1000); }
+    }
+  };
+  try { return await load(); } finally { delete globalThis.window; }
+}
+
 let ZEN;
 async function initZenModule() {
   // 1. Same directory bundle (self-contained)
   try {
     const localUrl = new URL('./zen.min.js', import.meta.url).href;
-    const m = await import(localUrl);
+    const m = await withNodeStorage(() => import(localUrl));
     return m.default || m;
   } catch (_) {}
 
   // 2. Sibling repository (../zen/zen.min.js)
   try {
     const siblingUrl = new URL('../zen/zen.min.js', import.meta.url).href;
-    const m = await import(siblingUrl);
+    const m = await withNodeStorage(() => import(siblingUrl));
     return m.default || m;
   } catch (_) {}
 
@@ -530,7 +565,7 @@ export class ZenOS {
   /**
    * Read and decrypt all bookmarks, optionally filtered by folder prefix or text query.
    */
-  async readBookmarks({ folder = null, query = null, timeoutMs = 5000 } = {}) {
+  async readBookmarks({ folder = null, query = null, timeoutMs = 15000 } = {}) {
     if (!this.pair) throw new Error('Not authenticated.');
     const q = query ? query.toLowerCase() : null;
     const marks = [];
