@@ -17,12 +17,11 @@ This skill provides autonomous AI agents with tools, schemas, and workflows to o
 
 ## 🚀 Quick Execution (CLI & Scripts)
 
-The skill provides a universal CLI tool [`cli.js`](file:///d:/shogun-2/zenOS/cli.js) to perform operations without writing boilerplate code.
-You can run it from within the repo (`node cli.js ...`) or from any project using its global path:
-`node "C:\Users\scobr\.gemini\config\skills\zenos\cli.js"` (or `node "D:\shogun-2\zenOS\cli.js"`).
+The skill provides a universal CLI tool [`cli.js`](cli.js) to perform operations without writing boilerplate code.
+Run it from the skill directory (`node cli.js ...`), or from any project with the full path to the installed skill: `node "<skill-dir>/cli.js" ...`.
 
 ### 🔑 Credentials & .env Configuration
-You can place a `.env` file directly inside the skill directory (see [`.env.example`](file:///d:/shogun-2/zenOS/.env.example)) or your working directory:
+You can place a `.env` file directly inside the skill directory (see [`.env.example`](.env.example)) or your working directory:
 ```env
 ZENOS_USER=your_username
 ZENOS_PASS=your_password
@@ -56,7 +55,8 @@ node cli.js vault-write \
   --pass "<password>" \
   --title "🐻 Project Summary" \
   --body "### Summary\n- [x] Gather data\n- [ ] Deploy model" \
-  --cat "research"
+  --cat "research" \
+  [--pinned]
 ```
 
 ### 4. smollog — Publish Public Blog Post
@@ -84,6 +84,13 @@ node cli.js blog-read --pub "0oQit1EicIMgYeM9rVRMjmgP9MoQjfK0XJLq6imoJ1CR0"
 
 Events live at `~pub/calendar/<soul>`; the whole event (title, times, notes) is one encrypted object. Times are epoch ms or any date string.
 
+CLI (read and note links; create/update/delete go through the SDK below):
+```bash
+node cli.js calendar-read --from 2026-10-05 --to 2026-10-12
+node cli.js event-link   --event <event-soul> --note <note-soul>
+node cli.js event-unlink --event <event-soul> --note <note-soul>
+```
+
 ```javascript
 await os.writeCalendarEvent({ title: "Dentist", start: "2026-10-05T10:00", end: "2026-10-05T11:00", notes: "bring card" });
 const week = await os.readCalendarEvents({ from: "2026-10-05", to: "2026-10-12" });   // decrypts, then filters by date
@@ -109,7 +116,13 @@ node cli.js bookmarks-update --user <user> --pass <pass> --file changes.json    
 4. Apply it with `os.updateBookmarks([{ soul, folder, title?, tags? }, ...])` (or `bookmarks-update`). Omitted fields are kept, `url` and `addedAt` never change, unknown souls come back in `missing`.
 5. Re-read and compare the count: it must be unchanged. There is no undo, so before step 4 save a backup with `bookmarks-export --file backup.html` (re-importable) and keep the list from step 1 until the user is happy.
 
-### 8. Custom Relays
+### 8. Migrate Legacy Data
+Copy vault/calendar/bookmarks written under the earlier identity schemes into the current identity:
+```bash
+node cli.js migrate
+```
+
+### 9. Custom Relays
 If the user provides their own relay, pass it on **every** command (or set `ZENOS_RELAYS` once):
 ```bash
 # add to the default relays
@@ -118,17 +131,20 @@ node cli.js vault-read --user "<username>" --pass "<password>" --relay "wss://re
 # use ONLY the user's relay(s)
 node cli.js vault-read --user "<username>" --pass "<password>" --relay "wss://relay.example.com/zen" --no-default-relays
 
+# replace the whole relay list (--peers)
+node cli.js vault-read --user "<username>" --pass "<password>" --peers "wss://a/zen,wss://b/zen"
+
 # check the effective list
 node cli.js relays --relay "wss://relay.example.com/zen"
 ```
 Env alternative: `ZENOS_RELAYS="wss://a/zen,wss://b/zen"` and `ZENOS_ONLY_CUSTOM_RELAYS=true`.
-URLs without a path get `/zen` appended. See [RELAYS.md](file:///d:/shogun-2/zenOS/RELAYS.md) for self-hosting.
+URLs without a path get `/zen` appended. See [RELAYS.md](RELAYS.md) for self-hosting.
 
 ---
 
 ## 💻 Programmatic Usage via JavaScript SDK
 
-Any agent script can import [`zenos.js`](file:///d:/shogun-2/zenOS/zenos.js):
+Any agent script can import [`zenos.js`](zenos.js):
 
 ```javascript
 import ZenOS from './zenos.js';
