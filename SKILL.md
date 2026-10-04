@@ -1,6 +1,6 @@
 ---
 name: zenos
-description: "Use when interacting with ZenOS — the sovereign decentralized operating system powered by ZEN P2P graph. Enables autonomous agents to read, write, search, and synchronize encrypted private notes in ZenVault, publish and read public blog posts in smollog, and manage sovereign cryptographic identities."
+description: "Use when interacting with ZenOS — the sovereign decentralized operating system powered by ZEN P2P graph. Enables autonomous agents to read, write, search, and synchronize encrypted private notes in the Vault, manage calendar events, curate bookmarks, publish public signed blog posts on smollog, and resolve sovereign cryptographic identities."
 ---
 
 # ZenOS Agent Skill
@@ -8,9 +8,10 @@ description: "Use when interacting with ZenOS — the sovereign decentralized op
 ZenOS is a decentralized, zero-backend, multi-app operating system powered by **ZEN** P2P graph database & cryptographic identity (`secp256k1`).
 
 This skill provides autonomous AI agents with tools, schemas, and workflows to orchestrate across a user's sovereign decentralized data nodes:
-1. **ZenVault** (`~{pub}/vault`): End-to-end encrypted private knowledge base (AES-GCM-256).
-2. **smollog** (`~{pub}/posts`): Public verifiable Markdown blog posts and journals.
-3. **Future Nodes**: Calendar (`~{pub}/calendar`), Tasks (`~{pub}/tasks`), and direct P2P messaging.
+1. **Vault (`~{pub}/vault`)**: End-to-end encrypted private notes & knowledge base (AES-GCM-256).
+2. **Calendar (`~{pub}/calendar`)**: E2EE event scheduling, reminders, and bidirectional note linking.
+3. **Bookmarks (`~{pub}/bookmarks`)**: Private encrypted web library with browser Netscape HTML import/export.
+4. **smollog (`~{pub}/posts`)**: Public verifiable Markdown blog posts and journals signed with ECDSA.
 
 ---
 
