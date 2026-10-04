@@ -1494,6 +1494,24 @@
       animation: spin 1s linear infinite;
     }
 
+    #sync-loading {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: var(--bg-sidebar);
+      color: var(--text-sidebar-title);
+      font-size: 14px;
+    }
+
+    #sync-loading i {
+      font-size: 28px;
+    }
+
     @keyframes spin {
       from { transform: rotate(0deg); }
       to { transform: rotate(360deg); }
@@ -1713,6 +1731,7 @@
   </div>
 
   <!-- Main 3-Column Bear Dashboard -->
+  <div id="sync-loading" class="hidden"><i class="ti ti-loader animate-spin"></i><span>Syncing your nodes…</span></div>
   <div id="dashboard" class="dashboard-wrapper hidden">
 
     <!-- Mobile Backdrop -->
@@ -2201,6 +2220,23 @@
       return migrated;
     }
 
+    // ZEN has no "all loaded" signal: keep the overlay until node events go quiet (or a hard cap).
+    let syncTimer = null, syncCap = null;
+    function syncDone() {
+      clearTimeout(syncTimer); clearTimeout(syncCap); syncTimer = syncCap = null;
+      document.getElementById('sync-loading').classList.add('hidden');
+    }
+    function syncStart() {
+      document.getElementById('sync-loading').classList.remove('hidden');
+      syncCap = setTimeout(syncDone, 10000);
+      syncTimer = setTimeout(syncDone, 3000); // first nodes can be slow; later events reset to 1s
+    }
+    function syncBump() {
+      if (!syncCap) return;
+      clearTimeout(syncTimer);
+      syncTimer = setTimeout(syncDone, 1000);
+    }
+
     // ── Authentication / Decrypt Master Vault ──
     async function login() {
       const userInput = document.getElementById('user-input').value.trim() || sessionStorage.getItem('zen_user');
@@ -2233,6 +2269,7 @@
         }
 
         applyTheme();
+        syncStart();
         loadNotes();
         loadCalendar();
         loadBlog();
@@ -2252,6 +2289,7 @@
     // ── Load P2P Encrypted Notes ──
     function loadNotes() {
       zen.get('~' + pair.pub).get('vault').map().on(async (note, id) => {
+        syncBump();
         if (!note) {
           delete localNotes[id];
           if (selectedNoteId === id) {
@@ -3346,6 +3384,7 @@ print("Welcome to ZenOS!")
 
     function loadCalendar() {
       zen.get('~' + pair.pub).get('calendar').map().on(async (node, soul) => {
+        syncBump();
         if (!node || !node.data) {
           delete calEvents[soul];
         } else {
@@ -3562,6 +3601,7 @@ print("Welcome to ZenOS!")
 
     function loadBlog() {
       zen.get('~' + pair.pub).get('posts').map().on((post, id) => {
+        syncBump();
         if (!post || post.deleted === true || !post.title) delete blogPosts[id];
         else blogPosts[id] = { id, title: post.title, content: post.content || '', tags: post.tags || '', createdAt: post.createdAt || 0 };
         document.getElementById('count-blog').textContent = Object.keys(blogPosts).length;
@@ -3664,6 +3704,7 @@ print("Welcome to ZenOS!")
 
     function loadBookmarks() {
       zen.get('~' + pair.pub).get('bookmarks').map().on(async (node, soul) => {
+        syncBump();
         if (!node || !node.data) delete bookmarks[soul];
         else {
           try {
