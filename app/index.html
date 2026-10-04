@@ -3703,14 +3703,47 @@ print("Welcome to ZenOS!")
       showToast('Exported ' + list.length + ' bookmarks');
     }
 
-    function loadBookmarks() {
+    // Cache of decrypted bookmarks: one blob in IndexedDB, encrypted with the user's own pair (never plaintext at rest).
+    // Entries keep the ciphertext they came from, so a relay/local update with unchanged data is not decrypted again.
+    const bmCache = {}; // soul -> { c: ciphertext, b: bookmark }
+    const bmCacheKey = () => 'bookmarks:' + pair.pub;
+    const idb = (mode, fn) => new Promise((resolve, reject) => {
+      const req = indexedDB.open('zenos', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('cache');
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const tx = req.result.transaction('cache', mode), q = fn(tx.objectStore('cache'));
+        tx.oncomplete = () => resolve(q && q.result);
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+    let bmSaveTimer = null;
+    function bmSaveCache() {
+      clearTimeout(bmSaveTimer);
+      bmSaveTimer = setTimeout(async () => {
+        try { const blob = await ZEN.encrypt(bmCache, pair); await idb('readwrite', s => s.put(blob, bmCacheKey())); } catch (_) {}
+      }, 1500);
+    }
+
+    async function loadBookmarks() {
+      try {
+        const blob = await idb('readonly', s => s.get(bmCacheKey()));
+        const cached = blob && await ZEN.decrypt(blob, pair);
+        if (cached) {
+          for (const [soul, e] of Object.entries(cached)) { bmCache[soul] = e; bookmarks[soul] = e.b; }
+          document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
+          if (bmMode) bmScheduleRender();
+          syncBump();
+        }
+      } catch (_) { /* no cache yet, or unreadable: fall back to full decrypt */ }
       zen.get('~' + pair.pub).get('bookmarks').map().on(async (node, soul) => {
         syncBump();
-        if (!node || !node.data) delete bookmarks[soul];
+        if (!node || !node.data) { delete bookmarks[soul]; delete bmCache[soul]; bmSaveCache(); }
+        else if (bmCache[soul] && bmCache[soul].c === node.data) return;
         else {
           try {
             const bm = await ZEN.decrypt(node.data, pair);
-            if (bm && /^https?:\/\//i.test(bm.url)) bookmarks[soul] = bm;
+            if (bm && /^https?:\/\//i.test(bm.url)) { bookmarks[soul] = bm; bmCache[soul] = { c: node.data, b: bm }; bmSaveCache(); }
           } catch (_) { console.warn('Could not decrypt bookmark:', soul); return; }
         }
         document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
@@ -3831,7 +3864,7 @@ print("Welcome to ZenOS!")
     }
     function bmDelete(soul) {
       zen.get('~' + pair.pub).get('bookmarks').get(soul).put(null, null, { authenticator: pair });
-      delete bookmarks[soul];
+      delete bookmarks[soul]; delete bmCache[soul]; bmSaveCache();
       document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
       renderBookmarks();
     }
