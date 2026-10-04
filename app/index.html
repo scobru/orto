@@ -2220,7 +2220,8 @@
       return migrated;
     }
 
-    // ZEN has no "all loaded" signal: keep the overlay until node events go quiet (or a hard cap).
+    // ZEN has no "all loaded" signal. Nodes already in the local ZEN cache arrive within ms, so hide the overlay
+    // as soon as events go quiet for 400ms; relay updates keep streaming in and render progressively.
     let syncTimer = null, syncCap = null;
     function syncDone() {
       clearTimeout(syncTimer); clearTimeout(syncCap); syncTimer = syncCap = null;
@@ -2229,12 +2230,12 @@
     function syncStart() {
       document.getElementById('sync-loading').classList.remove('hidden');
       syncCap = setTimeout(syncDone, 10000);
-      syncTimer = setTimeout(syncDone, 3000); // first nodes can be slow; later events reset to 1s
+      syncTimer = setTimeout(syncDone, 1500); // empty/new account: nothing ever arrives
     }
     function syncBump() {
       if (!syncCap) return;
       clearTimeout(syncTimer);
-      syncTimer = setTimeout(syncDone, 1000);
+      syncTimer = setTimeout(syncDone, 400);
     }
 
     // ── Authentication / Decrypt Master Vault ──
