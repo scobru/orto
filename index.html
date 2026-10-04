@@ -4,8 +4,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ZenVault — Bear Style Private Notes</title>
-  <meta name="description" content="ZenVault - End-to-End Encrypted Private Markdown Notes inspired by Bear.">
+  <title>ZenOS — Sovereign Personal Workspace</title>
+  <meta name="description" content="ZenOS - Sovereign Decentralized Personal Workspace & Knowledge Base powered by ZEN P2P.">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1676,8 +1676,8 @@
         <i class="ti ti-paw"></i>
       </div>
       <div class="login-title-group">
-        <h1>ZenVault</h1>
-        <p>Zero-Knowledge E2E Encrypted Notes<br>Enter your master credentials to unlock.</p>
+        <h1>ZenOS</h1>
+        <p>Sovereign Decentralized Workspace<br>Enter your master credentials to unlock.</p>
       </div>
       <div class="login-form">
         <div class="input-wrapper">
@@ -1690,7 +1690,7 @@
             autocomplete="current-password">
         </div>
         <button id="login-btn" class="login-btn">
-          <i class="ti ti-lock-open"></i> Unlock Vault
+          <i class="ti ti-lock-open"></i> Unlock ZenOS
         </button>
       </div>
       <p class="login-footer-desc">
@@ -1712,7 +1712,7 @@
       <div class="sidebar-header">
         <!-- macOS window dots -->
         <div class="mac-window-controls">
-          <span class="mac-dot mac-dot-close" onclick="logout()" title="Lock Vault"></span>
+          <span class="mac-dot mac-dot-close" onclick="logout()" title="Lock ZenOS"></span>
           <span class="mac-dot mac-dot-minimize" onclick="toggleSidebar()" title="Collapse Sidebar"></span>
           <span class="mac-dot mac-dot-zoom" onclick="createNewNote()" title="New Note"></span>
         </div>
@@ -1807,7 +1807,7 @@
             <i class="ti ti-sun-moon"></i>
             <span id="theme-btn-label">Theme</span>
           </button>
-          <button class="sidebar-btn" onclick="logout()" title="Lock Vault">
+          <button class="sidebar-btn" onclick="logout()" title="Lock ZenOS">
             <i class="ti ti-lock"></i>
             <span>Lock</span>
           </button>
@@ -1930,8 +1930,8 @@
       <!-- Unselected Note Placeholder -->
       <div id="editor-placeholder" class="editor-placeholder-view">
         <i class="ti ti-paw editor-placeholder-icon"></i>
-        <h3>ZenVault</h3>
-        <p style="color:var(--text-secondary);max-width:280px;font-size:14px;">Select a note from the list, or create a new encrypted note.</p>
+        <h3>ZenOS</h3>
+        <p style="color:var(--text-secondary);max-width:280px;font-size:14px;">Select a note from the list, or create a new note in your Vault.</p>
         <button class="empty-action-btn" onclick="createNewNote()">
           <i class="ti ti-plus"></i> New Note
         </button>
@@ -2039,7 +2039,7 @@
 
   <!-- Theme Script -->
   <script>
-    let currentTheme = localStorage.getItem('zenvault_theme') || 'light';
+    let currentTheme = localStorage.getItem('zenos_theme') || localStorage.getItem('zenvault_theme') || 'light';
 
     function applyTheme() {
       document.documentElement.setAttribute('data-theme', currentTheme);
@@ -2051,6 +2051,7 @@
 
     function toggleTheme() {
       currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+      localStorage.setItem('zenos_theme', currentTheme);
       localStorage.setItem('zenvault_theme', currentTheme);
       applyTheme();
     }
@@ -2223,7 +2224,7 @@
         alert("Decryption failed: " + e.message);
         const btn = document.getElementById('login-btn');
         if (btn) {
-          btn.innerHTML = '<i class="ti ti-lock-open"></i> Unlock Vault';
+          btn.innerHTML = '<i class="ti ti-lock-open"></i> Unlock ZenOS';
           btn.disabled = false;
         }
       }
@@ -2912,7 +2913,7 @@ struct Note {
 }
 
 let bear = Note(title: "Bear 2", tags: ["#design", "#apple"], isPinned: true)
-print("Welcome to ZenVault Bear Style!")
+print("Welcome to ZenOS!")
 \`\`\`
 
 - [x] Learn Swift syntax

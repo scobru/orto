@@ -1,21 +1,43 @@
-# 🔒 ZenVault — Decentralized End-to-End Encrypted Private Storage
+# 🌌 ZenOS Web — Sovereign Decentralized Personal Workspace
 
-ZenVault is a lightweight, responsive, and completely **decentralized zero-knowledge private data vault** that runs entirely serverless inside the browser. It secures your notes and data by encrypting them locally in-browser using standard Web Crypto API before syncing them to the P2P network.
+The official web desktop and graphical interface for **ZenOS** — a zero-backend, multi-app decentralized operating system powered by the **ZEN** P2P graph database and cryptographic sovereign identity.
 
-Powered by **ZEN**—a zero-config decentralized peer-to-peer graph database.
+ZenOS Web runs 100% serverless inside the browser with zero build steps and zero dependencies.
 
-## 🚀 Features
+---
 
-- 🌐 **100% Serverless**: No backend, no SQL, no configuration. Served strictly as static HTML, CSS, and JS.
-- ⚡ **Real-Time P2P Sync**: Automatically updates and syncs encrypted records across peers in real-time.
-- 🔐 **End-to-End Encryption**: All data is AES-GCM encrypted in the browser with keys derived locally from Master Credentials. Nobody else (including relay operators) can read your data.
-- 🎨 **Premium Aesthetic**: Curated light/dark theme modes, Outfit & IBM Plex Mono typography, responsive grids, and clean micro-animations.
-- 📦 **Zero Dependencies**: Zero build tools, zero node packages. Loads everything instantly via CDN (Unpkg & Tabler Icons).
+## 🏛️ Integrated Apps & Modules
+
+All applications within ZenOS are anchored under the user's sovereign cryptographic master keypair (`~{pub}`):
+
+- 🔒 **Vault (`~{pub}/vault`)**: Zero-knowledge, Bear-style Markdown notes with client-side AES-GCM-256 encryption. Relays only see blind ciphertexts.
+- 📅 **Calendar (`~{pub}/calendar`)**: Sovereign decentralized calendar with event scheduling, agenda views, and bidirectional linking to Vault notes.
+- 🔖 **Bookmarks (`~{pub}/bookmarks`)**: Private encrypted bookmark manager with browser Netscape HTML import and export.
+- 🪶 **Blog / smollog (`~{pub}/posts`)**: Public, cryptographically signed microblog and article publisher.
+- 🤖 **Agent Ready**: Fully interoperable with autonomous AI agents orchestrating via the [ZenOS Core SDK & CLI](https://github.com/scobru/zenos).
+
+---
+
+## 🚀 Key Features
+
+- 🌐 **100% Serverless**: No backend, no SQL database, no configuration. Served strictly as static HTML, CSS, and JS.
+- ⚡ **Real-Time P2P Sync**: Automatically updates and syncs encrypted records across peers in real-time via ZEN relays.
+- 🔐 **End-to-End Encryption**: All private data (notes, events, bookmarks) is encrypted locally in-browser using standard Web Crypto API before touching the network.
+- 🎨 **Crafted Bear Aesthetics**: Curated light/dark themes, Outfit & IBM Plex Mono typography, responsive three-column grid, and fluid micro-animations.
+- 📦 **Zero Dependencies**: Zero build tools, zero npm packages. Loads everything instantly via CDN (Unpkg & Tabler Icons).
+
+---
 
 ## 🛠️ Setup & Deployment
 
-1. Clone or copy files to your static hosting directory.
-2. Deploy the folder directly to GitHub Pages, Netlify, Vercel, or any other static web host.
+1. Clone or copy files to your static hosting directory:
+   ```bash
+   git clone https://github.com/scobru/zenvault.git
+   ```
+2. Open `index.html` directly in any modern browser, or deploy the folder to GitHub Pages, Netlify, Vercel, or any static host.
+
+---
 
 ## 📄 License
+
 MIT License.

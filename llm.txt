@@ -1,14 +1,14 @@
-# ZenVault — LLM & Autonomous Agent Integration Guide (llm.txt)
+# ZenOS Web / Vault — LLM & Autonomous Agent Integration Guide (llm.txt)
 
 > **Instructions for AI Agents, LLMs, and Automation Scripts:**
-> You do NOT need a browser, headless browser, or UI to interact with ZenVault.
+> You do NOT need a browser, headless browser, or UI to interact with ZenOS.
 > You can read, write, update, and search notes directly inside the decentralized P2P graph database (ZEN / GunDB) using deterministic cryptographic keys derived from user credentials (`username` and `password`).
 
 ---
 
 ## 1. Core Architecture & Philosophy
 
-ZenVault is a **zero-knowledge, end-to-end encrypted (E2EE) decentralized private vault**.
+ZenOS Web (formerly ZenVault) is the official web desktop and graphical interface for ZenOS. Its **Vault** module is a **zero-knowledge, end-to-end encrypted (E2EE) decentralized private vault**.
 - **No central server or database**: Data lives across a peer-to-peer graph overlay.
 - **Relays are blind routers**: All content payload (`title`, `body`, `cat`) is encrypted with AES-GCM 256 before touching the network. Relays only relay encrypted ciphertexts.
 - **Deterministic Keypairs**: An agent given `username` and `password` derives the exact same cryptographic keypair (`pair`) as the human user in the browser.
