@@ -2288,17 +2288,27 @@
     }
 
     // ── Load P2P Encrypted Notes ──
-    function loadNotes() {
+    async function loadNotes() {
+      const cached = await notesCache.load();
+      if (Object.keys(cached).length) {
+        Object.assign(localNotes, cached);
+        syncBump();
+        triggerRender();
+      }
       zen.get('~' + pair.pub).get('vault').map().on(async (note, id) => {
         syncBump();
         if (!note) {
           delete localNotes[id];
+          notesCache.del(id);
           if (selectedNoteId === id) {
             selectedNoteId = null;
           }
           triggerRender();
           return;
         }
+
+        const sig = JSON.stringify([note.title, note.body, note.cat, note.pinned, note.trash, note.timestamp]);
+        if (notesCache.same(id, sig)) return;
 
         let title, body, cat;
         try {
@@ -2319,6 +2329,7 @@
           trash: !!note.trash,
           timestamp: note.timestamp || Date.now()
         };
+        notesCache.set(id, sig, localNotes[id]);
 
         triggerRender();
       });
@@ -3383,15 +3394,26 @@ print("Welcome to ZenOS!")
     const fmtTime = (ms) => new Date(ms).toLocaleTimeString(navigator.language || 'en-US', { hour: '2-digit', minute: '2-digit' });
     const weekStart = (d) => addDays(sod(d), -((sod(d).getDay() + 6) % 7)); // Monday first
 
-    function loadCalendar() {
+    async function loadCalendar() {
+      const cached = await calCache.load();
+      if (Object.keys(cached).length) {
+        Object.assign(calEvents, cached);
+        document.getElementById('count-calendar').textContent = Object.keys(calEvents).length;
+        syncBump();
+        if (calMode) renderCalendar();
+        renderNoteEvents();
+      }
       zen.get('~' + pair.pub).get('calendar').map().on(async (node, soul) => {
         syncBump();
         if (!node || !node.data) {
           delete calEvents[soul];
+          calCache.del(soul);
+        } else if (calCache.same(soul, node.data)) {
+          return;
         } else {
           try {
             const ev = await ZEN.decrypt(node.data, pair);
-            if (ev && ev.start != null) calEvents[soul] = ev;
+            if (ev && ev.start != null) { calEvents[soul] = ev; calCache.set(soul, node.data, ev); }
           } catch (_) { console.warn('Could not decrypt event:', soul); return; }
         }
         document.getElementById('count-calendar').textContent = Object.keys(calEvents).length;
@@ -3703,10 +3725,9 @@ print("Welcome to ZenOS!")
       showToast('Exported ' + list.length + ' bookmarks');
     }
 
-    // Cache of decrypted bookmarks: one blob in IndexedDB, encrypted with the user's own pair (never plaintext at rest).
-    // Entries keep the ciphertext they came from, so a relay/local update with unchanged data is not decrypted again.
-    const bmCache = {}; // soul -> { c: ciphertext, b: bookmark }
-    const bmCacheKey = () => 'bookmarks:' + pair.pub;
+    // Per-collection cache of decrypted records: one blob per collection in IndexedDB, encrypted with the user's own
+    // pair (never plaintext at rest). Each entry keeps a signature of the ciphertext it came from, so an update with
+    // unchanged data is not decrypted again, and a refresh renders from the cache before any decrypt happens.
     const idb = (mode, fn) => new Promise((resolve, reject) => {
       const req = indexedDB.open('zenos', 1);
       req.onupgradeneeded = () => req.result.createObjectStore('cache');
@@ -3717,33 +3738,47 @@ print("Welcome to ZenOS!")
         tx.onerror = () => reject(tx.error);
       };
     });
-    let bmSaveTimer = null;
-    function bmSaveCache() {
-      clearTimeout(bmSaveTimer);
-      bmSaveTimer = setTimeout(async () => {
-        try { const blob = await ZEN.encrypt(bmCache, pair); await idb('readwrite', s => s.put(blob, bmCacheKey())); } catch (_) {}
-      }, 1500);
+    function createCache(name) {
+      const entries = {}; // soul -> { c: signature, b: record }
+      let timer = null;
+      const key = () => name + ':' + pair.pub;
+      const save = () => {
+        clearTimeout(timer);
+        timer = setTimeout(async () => {
+          try { const blob = await ZEN.encrypt(entries, pair); await idb('readwrite', s => s.put(blob, key())); } catch (_) {}
+        }, 1500);
+      };
+      return {
+        async load() { // -> { soul: record } ; empty if there is no (readable) cache yet
+          try {
+            const blob = await idb('readonly', s => s.get(key())), cached = blob && await ZEN.decrypt(blob, pair);
+            if (cached) Object.assign(entries, cached);
+          } catch (_) {}
+          return Object.fromEntries(Object.entries(entries).map(([soul, e]) => [soul, e.b]));
+        },
+        same: (soul, sig) => !!entries[soul] && entries[soul].c === sig,
+        set(soul, sig, record) { entries[soul] = { c: sig, b: structuredClone(record) }; save(); },
+        del(soul) { delete entries[soul]; save(); }
+      };
     }
+    const bmCache = createCache('bookmarks'), notesCache = createCache('vault'), calCache = createCache('calendar');
 
     async function loadBookmarks() {
-      try {
-        const blob = await idb('readonly', s => s.get(bmCacheKey()));
-        const cached = blob && await ZEN.decrypt(blob, pair);
-        if (cached) {
-          for (const [soul, e] of Object.entries(cached)) { bmCache[soul] = e; bookmarks[soul] = e.b; }
-          document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
-          if (bmMode) bmScheduleRender();
-          syncBump();
-        }
-      } catch (_) { /* no cache yet, or unreadable: fall back to full decrypt */ }
+      const cached = await bmCache.load();
+      if (Object.keys(cached).length) {
+        Object.assign(bookmarks, cached);
+        document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
+        if (bmMode) bmScheduleRender();
+        syncBump();
+      }
       zen.get('~' + pair.pub).get('bookmarks').map().on(async (node, soul) => {
         syncBump();
-        if (!node || !node.data) { delete bookmarks[soul]; delete bmCache[soul]; bmSaveCache(); }
-        else if (bmCache[soul] && bmCache[soul].c === node.data) return;
+        if (!node || !node.data) { delete bookmarks[soul]; bmCache.del(soul); }
+        else if (bmCache.same(soul, node.data)) return;
         else {
           try {
             const bm = await ZEN.decrypt(node.data, pair);
-            if (bm && /^https?:\/\//i.test(bm.url)) { bookmarks[soul] = bm; bmCache[soul] = { c: node.data, b: bm }; bmSaveCache(); }
+            if (bm && /^https?:\/\//i.test(bm.url)) { bookmarks[soul] = bm; bmCache.set(soul, node.data, bm); }
           } catch (_) { console.warn('Could not decrypt bookmark:', soul); return; }
         }
         document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
@@ -3864,7 +3899,7 @@ print("Welcome to ZenOS!")
     }
     function bmDelete(soul) {
       zen.get('~' + pair.pub).get('bookmarks').get(soul).put(null, null, { authenticator: pair });
-      delete bookmarks[soul]; delete bmCache[soul]; bmSaveCache();
+      delete bookmarks[soul]; bmCache.del(soul);
       document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
       renderBookmarks();
     }
