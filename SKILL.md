@@ -137,7 +137,7 @@ Copy vault/calendar/bookmarks written under earlier identity schemes into the cu
 node cli.js migrate
 ```
 
-### 9. Custom Relays
+### 7. Custom Relays
 If the user provides their own relay, pass it on **every** command (or set `ZENOS_RELAYS` once):
 ```bash
 # add to the default relays

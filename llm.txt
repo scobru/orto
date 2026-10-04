@@ -3,7 +3,7 @@
 > **Instructions for AI Agents, LLMs, and Automation Scripts:**
 > ZenOS is a decentralized, zero-backend, multi-app operating system powered by **ZEN** (peer-to-peer graph database & cryptographic identity).
 > You do NOT need a browser, headless browser, or UI to interact with ZenOS.
-> Any autonomous agent given a user's master credentials (`username` and `password`) can derive the exact same cryptographic keypair (`pair`), connect directly to the decentralized P2P graph overlay, and read, write, or synchronize across all ZenOS app nodes (private encrypted notes in ZenVault, public articles in smollog, and future modules).
+> Any autonomous agent given a user's master credentials (`username` and `password`) can derive the exact same cryptographic keypair (`pair`), connect directly to the decentralized P2P graph overlay, and read, write, or synchronize across all ZenOS app nodes (private encrypted notes in ZenVault, encrypted calendar events, private curated bookmarks, public articles in smollog, and future modules).
 
 ---
 
@@ -23,37 +23,29 @@ ZenOS unifies a user's digital life under a **single sovereign cryptographic ide
                      │                 ~{pub}                 │
                      └──────────────────┬─────────────────────┘
                                         │
-         ┌──────────────────────────────┼──────────────────────────────┐
-         │                              │                              │
-         ▼                              ▼                              ▼
-  ┌──────────────┐              ┌──────────────┐              ┌──────────────┐
-  │   ZenVault   │              │   smollog    │              │ Future Nodes │
-  │   (Private)  │              │   (Public)   │              │ (Calendar,   │
-  │ ~{pub}/vault │              │ ~{pub}/posts │              │  Tasks, etc) │
-  │  [Encrypted] │              │   [Signed]   │              │              │
-  └──────────────┘              └──────────────┘              └──────────────┘
+         ┌──────────────────────────────┼──────────────────────────────┬──────────────────────────────┐
+         │                              │                              │                              │
+         ▼                              ▼                              ▼                              ▼
+  ┌──────────────┐              ┌──────────────┐              ┌──────────────┐              ┌──────────────┐
+  │   ZenVault   │              │   Calendar   │              │  Bookmarks   │              │   smollog    │
+  │ ~{pub}/vault │              │~{pub}/calenda│              │~{pub}/bookmar│              │ ~{pub}/posts │
+  │  [AES-GCM]   │              │  [AES-GCM]   │              │  [AES-GCM]   │              │   [Signed]   │
+  └──────────────┘              └──────────────┘              └──────────────┘              └──────────────┘
 ```
 
 - **Zero Central Server**: All data lives across a peer-to-peer graph overlay (GunDB / ZEN protocol).
-- **Zero-Knowledge Private Nodes (`/vault`)**: Payloads are encrypted with AES-GCM-256 before leaving the client. Relays only relay blind ciphertexts.
+- **Zero-Knowledge Private Nodes (`/vault`, `/calendar`, `/bookmarks`)**: Payloads are encrypted with AES-GCM-256 before leaving the client. Relays only relay blind ciphertexts.
 - **Verifiable Public Nodes (`/posts`)**: Blog entries are signed using ECDSA (secp256k1) and readable by anyone knowing the author's public key or alias.
-- **Cross-App Synergies for AI**: An AI agent can read research in ZenVault, summarize it, and publish an article directly to smollog!
+- **Cross-App Synergies for AI**: An AI agent can read notes in ZenVault, link them to Calendar events, curate Bookmarks, and publish reports directly to smollog!
 
 ---
 
 ## 2. Dependencies & Initialization
 
 ### Loading ZEN Library
-Always load ZEN from the official repository CDN:
-
 ```javascript
 // ESM / Browser / Deno / Node (ESM)
 import ZEN from 'https://cdn.jsdelivr.net/gh/scobru/zen@main/zen.min.js';
-```
-
-Or clone/install from GitHub:
-```bash
-git clone https://github.com/scobru/zen
 ```
 
 ### Default P2P WebSocket Relays
@@ -65,11 +57,9 @@ ZenOS connects to these relays by default:
 ]
 ```
 
-> **DISCLOSURE**: `wss://delay.scobrudot.dev/zen` is the **personal relay of the ZenOS author (scobru)**, running Delay / shogun-relay. It is best-effort (no SLA, no uptime or retention guarantee). `wss://zen.akao.io:8420/zen` is a public relay of the upstream ZEN network. The system works out of the box because it uses these relays. Vault data is ciphertext for the relay; smollog posts are plaintext (public by design).
+> **DISCLOSURE**: `wss://delay.scobrudot.dev/zen` is the **personal relay of the ZenOS author (scobru)**, running Delay / shogun-relay. It is best-effort (no SLA, no uptime or retention guarantee). `wss://zen.akao.io:8420/zen` is a public relay of the upstream ZEN network.
 
 ### Custom Relays
-If the user gives you their own relay, use it. Options:
-
 ```bash
 # CLI: add to defaults
 node cli.js vault-read --user U --pass P --relay "wss://relay.example.com/zen"
@@ -86,54 +76,31 @@ new ZenOS({ extraPeers: ['wss://relay.example.com/zen'], useDefaultRelays: false
 new ZenOS({ peers: ['wss://relay.example.com/zen'] });                               // full replacement
 ```
 
-URLs without a path get `/zen` appended. The ZenVault/smollog web apps only see agent data if the custom relay peers with the default network.
-
-### Self-Hosting a Relay
-- **ZEN relay** (minimal): `git clone https://github.com/scobru/zen && cd zen && npm start` → `ws://localhost:8420/zen`. Federate with `PEERS="wss://delay.scobrudot.dev/zen,wss://zen.akao.io:8420/zen"`; isolate with `NO_BOOTSTRAP=1`.
-- **Delay / shogun-relay** (full hub, same software as delay.scobrudot.dev): `docker compose up -d` in the repo root, or `cd relay && npm install && npm start` → `ws://localhost:8420/zen`. Federate with `RELAY_PEERS=...`.
-- Expose publicly with TLS (`wss://`) via reverse proxy. Full guide: `RELAYS.md`.
-
-### Client Initialization
-```javascript
-const zen = new ZEN({
-  peers: [
-    "wss://delay.scobrudot.dev/zen",
-    "wss://zen.akao.io:8420/zen"
-    // , "wss://your-relay.example.com/zen"
-  ]
-});
-```
-
 ---
 
 ## 3. Cryptographic Key Derivation
 
-ZenOS uses deterministic key derivation so that an agent and the user in the browser produce the **identical public and private keypair**:
+ZenOS uses deterministic key derivation (FID standard) so that an agent and the user in the browser produce the **identical keypair**:
 
 ```javascript
-import { deriveMasterPair } from './identity.js'; // same file as scobru/fid identity.js
+import { deriveMasterPair } from './identity.js';
 const pair = await deriveMasterPair(ZEN, username, password);
 // = ZEN.pair(null, { seed: username.trim() + ':' + password.trim() })
 ```
 
 The resulting `pair` object contains:
-- `pair.pub`: User's public identity (e.g. `0oQit1EicIMgYeM9rVRMjmgP9MoQjfK0XJLq6imoJ1CR0`)
+- `pair.pub`: User's public identity (e.g. `048rVeyEIjxgGPXFHe47kYg9J8OyZflEC2W7RrUTPhVX0`)
 - `pair.priv`: User's private signing and decryption key (base62 scalar)
 - `pair.address`: EVM compatible checksummed address (e.g. `0x2F256...`)
 
-> **CRITICAL RULE FOR ALL WRITES**: When calling `.put()` on any node under `~pair.pub`, you **MUST** pass `{ authenticator: pair }` as the options argument. This generates the cryptographic signature proving ownership of the `~pub` namespace to the relay.
+> **CRITICAL RULE FOR ALL WRITES**: When calling `.put()` on any node under `~pair.pub`, you **MUST** pass `{ authenticator: pair }` as the options argument.
 
 ---
 
-## 4. Node Specification: ZenVault (Encrypted Private Storage)
+## 4. Node Specification: ZenVault (Encrypted Notes)
 
 ### Path
-```javascript
-zen.get('~' + pair.pub).get('vault')
-```
-
-### Encryption
-All sensitive fields (`title`, `body`, `cat`) **MUST be encrypted** with `ZEN.encrypt(text, pair)`.
+`zen.get('~' + pair.pub).get('vault')`
 
 ### Note Schema
 | Field | Type | Encrypted? | Description |
@@ -146,192 +113,204 @@ All sensitive fields (`title`, `body`, `cat`) **MUST be encrypted** with `ZEN.en
 | `timestamp` | `number` | **NO** | Unix epoch in milliseconds (`Date.now()`) |
 | `encrypted` | `boolean` | **NO** | Always `true` |
 
-### Write Note Example
+### SDK Methods
 ```javascript
-async function writeVaultNote({ zen, pair, title, body, cat = 'agent', pinned = false }) {
-  const encTitle = await ZEN.encrypt(title, pair);
-  const encBody = await ZEN.encrypt(body, pair);
-  const encCat = await ZEN.encrypt(cat, pair);
-
-  const soul = 'vault-' + Date.now() + '-' + Math.random().toString(36).substring(7);
-  const payload = {
-    title: encTitle,
-    body: encBody,
-    cat: encCat,
-    pinned: !!pinned,
-    trash: false,
-    timestamp: Date.now(),
-    encrypted: true
-  };
-
-  return new Promise((resolve, reject) => {
-    zen.get('~' + pair.pub).get('vault').get(soul).put(payload, (ack) => {
-      if (ack && ack.err) reject(new Error(ack.err));
-      else resolve({ soul, status: 'saved' });
-    }, { authenticator: pair });
-  });
-}
-```
-
-### Read Vault Notes Example
-```javascript
-async function readVaultNotes({ zen, pair, timeoutMs = 5000 }) {
-  const notes = [];
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(notes), timeoutMs);
-
-    zen.get('~' + pair.pub).get('vault').map().on(async (node, soul) => {
-      if (!node || node.trash) return;
-      try {
-        const title = await ZEN.decrypt(node.title, pair);
-        const body = await ZEN.decrypt(node.body, pair);
-        const cat = await ZEN.decrypt(node.cat, pair);
-        notes.push({ soul, title, body, cat, timestamp: node.timestamp, pinned: node.pinned });
-      } catch (e) {
-        // Skip corrupted or un-decryptable records
-      }
-    });
-  });
-}
+const res = await os.writeVaultNote({ title, body, cat, pinned, soul });
+const note = await os.getVaultNote(soul);
+const notes = await os.readVaultNotes(timeoutMs);
+const del = await os.deleteVaultNote(soul);
 ```
 
 ---
 
-## 5. Node Specification: smollog (Public Decentralized Blog)
+## 5. Node Specification: Calendar (Encrypted Events & Links)
 
 ### Path
+`zen.get('~' + pair.pub).get('calendar')`
+
+### Event Schema (Encrypted Payload)
+| Field | Type | Description |
+|---|---|---|
+| `title` | `string` | Event title (e.g. `Dentist Appointment`) |
+| `start` | `number` | Start time in milliseconds epoch |
+| `end` | `number` | End time in milliseconds epoch |
+| `allDay` | `boolean` | `true` for all-day event |
+| `notes` | `string` | Optional description or meeting agenda |
+| `location` | `string` | Optional physical location or video link |
+| `links` | `Array<{kind: 'note'\|'bookmark', soul: string}>` | Bidirectional graph references |
+
+### SDK Methods
 ```javascript
-zen.get('~' + pair.pub).get('posts')
+const ev = await os.writeCalendarEvent({ title, start, end, allDay, notes, location, soul });
+const single = await os.getCalendarEvent(soul);
+const list = await os.readCalendarEvents({ from, to, timeoutMs });
+const del = await os.deleteCalendarEvent(soul);
+
+// Graph links
+await os.linkToEvent(eventSoul, { kind: 'note', soul: noteSoul });
+await os.unlinkFromEvent(eventSoul, { kind: 'note', soul: noteSoul });
+const linkedEvents = await os.eventsFor({ kind: 'note', soul: noteSoul });
+const linkedNotes = await os.notesForEvent(eventSoul);
 ```
 
-### Public Access
-smollog posts are **plain Markdown** (unencrypted) so that anyone can read them at `smollog.vercel.app/<pub>`. They are cryptographically signed by `{ authenticator: pair }`.
+---
 
-### Post Schema
+## 6. Node Specification: Bookmarks (Encrypted Library)
+
+### Path
+`zen.get('~' + pair.pub).get('bookmarks')`
+
+### Bookmark Schema (Encrypted Payload)
+| Field | Type | Description |
+|---|---|---|
+| `url` | `string` | Target website URL |
+| `title` | `string` | Bookmark title |
+| `folder` | `string` | Folder path (e.g. `Dev/Crypto`) |
+| `tags` | `string[]` | Array of tags |
+| `addedAt` | `number` | Unix timestamp in milliseconds |
+
+### SDK Methods
+```javascript
+const bm = await os.writeBookmark({ url, title, folder, tags });
+const single = await os.getBookmark(soul);
+const list = await os.readBookmarks({ folder, query, timeoutMs });
+const update = await os.updateBookmark(soul, { folder, tags });
+const batch = await os.updateBookmarks(changesArray);
+const del = await os.deleteBookmark(soul);
+
+// Browser import/export (Netscape HTML)
+const imp = await os.importBookmarksHtml(htmlString);
+const html = await os.exportBookmarksHtml({ folder });
+```
+
+---
+
+## 7. Node Specification: smollog (Public Decentralized Blog)
+
+### Path
+`zen.get('~' + pair.pub).get('posts')`
+
+### Post Schema (Plaintext Signed)
 | Field | Type | Description |
 |---|---|---|
 | `id` | `string` | Unique post ID (e.g. `post-1791036854137`) |
 | `title` | `string` | Post title |
 | `content` | `string` | Markdown blog content |
-| `tags` | `string` | Comma-separated tags (e.g. `ai, decentralization, agent`) |
+| `tags` | `string` | Comma-separated tags |
 | `authorAlias`| `string` | Author username (e.g. `scobru`) |
 | `authorPub` | `string` | Author public key (`pair.pub`) |
 | `createdAt` | `number` | Creation timestamp (`Date.now()`) |
 | `updatedAt` | `number` | Last modified timestamp |
 | `deleted` | `boolean` | `true` if post is soft-deleted |
 
-### Publish Post Example
+### SDK Methods
 ```javascript
-async function publishBlogPost({ zen, pair, username, title, content, tags = [] }) {
-  const id = 'post-' + Date.now();
-  const tagStr = Array.isArray(tags) ? tags.join(', ') : tags;
+const post = await os.publishBlogPost({ title, content, tags, id });
+const single = await os.getBlogPost(id, authorPub);
+const list = await os.readBlogPosts(authorPub, timeoutMs);
+const del = await os.deleteBlogPost(id);
 
-  const postPayload = {
-    id,
-    title: title.trim(),
-    content: content.trim(),
-    tags: tagStr,
-    authorAlias: username,
-    authorPub: pair.pub,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    deleted: false
-  };
-
-  return new Promise((resolve, reject) => {
-    zen.get('~' + pair.pub).get('posts').get(id).put(postPayload, (ack) => {
-      if (ack && ack.err) reject(new Error(ack.err));
-      else resolve({ id, status: 'published' });
-    }, { authenticator: pair });
-  });
-}
-```
-
-### Register Author Alias
-To allow readers to access the blog via human-friendly alias (e.g. `smollog.vercel.app/scobru`):
-```javascript
-async function registerAuthorAlias({ zen, pair, username }) {
-  const clean = username.trim().toLowerCase();
-  return new Promise((resolve) => {
-    zen.get('~' + pair.pub).get('alias').put(clean, null, { authenticator: pair });
-    zen.get('smollog_aliases').get(clean).put(pair.pub, () => resolve(true));
-  });
-}
+// Aliases
+await os.registerAlias(aliasName);
+const pubKey = await os.resolveAlias(aliasName);
 ```
 
 ---
 
-## 6. Future ZenOS Nodes (Roadmap & Convention)
+## 8. CLI Universal Command Reference
 
-Agents building on ZenOS should respect standard graph node paths under `~pair.pub`:
+All CLI commands support automatic `.env` loading and flags:
 
-| Node Path | Purpose | Encryption Standard |
-|---|---|---|
-| `~{pub}/vault` | Encrypted notes & knowledge base | AES-GCM (Private) |
-| `~{pub}/bookmarks` | Private encrypted bookmarks & folders | AES-GCM (Private) |
-| `~{pub}/calendar` | Personal calendar events & schedules | AES-GCM (Private) |
-| `~{pub}/posts` | Public blog posts & articles | Cleartext Signed (Public) |
-| `~{pub}/tasks` | Interactive todos & project kanban | AES-GCM (Private) |
-| `~{pub}/profile` | Sovereign bio, avatar, links, social | Cleartext Signed (Public) |
-| `~{pub}/inbox` | P2P encrypted messages from other agents | ECDH Shared Secret (`ZEN.secret`) |
+```bash
+# Identity & Migration
+node cli.js identity [--user <user> --pass <pass>]
+node cli.js migrate  [--user <user> --pass <pass>]
+node cli.js relays   [--relay <url>]
+
+# Vault Notes CRUD
+node cli.js vault-write  --title <title> --body <body> [--cat <cat>] [--pinned] [--soul <soul>]
+node cli.js vault-get    --soul <soul>
+node cli.js vault-read   [--cat <cat>] [--query <q>] [--pinned] [--table] [--count] [-n 20] [-p 1]
+node cli.js vault-delete --soul <soul>
+
+# Calendar Events CRUD & Graph Links
+node cli.js calendar-write      --title <title> --start <date> [--end <date>] [--notes <text>] [--location <loc>]
+node cli.js calendar-get        --soul <soul>
+node cli.js calendar-read       [--from <date>] [--to <date>] [--table] [--count]
+node cli.js calendar-delete     --soul <soul>
+node cli.js event-link          --event <event-soul> --note <note-soul>
+node cli.js event-unlink        --event <event-soul> --note <note-soul>
+node cli.js calendar-events-for --note <note-soul>
+node cli.js calendar-notes-for  --event <event-soul>
+
+# Bookmarks CRUD & Tools
+node cli.js bookmarks-write  --url <url> [--title <title>] [--folder <path>] [--tags <t1,t2>]
+node cli.js bookmarks-get    (--soul <soul> | --url <url>)
+node cli.js bookmarks-read   [--folder <path>] [--query <q>] [--table] [--count]
+node cli.js bookmarks-delete (--soul <soul> | --url <url>)
+node cli.js bookmarks-import --file <export.html>
+node cli.js bookmarks-export [--folder <path>] [--file <out.html>]
+node cli.js bookmarks-update --file <changes.json>
+
+# smollog Blog CRUD & Aliases
+node cli.js blog-publish --title <title> --content <content> [--tags <tags>] [--id <id>]
+node cli.js blog-get     --id <id> [--alias <alias> | --pub <pub>]
+node cli.js blog-read    [--alias <alias> | --pub <pub>] [--table]
+node cli.js blog-delete  --id <id>
+node cli.js blog-alias   --alias <alias>
+```
 
 ---
 
-## 7. Full Autonomous Agent Example: Research & Publish Pipeline
-
-Below is a complete autonomous workflow where an agent:
-1. Derives master credentials.
-2. Reads private research notes from **ZenVault**.
-3. Synthesizes a public article.
-4. Publishes the article to **smollog**.
-5. Saves an archival record back to **ZenVault**.
+## 9. Full Autonomous Agent Pipeline Example
 
 ```javascript
-import ZEN from 'https://cdn.jsdelivr.net/gh/scobru/zen@main/zen.min.js';
+import ZenOS from './zenos.js';
 
 async function runAutonomousWorkflow() {
-  const zen = new ZEN({
-    peers: ["wss://delay.scobrudot.dev/zen", "wss://zen.akao.io:8420/zen"]
-  });
-
-  const username = "scobru";
-  const password = "your_secure_password";
-  const pair = await deriveMasterPair(ZEN, username, password); // see section 3
-  console.log("ZenOS Agent authenticated for:", pair.pub);
+  const os = new ZenOS();
+  await os.login('scobru', 'your_secure_password');
+  console.log('ZenOS Agent authenticated for:', os.pub);
 
   // 1. Fetch research from Vault
-  const notes = await readVaultNotes({ zen, pair, timeoutMs = 4000 });
+  const notes = await os.readVaultNotes(4000);
   console.log(`Found ${notes.length} vault notes.`);
 
-  // 2. Publish post to smollog
-  const blogResult = await publishBlogPost({
-    zen,
-    pair,
-    username,
-    title: "🤖 Agent Dispatches: Synchronizing with ZenOS",
-    content: "### Autonomous Sync Complete\n\nZenOS connects our decentralized vault with our public voice.\n\n- Encrypted storage: Secure\n- Public journal: Active",
-    tags: ["zenos", "agent", "p2p"]
-  });
-  console.log("Published to smollog:", blogResult.id);
+  // 2. Schedule follow-up calendar event & link first note
+  if (notes.length > 0) {
+    const ev = await os.writeCalendarEvent({
+      title: 'Review: ' + notes[0].title,
+      start: Date.now() + 86400000,
+      notes: 'Automated follow-up scheduled by AI agent.'
+    });
+    await os.linkToEvent(ev.soul, { soul: notes[0].soul });
+    console.log('Scheduled and linked event:', ev.soul);
+  }
 
-  // 3. Log execution event in private Vault
-  await writeVaultNote({
-    zen,
-    pair,
-    title: "🤖 Agent Log: Synced with smollog",
-    body: `Successfully published article ${blogResult.id} at ${new Date().toISOString()}`,
-    cat: "agent-logs"
+  // 3. Publish public summary post to smollog
+  const blogResult = await os.publishBlogPost({
+    title: '🤖 Agent Dispatches: Synchronizing with ZenOS',
+    content: '### Autonomous Sync Complete\n\nZenOS connects our decentralized vault with our public voice.\n\n- Encrypted storage: Secure\n- Calendar graph: Linked\n- Public journal: Active',
+    tags: ['zenos', 'agent', 'p2p']
   });
-  console.log("Saved execution record in ZenVault.");
+  console.log('Published to smollog:', blogResult.id);
+
+  // 4. Log execution event in private Vault
+  await os.writeVaultNote({
+    title: '🤖 Agent Log: Synced with smollog',
+    body: `Successfully published article ${blogResult.id} at ${new Date().toISOString()}`,
+    cat: 'agent-logs'
+  });
+  console.log('Saved execution record in ZenVault.');
 }
 ```
 
 ---
 
-## 8. Best Practices for Agents
+## 10. Best Practices for Agents
 
 1. **Always use `{ authenticator: pair }` on `.put()`**: The P2P relay requires cryptographic proof of authority to modify any child of `~pair.pub`.
-2. **Handle network latency**: GunDB/ZEN propagates graph changes over WebSockets asynchronously. Always await `.put()` callbacks and allow 500-1500ms before exiting CLI processes.
+2. **Local snapshot cache**: In Node.js, `ZenOS` automatically maintains a persistent encrypted snapshot at `~/.zenos/cache.json`, enabling warm reads in <350ms.
 3. **Graceful degradation**: Wrap `ZEN.decrypt` in `try / catch` to ignore old, corrupted, or non-encrypted legacy nodes.
-4. **Deterministic identity**: Username and password are both case-sensitive (FID derivation). Never change their casing without user confirmation. Data from the earlier schemes is copied with `os.migrateLegacy()`.
-5. **Paginating large queries**: Nodes with thousands of records (e.g. bookmarks or vault) should be queried with `--count` (`-c`) to check total size, and paginated with `--limit` (`-n`) and `--page` (`-p`) or formatted with `--table` (`-t`) to prevent overwhelming terminal output and agent context windows.
+4. **Deterministic identity**: Username and password are both case-sensitive (FID derivation). Never change their casing without user confirmation.
+5. **Paginating large queries**: Nodes with thousands of records should be queried with `--count` (`-c`) to check total size, and paginated with `--limit` (`-n`) and `--page` (`-p`) or formatted with `--table` (`-t`) to prevent overwhelming terminal output and agent context windows.
