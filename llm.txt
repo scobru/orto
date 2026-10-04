@@ -22,9 +22,7 @@ Connect to any or all of these official ZenVault relays:
 ```json
 [
   "wss://delay.scobrudot.dev/zen",
-  "wss://zen.akao.io:8420/zen",
-  "wss://zen0.akao.io:8420/zen",
-  "wss://zen1.akao.io:8420/zen"
+  "wss://zen.akao.io:8420/zen"
 ]
 ```
 
@@ -123,9 +121,7 @@ async function writeNoteToVault({ username, password, title, body, category = 'a
   const zen = new ZEN({
     peers: [
       "wss://delay.scobrudot.dev/zen",
-      "wss://zen.akao.io:8420/zen",
-      "wss://zen0.akao.io:8420/zen",
-      "wss://zen1.akao.io:8420/zen"
+      "wss://zen.akao.io:8420/zen"
     ]
   });
 
@@ -183,8 +179,7 @@ async function readAllNotes({ username, password, timeoutMs = 4000 }) {
   const zen = new ZEN({
     peers: [
       "wss://delay.scobrudot.dev/zen",
-      "wss://zen.akao.io:8420/zen",
-      "wss://zen0.akao.io:8420/zen"
+      "wss://zen.akao.io:8420/zen"
     ]
   });
 
