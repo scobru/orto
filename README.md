@@ -97,6 +97,16 @@ await os.publishBlogPost({
   content: 'Automated dispatch synchronized directly to the decentralized P2P graph.',
   tags: ['zenos', 'agents', 'p2p']
 });
+### CLI Quickstart
+```bash
+# Read bookmarks with pagination and table formatting
+node cli.js bookmarks-read -c                        # Count total items: {"total": 1704}
+node cli.js bookmarks-read -n 10 -p 1                # Paginated JSON (page 1, 10 items)
+node cli.js bookmarks-read -n 10 -t                  # Render terminal table
+node cli.js bookmarks-read --query "react"           # Filter by search term
+
+# Read vault notes
+node cli.js vault-read -n 5 --cat "research"
 ```
 
 ---

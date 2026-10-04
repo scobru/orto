@@ -17,31 +17,38 @@ import { deriveMasterPair } from './identity.js';
  * while the bundle is imported. Cache file: ZENOS_CACHE_FILE, default ~/.zenos/cache.json;
  * ZENOS_CACHE=off disables it. It holds the same (encrypted) records the relays hold.
  */
+let nodeStorageData = {};
+let nodeStorageFlush = null;
+
+export function flushStorage() {
+  if (nodeStorageFlush) nodeStorageFlush();
+}
+
 async function withNodeStorage(load) {
   const proc = globalThis.process;
   if (!proc?.versions?.node || globalThis.window || /^(0|off|false|no)$/i.test(proc.env.ZENOS_CACHE || '')) return load();
   const [{ default: fs }, { default: path }, { default: osmod }] = await Promise.all([import('node:fs'), import('node:path'), import('node:os')]);
   const file = proc.env.ZENOS_CACHE_FILE || path.join(osmod.homedir(), '.zenos', 'cache.json');
-  let data = {};
-  try { data = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) {}
+  try { nodeStorageData = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) {}
   let timer = null;
-  const flush = () => {
+  nodeStorageFlush = () => {
     clearTimeout(timer); timer = null;
     try {
       fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file + '.tmp', JSON.stringify(data));
+      fs.writeFileSync(file + '.tmp', JSON.stringify(nodeStorageData));
       fs.renameSync(file + '.tmp', file);
     } catch (_) {}
   };
-  proc.on('exit', () => { if (timer) flush(); });
+  proc.on('exit', () => { if (timer) nodeStorageFlush(); });
   globalThis.window = {
     localStorage: {
-      getItem: (k) => (k in data ? data[k] : null),
-      removeItem: (k) => { delete data[k]; },
-      setItem: (k, v) => { data[k] = String(v); timer = timer || setTimeout(flush, 1000); }
+      getItem: (k) => (k in nodeStorageData ? nodeStorageData[k] : null),
+      removeItem: (k) => { delete nodeStorageData[k]; },
+      setItem: (k, v) => { nodeStorageData[k] = String(v); timer = timer || setTimeout(nodeStorageFlush, 1000); }
     }
   };
-  try { return await load(); } finally { delete globalThis.window; }
+  globalThis.localStorage = globalThis.window.localStorage;
+  return await load();
 }
 
 let ZEN;
@@ -214,6 +221,45 @@ export async function legacySmollogPair(username, password) {
   return ZEN.pair(null, { seed });
 }
 
+export function extractCipher(data) {
+  if (data === undefined || data === null) return null;
+  if (typeof data === 'object' && data[':'] !== undefined) return data[':'];
+  if (typeof data === 'string') {
+    if (data.startsWith('{')) {
+      try {
+        const p = JSON.parse(data);
+        if (p && p[':'] !== undefined) return p[':'];
+      } catch (_) {}
+    }
+    return data;
+  }
+  return null;
+}
+
+export function getGraphSnapshot(zen) {
+  let cacheGraph = {};
+  if (nodeStorageData && nodeStorageData['zen/']) {
+    try { cacheGraph = JSON.parse(nodeStorageData['zen/']); } catch (_) {}
+  } else if (globalThis.window?.localStorage) {
+    try {
+      const raw = globalThis.window.localStorage.getItem('zen/');
+      if (raw) cacheGraph = JSON.parse(raw);
+    } catch (_) {}
+  }
+  const memGraph = (zen && (zen._graphInstance?._?.graph || zen._?.graph)) || {};
+  return { ...cacheGraph, ...memGraph };
+}
+
+export function isSoulDeleted(allGraph, parentSoul, soul) {
+  const parentNode = allGraph[parentSoul];
+  if (!parentNode) return false;
+  const val = parentNode[soul];
+  if (val === null) return true;
+  if (typeof val === 'object' && val && val[':'] === null) return true;
+  if (typeof val === 'string' && (val === 'null' || val.includes('":null'))) return true;
+  return false;
+}
+
 export class ZenOS {
   constructor(options = {}) {
     this.peers = resolvePeers(options);
@@ -292,7 +338,11 @@ export class ZenOS {
         try {
           const payload = await convert[path](node);
           await new Promise((resolve, reject) => {
-            this.zen.get('~' + pair.pub).get(path).get(soul).put(payload, (ack) => ack && ack.err ? reject(new Error(ack.err)) : resolve(), { authenticator: pair });
+            this.zen.get('~' + pair.pub).get(path).get(soul).put(payload, (ack) => {
+              if (nodeStorageFlush) nodeStorageFlush();
+              if (ack && ack.err) reject(new Error(ack.err));
+              else resolve();
+            }, { authenticator: pair });
           });
           stats.migrated++;
         } catch (_) { stats.failed++; }
@@ -335,6 +385,7 @@ export class ZenOS {
 
     return new Promise((resolve, reject) => {
       this.userRoot.get('vault').get(noteSoul).put(payload, (ack) => {
+        if (nodeStorageFlush) nodeStorageFlush();
         if (ack && ack.err) reject(new Error(ack.err));
         else resolve({ soul: noteSoul, status: 'saved', timestamp: payload.timestamp });
       }, { authenticator: this.pair });
@@ -347,45 +398,91 @@ export class ZenOS {
   async readVaultNotes(timeoutMs = 5000) {
     if (!this.pair) throw new Error('Not authenticated.');
 
-    const notes = [];
-    const seen = new Set();
+    const notes = new Map();
+    const prefix = '~' + this.pair.pub + '/vault/';
+    const parentSoul = '~' + this.pair.pub + '/vault';
 
+    const processNode = async (node, soul) => {
+      if (!node || !soul || node.trash) return;
+      const titleRaw = extractCipher(node.title);
+      if (!titleRaw) return;
+      const bodyRaw = extractCipher(node.body);
+      const catRaw = extractCipher(node.cat);
+      try {
+        const title = await ZEN.decrypt(titleRaw, this.pair);
+        const body = bodyRaw ? await ZEN.decrypt(bodyRaw, this.pair) : '';
+        const cat = catRaw ? await ZEN.decrypt(catRaw, this.pair) : '';
+        notes.set(soul, {
+          soul,
+          title: title || '',
+          body: body || '',
+          cat: cat || '',
+          pinned: !!node.pinned,
+          timestamp: Number(extractCipher(node.timestamp) || node.timestamp) || Date.now()
+        });
+      } catch (_) {
+        // ignore corrupted or un-decryptable records
+      }
+    };
+
+    // 1. Gather nodes from snapshot (cache + memory)
+    const allGraph = getGraphSnapshot(this.zen);
+    const tasks = [];
+    for (const k of Object.keys(allGraph)) {
+      if (k.startsWith(prefix)) {
+        const soul = k.slice(prefix.length);
+        if (isSoulDeleted(allGraph, parentSoul, soul)) continue;
+        tasks.push(processNode(allGraph[k], soul));
+      }
+    }
+    await Promise.all(tasks);
+
+    if (timeoutMs === 0) {
+      return [...notes.values()].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.timestamp - a.timestamp);
+    }
+
+    // 2. Also listen for live updates from Gun
     return new Promise((resolve) => {
-      const timer = setTimeout(() => resolve(notes), timeoutMs);
-
-      const processNode = async (node, soul) => {
-        if (!node || node.trash || seen.has(soul)) return;
-        if (!node.title) return;
-        seen.add(soul);
-        try {
-          const title = await ZEN.decrypt(node.title, this.pair);
-          const body = await ZEN.decrypt(node.body, this.pair);
-          const cat = await ZEN.decrypt(node.cat, this.pair);
-          notes.push({
-            soul,
-            title: title || '',
-            body: body || '',
-            cat: cat || '',
-            pinned: !!node.pinned,
-            timestamp: node.timestamp || Date.now()
-          });
-        } catch (_) {
-          // ignore corrupted or un-decryptable records
-        }
+      let resolved = false;
+      const done = () => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(maxTimer);
+        clearTimeout(settleTimer);
+        resolve([...notes.values()].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.timestamp - a.timestamp));
       };
 
-      this.userRoot.get('vault').map().once(async (node, soul) => {
-        if (!soul) return;
-        if (node && node.title) {
-          await processNode(node, soul);
-        } else {
-          this.userRoot.get('vault').get(soul).once(async (fullNode) => {
-            if (fullNode && fullNode.title) {
-              await processNode(fullNode, soul);
-            }
-          });
-        }
-      });
+      const maxTimer = setTimeout(done, timeoutMs);
+      let settleTimer = setTimeout(done, notes.size > 0 ? Math.min(350, timeoutMs) : timeoutMs);
+
+      const kickSettle = () => {
+        clearTimeout(settleTimer);
+        settleTimer = setTimeout(done, Math.min(300, timeoutMs));
+      };
+
+      try {
+        this.userRoot.get('vault').map().on(async (node, soul) => {
+          if (!soul) return;
+          if (node === null) {
+            notes.delete(soul);
+            kickSettle();
+            return;
+          }
+          if (node && node.title) {
+            await processNode(node, soul);
+            if (nodeStorageFlush) nodeStorageFlush();
+            kickSettle();
+          } else {
+            this.userRoot.get('vault').get(soul).once(async (full) => {
+              if (full && full.title) {
+                await processNode(full, soul);
+                if (nodeStorageFlush) nodeStorageFlush();
+                kickSettle();
+              }
+            });
+          }
+        });
+      } catch (_) {}
     });
   }
 
@@ -396,6 +493,7 @@ export class ZenOS {
     if (!this.pair) throw new Error('Not authenticated.');
     return new Promise((resolve, reject) => {
       this.userRoot.get('vault').get(soul).put(null, (ack) => {
+        if (nodeStorageFlush) nodeStorageFlush();
         if (ack && ack.err) reject(new Error(ack.err));
         else resolve({ soul, status: 'deleted' });
       }, { authenticator: this.pair });
@@ -427,6 +525,7 @@ export class ZenOS {
 
     return new Promise((resolve, reject) => {
       this.userRoot.get('calendar').get(eventSoul).put(payload, (ack) => {
+        if (nodeStorageFlush) nodeStorageFlush();
         if (ack && ack.err) reject(new Error(ack.err));
         else resolve({ soul: eventSoul, status: 'saved', updatedAt: payload.updatedAt });
       }, { authenticator: this.pair });
@@ -438,12 +537,23 @@ export class ZenOS {
    */
   async getCalendarEvent(soul) {
     if (!this.pair) throw new Error('Not authenticated.');
+    const allGraph = getGraphSnapshot(this.zen);
+    const cachedNode = allGraph['~' + this.pair.pub + '/calendar/' + soul];
+    if (cachedNode && cachedNode.data) {
+      try {
+        const rawData = extractCipher(cachedNode.data) || cachedNode.data;
+        return { soul, ...(await ZEN.decrypt(rawData, this.pair)) };
+      } catch (_) {}
+    }
     const node = await new Promise((resolve) => {
-      const t = setTimeout(() => resolve(null), 5000);
+      const t = setTimeout(() => resolve(null), 3000);
       this.userRoot.get('calendar').get(soul).once((n) => { clearTimeout(t); resolve(n); });
     });
     if (!node || !node.data) return null;
-    try { return { soul, ...(await ZEN.decrypt(node.data, this.pair)) }; } catch (_) { return null; }
+    try {
+      const rawData = extractCipher(node.data) || node.data;
+      return { soul, ...(await ZEN.decrypt(rawData, this.pair)) };
+    } catch (_) { return null; }
   }
 
   /**
@@ -496,27 +606,80 @@ export class ZenOS {
     const lo = from != null ? new Date(from).getTime() : -Infinity;
     const hi = to != null ? new Date(to).getTime() : Infinity;
 
-    const events = [];
-    const seen = new Set();
-    return new Promise((resolve) => {
-      setTimeout(() => resolve(events.sort((a, b) => a.start - b.start)), timeoutMs);
+    const events = new Map();
+    const prefix = '~' + this.pair.pub + '/calendar/';
+    const parentSoul = '~' + this.pair.pub + '/calendar';
 
-      const add = async (node, soul) => {
-        if (!node || !node.data || seen.has(soul)) return;
-        seen.add(soul);
-        try {
-          const ev = await ZEN.decrypt(node.data, this.pair); // ZEN returns the parsed object
-          if (ev.end >= lo && ev.start <= hi) events.push({ soul, ...ev, updatedAt: node.updatedAt });
-        } catch (_) {
-          // ignore corrupted or un-decryptable records
+    const processNode = async (node, soul) => {
+      if (!node || !soul) return;
+      const rawData = extractCipher(node.data) || (typeof node.data === 'string' ? node.data : null);
+      if (!rawData) return;
+      try {
+        const ev = await ZEN.decrypt(rawData, this.pair);
+        if (ev && typeof ev === 'object' && (ev.end >= lo && ev.start <= hi)) {
+          events.set(soul, { soul, ...ev, updatedAt: node.updatedAt || Date.now() });
         }
+      } catch (_) {}
+    };
+
+    // 1. Snapshot
+    const allGraph = getGraphSnapshot(this.zen);
+    const tasks = [];
+    for (const k of Object.keys(allGraph)) {
+      if (k.startsWith(prefix)) {
+        const soul = k.slice(prefix.length);
+        if (isSoulDeleted(allGraph, parentSoul, soul)) continue;
+        tasks.push(processNode(allGraph[k], soul));
+      }
+    }
+    await Promise.all(tasks);
+
+    if (timeoutMs === 0) {
+      return [...events.values()].sort((a, b) => a.start - b.start);
+    }
+
+    // 2. Live updates
+    return new Promise((resolve) => {
+      let resolved = false;
+      const done = () => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(maxTimer);
+        clearTimeout(settleTimer);
+        resolve([...events.values()].sort((a, b) => a.start - b.start));
       };
 
-      this.userRoot.get('calendar').map().once((node, soul) => {
-        if (!soul) return;
-        if (node && node.data) add(node, soul);
-        else this.userRoot.get('calendar').get(soul).once((full) => add(full, soul));
-      });
+      const maxTimer = setTimeout(done, timeoutMs);
+      let settleTimer = setTimeout(done, events.size > 0 ? Math.min(350, timeoutMs) : timeoutMs);
+
+      const kickSettle = () => {
+        clearTimeout(settleTimer);
+        settleTimer = setTimeout(done, Math.min(300, timeoutMs));
+      };
+
+      try {
+        this.userRoot.get('calendar').map().on(async (node, soul) => {
+          if (!soul) return;
+          if (node === null) {
+            events.delete(soul);
+            kickSettle();
+            return;
+          }
+          if (node && node.data) {
+            await processNode(node, soul);
+            if (nodeStorageFlush) nodeStorageFlush();
+            kickSettle();
+          } else {
+            this.userRoot.get('calendar').get(soul).once(async (full) => {
+              if (full && full.data) {
+                await processNode(full, soul);
+                if (nodeStorageFlush) nodeStorageFlush();
+                kickSettle();
+              }
+            });
+          }
+        });
+      } catch (_) {}
     });
   }
 
@@ -527,6 +690,7 @@ export class ZenOS {
     if (!this.pair) throw new Error('Not authenticated.');
     return new Promise((resolve, reject) => {
       this.userRoot.get('calendar').get(soul).put(null, (ack) => {
+        if (nodeStorageFlush) nodeStorageFlush();
         if (ack && ack.err) reject(new Error(ack.err));
         else resolve({ soul, status: 'deleted' });
       }, { authenticator: this.pair });
@@ -547,6 +711,7 @@ export class ZenOS {
     const data = await ZEN.encrypt({ url, title: title || url, folder, tags, addedAt }, this.pair);
     return new Promise((resolve, reject) => {
       this.userRoot.get('bookmarks').get(soul).put({ data, updatedAt: Date.now(), encrypted: true }, (ack) => {
+        if (nodeStorageFlush) nodeStorageFlush();
         if (ack && ack.err) reject(new Error(ack.err));
         else resolve({ soul, status: 'saved' });
       }, { authenticator: this.pair });
@@ -565,32 +730,83 @@ export class ZenOS {
   /**
    * Read and decrypt all bookmarks, optionally filtered by folder prefix or text query.
    */
-  async readBookmarks({ folder = null, query = null, timeoutMs = 15000 } = {}) {
+  async readBookmarks({ folder = null, query = null, timeoutMs = 5000 } = {}) {
     if (!this.pair) throw new Error('Not authenticated.');
     const q = query ? query.toLowerCase() : null;
-    const marks = [];
-    const seen = new Set();
-    return new Promise((resolve) => {
-      setTimeout(() => resolve(marks.sort((a, b) => b.addedAt - a.addedAt)), timeoutMs);
+    const marks = new Map();
+    const prefix = '~' + this.pair.pub + '/bookmarks/';
+    const parentSoul = '~' + this.pair.pub + '/bookmarks';
 
-      const add = async (node, soul) => {
-        if (!node || !node.data || seen.has(soul)) return;
-        seen.add(soul);
-        try {
-          const bm = await ZEN.decrypt(node.data, this.pair); // ZEN returns the parsed object
-          if (folder && !(bm.folder === folder || bm.folder.startsWith(folder + '/'))) return;
-          if (q && !(bm.title + ' ' + bm.url).toLowerCase().includes(q)) return;
-          marks.push({ soul, ...bm });
-        } catch (_) {
-          // ignore corrupted or un-decryptable records
-        }
+    const processNode = async (node, soul) => {
+      if (!node || !soul) return;
+      const rawData = extractCipher(node.data) || (typeof node.data === 'string' ? node.data : null);
+      if (!rawData) return;
+      try {
+        const bm = await ZEN.decrypt(rawData, this.pair);
+        if (!bm || !bm.url) return;
+        if (folder && !(bm.folder === folder || bm.folder.startsWith(folder + '/'))) return;
+        if (q && !(bm.title + ' ' + bm.url).toLowerCase().includes(q)) return;
+        marks.set(soul, { soul, ...bm });
+      } catch (_) {}
+    };
+
+    // 1. Gather nodes from snapshot
+    const allGraph = getGraphSnapshot(this.zen);
+    const tasks = [];
+    for (const k of Object.keys(allGraph)) {
+      if (k.startsWith(prefix)) {
+        const soul = k.slice(prefix.length);
+        if (isSoulDeleted(allGraph, parentSoul, soul)) continue;
+        tasks.push(processNode(allGraph[k], soul));
+      }
+    }
+    await Promise.all(tasks);
+
+    if (timeoutMs === 0) {
+      return [...marks.values()].sort((a, b) => b.addedAt - a.addedAt);
+    }
+
+    return new Promise((resolve) => {
+      let resolved = false;
+      const done = () => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(maxTimer);
+        clearTimeout(settleTimer);
+        resolve([...marks.values()].sort((a, b) => b.addedAt - a.addedAt));
       };
 
-      this.userRoot.get('bookmarks').map().once((node, soul) => {
-        if (!soul) return;
-        if (node && node.data) add(node, soul);
-        else this.userRoot.get('bookmarks').get(soul).once((full) => add(full, soul));
-      });
+      const maxTimer = setTimeout(done, timeoutMs);
+      let settleTimer = setTimeout(done, marks.size > 0 ? Math.min(350, timeoutMs) : timeoutMs);
+
+      const kickSettle = () => {
+        clearTimeout(settleTimer);
+        settleTimer = setTimeout(done, Math.min(300, timeoutMs));
+      };
+
+      try {
+        this.userRoot.get('bookmarks').map().on(async (node, soul) => {
+          if (!soul) return;
+          if (node === null) {
+            marks.delete(soul);
+            kickSettle();
+            return;
+          }
+          if (node && node.data) {
+            await processNode(node, soul);
+            if (nodeStorageFlush) nodeStorageFlush();
+            kickSettle();
+          } else {
+            this.userRoot.get('bookmarks').get(soul).once(async (full) => {
+              if (full && full.data) {
+                await processNode(full, soul);
+                if (nodeStorageFlush) nodeStorageFlush();
+                kickSettle();
+              }
+            });
+          }
+        });
+      } catch (_) {}
     });
   }
 
@@ -600,7 +816,7 @@ export class ZenOS {
    * Reads the bookmarks once, then rewrites only the changed ones (50 at a time).
    * @returns {Promise<{updated:number, missing:string[], failed:number}>}
    */
-  async updateBookmarks(changes, timeoutMs = 15000) {
+  async updateBookmarks(changes, timeoutMs = 5000) {
     if (!this.pair) throw new Error('Not authenticated.');
     const bySoul = new Map((await this.readBookmarks({ timeoutMs })).map(b => [b.soul, b]));
     const missing = [], jobs = [];
@@ -632,7 +848,7 @@ export class ZenOS {
   /**
    * Export all bookmarks (optionally one folder) as a Netscape HTML string, importable by browsers.
    */
-  async exportBookmarksHtml({ folder = null, timeoutMs = 15000 } = {}) {
+  async exportBookmarksHtml({ folder = null, timeoutMs = 5000 } = {}) {
     return bookmarksToHtml(await this.readBookmarks({ folder, timeoutMs }));
   }
 
@@ -643,6 +859,7 @@ export class ZenOS {
     if (!this.pair) throw new Error('Not authenticated.');
     return new Promise((resolve, reject) => {
       this.userRoot.get('bookmarks').get(soul).put(null, (ack) => {
+        if (nodeStorageFlush) nodeStorageFlush();
         if (ack && ack.err) reject(new Error(ack.err));
         else resolve({ soul, status: 'deleted' });
       }, { authenticator: this.pair });
@@ -674,6 +891,7 @@ export class ZenOS {
 
     return new Promise((resolve, reject) => {
       this.userRoot.get('posts').get(postId).put(postPayload, (ack) => {
+        if (nodeStorageFlush) nodeStorageFlush();
         if (ack && ack.err) reject(new Error(ack.err));
         else resolve({ id: postId, status: 'published', authorPub: this.pair.pub });
       }, { authenticator: this.pair });
@@ -687,23 +905,90 @@ export class ZenOS {
     const targetPub = authorPub || this.pub;
     if (!targetPub) throw new Error('Target public key required.');
 
-    const posts = [];
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => resolve(posts), timeoutMs);
+    const posts = new Map();
+    const prefix = '~' + targetPub + '/posts/';
+    const parentSoul = '~' + targetPub + '/posts';
 
-      this.zen.get('~' + targetPub).get('posts').map().on((post, id) => {
-        if (!post || post.deleted) return;
-        posts.push({
-          id: post.id || id,
-          title: post.title,
-          content: post.content,
-          tags: typeof post.tags === 'string' ? post.tags.split(', ') : (post.tags || []),
-          authorAlias: post.authorAlias || null,
-          authorPub: targetPub,
-          createdAt: post.createdAt,
-          updatedAt: post.updatedAt
-        });
+    const processPost = (post, id) => {
+      if (!post || post.deleted) {
+        if (post && post.deleted && id) posts.delete(id);
+        return;
+      }
+      const postId = post.id || id;
+      if (!postId) return;
+      const title = typeof post.title === 'string' ? post.title : (post.title?.[':'] || '');
+      const content = typeof post.content === 'string' ? post.content : (post.content?.[':'] || '');
+      const tagsRaw = post.tags?.[':'] !== undefined ? post.tags[':'] : post.tags;
+      const tags = typeof tagsRaw === 'string' ? tagsRaw.split(', ').map(t => t.trim()).filter(Boolean) : (Array.isArray(tagsRaw) ? tagsRaw : []);
+      const authorAlias = post.authorAlias?.[':'] !== undefined ? post.authorAlias[':'] : (post.authorAlias || null);
+
+      posts.set(postId, {
+        id: postId,
+        title,
+        content,
+        tags,
+        authorAlias,
+        authorPub: targetPub,
+        createdAt: Number(extractCipher(post.createdAt) || post.createdAt) || Date.now(),
+        updatedAt: Number(extractCipher(post.updatedAt) || post.updatedAt) || Date.now()
       });
+    };
+
+    // 1. Snapshot
+    const allGraph = getGraphSnapshot(this.zen);
+    for (const k of Object.keys(allGraph)) {
+      if (k.startsWith(prefix)) {
+        const id = k.slice(prefix.length);
+        if (isSoulDeleted(allGraph, parentSoul, id)) continue;
+        processPost(allGraph[k], id);
+      }
+    }
+
+    if (timeoutMs === 0) {
+      return [...posts.values()].sort((a, b) => b.createdAt - a.createdAt);
+    }
+
+    return new Promise((resolve) => {
+      let resolved = false;
+      const done = () => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(maxTimer);
+        clearTimeout(settleTimer);
+        resolve([...posts.values()].sort((a, b) => b.createdAt - a.createdAt));
+      };
+
+      const maxTimer = setTimeout(done, timeoutMs);
+      let settleTimer = setTimeout(done, posts.size > 0 ? Math.min(350, timeoutMs) : timeoutMs);
+
+      const kickSettle = () => {
+        clearTimeout(settleTimer);
+        settleTimer = setTimeout(done, Math.min(300, timeoutMs));
+      };
+
+      try {
+        this.zen.get('~' + targetPub).get('posts').map().on((post, id) => {
+          if (!id) return;
+          if (post === null) {
+            posts.delete(id);
+            kickSettle();
+            return;
+          }
+          if (post && (post.title || post.content)) {
+            processPost(post, id);
+            if (nodeStorageFlush) nodeStorageFlush();
+            kickSettle();
+          } else {
+            this.zen.get('~' + targetPub).get('posts').get(id).once((full) => {
+              if (full && (full.title || full.content)) {
+                processPost(full, id);
+                if (nodeStorageFlush) nodeStorageFlush();
+                kickSettle();
+              }
+            });
+          }
+        });
+      } catch (_) {}
     });
   }
 
@@ -717,6 +1002,7 @@ export class ZenOS {
     return new Promise((resolve) => {
       this.userRoot.get('alias').put(targetAlias, null, { authenticator: this.pair });
       this.zen.get('smollog_aliases').get(targetAlias).put(this.pair.pub, () => {
+        if (nodeStorageFlush) nodeStorageFlush();
         resolve({ alias: targetAlias, pub: this.pair.pub });
       });
     });

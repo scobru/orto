@@ -268,8 +268,9 @@ Agents building on ZenOS should respect standard graph node paths under `~pair.p
 | Node Path | Purpose | Encryption Standard |
 |---|---|---|
 | `~{pub}/vault` | Encrypted notes & knowledge base | AES-GCM (Private) |
+| `~{pub}/bookmarks` | Private encrypted bookmarks & folders | AES-GCM (Private) |
+| `~{pub}/calendar` | Personal calendar events & schedules | AES-GCM (Private) |
 | `~{pub}/posts` | Public blog posts & articles | Cleartext Signed (Public) |
-| `~{pub}/calendar` | Personal calendar events & schedules | AES-GCM (Private) or Signed |
 | `~{pub}/tasks` | Interactive todos & project kanban | AES-GCM (Private) |
 | `~{pub}/profile` | Sovereign bio, avatar, links, social | Cleartext Signed (Public) |
 | `~{pub}/inbox` | P2P encrypted messages from other agents | ECDH Shared Secret (`ZEN.secret`) |
@@ -333,3 +334,4 @@ async function runAutonomousWorkflow() {
 2. **Handle network latency**: GunDB/ZEN propagates graph changes over WebSockets asynchronously. Always await `.put()` callbacks and allow 500-1500ms before exiting CLI processes.
 3. **Graceful degradation**: Wrap `ZEN.decrypt` in `try / catch` to ignore old, corrupted, or non-encrypted legacy nodes.
 4. **Deterministic identity**: Username and password are both case-sensitive (FID derivation). Never change their casing without user confirmation. Data from the earlier schemes is copied with `os.migrateLegacy()`.
+5. **Paginating large queries**: Nodes with thousands of records (e.g. bookmarks or vault) should be queried with `--count` (`-c`) to check total size, and paginated with `--limit` (`-n`) and `--page` (`-p`) or formatted with `--table` (`-t`) to prevent overwhelming terminal output and agent context windows.

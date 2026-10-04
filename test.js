@@ -1,8 +1,14 @@
 // Calendar roundtrip: encrypted at rest in graph, decrypts on read, range filter, delete.
 import assert from 'assert';
 import http from 'http';
-import { ZenOS, parseBookmarksHtml, bookmarksToHtml, legacySmollogPair } from './zenos.js';
-import { deriveMasterPair } from './identity.js';
+import osmod from 'os';
+import path from 'path';
+
+process.env.ZENOS_CACHE = 'off';
+process.env.ZENOS_CACHE_FILE = path.join(osmod.tmpdir(), `zenos-test-cache-${Date.now()}.json`);
+
+const { ZenOS, parseBookmarksHtml, bookmarksToHtml, legacySmollogPair } = await import('./zenos.js');
+const { deriveMasterPair } = await import('./identity.js');
 
 // local in-process relay so the test needs no network
 const ZEN = (await import('./zen.min.js')).default;

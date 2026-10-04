@@ -28,6 +28,22 @@ ZENOS_PASS=your_password
 ```
 When configured, **`--user` and `--pass` can be completely omitted** from all CLI commands! If specified, command flags will override the `.env` variables.
 
+### 📄 Pagination & Limiting Output (All Read Commands)
+When querying nodes with hundreds or thousands of records (e.g. bookmarks or vault notes), use pagination flags to avoid dumping massive payloads:
+- `--count` (`-c`): Returns only the total number of records (e.g. `{"total": 1704}`) without returning the list.
+- `--limit <n>` (`-n <n>`): Limit number of records (default: 20 when paginating).
+- `--page <n>` (`-p <n>`): 1-based page number (e.g. `-n 20 -p 1`).
+- `--offset <n>`: Skip first *n* records.
+- `--table` (`-t`): Render records as a compact console table with truncated fields.
+
+Example:
+```bash
+node cli.js bookmarks-read -c                        # {"total": 1704}
+node cli.js bookmarks-read -n 10 -p 1                # Page 1 with 10 records
+node cli.js bookmarks-read -n 10 -t                  # Nice terminal table
+node cli.js vault-read -n 5                          # Top 5 vault notes
+```
+
 ### 1. Derive Sovereign Identity
 Derive public key (`pair.pub`) and EVM address deterministically from user credentials:
 ```bash
@@ -104,7 +120,7 @@ Bookmarks live at `~pub/bookmarks/<soul>` (soul = hash of the URL, so the same U
 
 ```bash
 node cli.js bookmarks-import --user <user> --pass <pass> --file bookmarks.html   # Brave / Chrome / Firefox export
-node cli.js bookmarks-read   --user <user> --pass <pass> [--folder Dev] [--query rust] [--timeout 30000]
+node cli.js bookmarks-read   --user <user> --pass <pass> [--folder Dev] [--query rust] [--limit 20] [--page 1] [--table] [--count]
 node cli.js bookmarks-export --user <user> --pass <pass> [--folder Dev] [--file out.html]   # Netscape HTML, importable by Brave / Chrome / Firefox
 node cli.js bookmarks-update --user <user> --pass <pass> --file changes.json     # [{ "soul": "...", "folder": "...", "title": "...", "tags": ["..."] }]
 ```

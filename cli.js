@@ -7,9 +7,21 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import ZenOS, { DEFAULT_RELAYS, resolvePeers } from './zenos.js';
+import ZenOS, { DEFAULT_RELAYS, resolvePeers, getGraphSnapshot, flushStorage } from './zenos.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const SHORT_ALIASES = {
+  n: 'limit',
+  p: 'page',
+  q: 'query',
+  c: 'count',
+  t: 'table',
+  u: 'user',
+  h: 'help',
+  f: 'file',
+  F: 'fast'
+};
 
 function parseArgs(args) {
   const flags = {};
@@ -18,11 +30,23 @@ function parseArgs(args) {
     if (arg.startsWith('--')) {
       const key = arg.slice(2);
       const next = args[i + 1];
-      if (next && !next.startsWith('--')) {
+      if (next && !next.startsWith('-')) {
         flags[key] = next;
         i++;
       } else {
         flags[key] = true;
+      }
+    } else if (arg.startsWith('-') && arg.length > 1) {
+      const raw = arg.slice(1);
+      const key = SHORT_ALIASES[raw] || raw;
+      const next = args[i + 1];
+      if (next && !next.startsWith('-')) {
+        flags[key] = next;
+        flags[raw] = next;
+        i++;
+      } else {
+        flags[key] = true;
+        flags[raw] = true;
       }
     }
   }
@@ -49,10 +73,10 @@ function loadEnvFile(filePath) {
         }
       }
     }
-  } catch (_) {}
+  } catch (_) { }
 }
 
-const [,, cmd, ...rest] = process.argv;
+const [, , cmd, ...rest] = process.argv;
 const flags = parseArgs(rest);
 
 // Load .env files in priority order:
@@ -78,6 +102,57 @@ function requireCredentials() {
   return { user, pass };
 }
 
+function outputResults(items, flags) {
+  if (flags.count) {
+    console.log(JSON.stringify({ total: items.length }, null, 2));
+    return;
+  }
+  const hasLimit = flags.limit !== undefined;
+  const hasPage = flags.page !== undefined;
+  const hasOffset = flags.offset !== undefined;
+
+  if (hasLimit || hasPage || hasOffset || flags.table) {
+    const limit = hasLimit ? Math.max(1, parseInt(flags.limit, 10) || 20) : (flags.table ? 20 : items.length);
+    let offset = 0;
+    let page = 1;
+    if (hasPage) {
+      page = Math.max(1, parseInt(flags.page, 10) || 1);
+      offset = (page - 1) * limit;
+    } else if (hasOffset) {
+      offset = Math.max(0, parseInt(flags.offset, 10) || 0);
+      page = Math.floor(offset / limit) + 1;
+    }
+    const totalPages = Math.ceil(items.length / limit) || 1;
+    const displayItems = items.slice(offset, offset + limit);
+
+    if (flags.table) {
+      console.log(`\nShowing ${displayItems.length} of ${items.length} items (Page ${page}/${totalPages}):\n`);
+      console.table(displayItems.map(item => {
+        const row = {};
+        if (item.title !== undefined) row.Title = item.title ? item.title.slice(0, 40) : '';
+        if (item.folder !== undefined) row.Folder = item.folder || '';
+        if (item.url !== undefined) row.URL = item.url ? item.url.slice(0, 50) : '';
+        if (item.start !== undefined) row.Start = new Date(item.start).toISOString();
+        if (item.cat !== undefined) row.Cat = item.cat;
+        if (item.soul !== undefined) row.Soul = item.soul;
+        return row;
+      }));
+      return;
+    }
+
+    console.log(JSON.stringify({
+      total: items.length,
+      page,
+      limit,
+      totalPages,
+      items: displayItems
+    }, null, 2));
+    return;
+  }
+
+  console.log(JSON.stringify(items, null, 2));
+}
+
 async function main() {
   if (!cmd || cmd === '--help' || cmd === '-h') {
     console.log(`
@@ -97,6 +172,13 @@ Usage:
   node cli.js blog-publish [--user <user> --pass <pass>] --title <title> --content <content> [--tags <tags>]
   node cli.js blog-read [--pub <pub>] [--alias <alias>] [--user <user> --pass <pass>]
   node cli.js relays                      # print the effective relay list
+
+Pagination & formatting options (read commands):
+  --limit <n>             limit number of returned records (default 20 when paginating)
+  --page <n>              page number (1-based, e.g. --page 2 --limit 20)
+  --offset <n>            record offset (alternative to --page)
+  --count                 return total count only (e.g. {"total": 1704})
+  --table                 format results as an easy-to-read console table
 
 Credentials:
   Flags:     --user <user> --pass <pass>
@@ -156,7 +238,9 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     case 'calendar-read': {
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      console.log(JSON.stringify(await os.readCalendarEvents({ from: flags.from, to: flags.to, timeoutMs: 15000 }), null, 2));
+      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
+      const evs = await os.readCalendarEvents({ from: flags.from, to: flags.to, timeoutMs });
+      outputResults(evs, flags);
       process.exit(0);
       break;
     }
@@ -168,6 +252,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       await os.login(user, pass);
       const fn = cmd === 'event-link' ? 'linkToEvent' : 'unlinkFromEvent';
       console.log(JSON.stringify(await os[fn](flags.event, { kind: 'note', soul: flags.note }), null, 2));
+      flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -177,6 +262,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       console.log(JSON.stringify(await os.importBookmarksHtml(fs.readFileSync(flags.file, 'utf8')), null, 2));
+      flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -184,8 +270,9 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     case 'bookmarks-read': {
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const marks = await os.readBookmarks({ folder: flags.folder, query: flags.query, timeoutMs: flags.timeout ? Number(flags.timeout) : 15000 });
-      console.log(JSON.stringify(marks, null, 2));
+      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
+      const marks = await os.readBookmarks({ folder: flags.folder, query: flags.query, timeoutMs });
+      outputResults(marks, flags);
       process.exit(0);
       break;
     }
@@ -193,7 +280,8 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     case 'bookmarks-export': {
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const html = await os.exportBookmarksHtml({ folder: flags.folder });
+      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
+      const html = await os.exportBookmarksHtml({ folder: flags.folder, timeoutMs });
       if (flags.file) fs.writeFileSync(flags.file, html); else process.stdout.write(html);
       process.exit(0);
       break;
@@ -204,6 +292,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       console.log(JSON.stringify(await os.updateBookmarks(JSON.parse(fs.readFileSync(flags.file, 'utf8'))), null, 2));
+      flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -222,6 +311,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
         soul: flags.soul
       });
       console.log(JSON.stringify(res, null, 2));
+      flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -229,7 +319,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     case 'vault-read': {
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const timeoutMs = parseInt(flags.timeout || '4500', 10);
+      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
       let notes = await os.readVaultNotes(timeoutMs);
 
       if (flags.cat) {
@@ -240,7 +330,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
         notes = notes.filter(n => n.title.toLowerCase().includes(q) || n.body.toLowerCase().includes(q));
       }
 
-      console.log(JSON.stringify(notes, null, 2));
+      outputResults(notes, flags);
       process.exit(0);
       break;
     }
@@ -260,6 +350,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
 
       // Register alias
       await os.registerAlias(user);
+      flushStorage();
 
       console.log(JSON.stringify({
         ...res,
@@ -272,12 +363,20 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     case 'blog-read': {
       let targetPub = flags.pub;
       if (!targetPub && flags.alias) {
-        targetPub = await new Promise((resolve) => {
-          os.zen.get('smollog_aliases').get(flags.alias.toLowerCase()).once((found) => {
-            resolve(found || null);
+        const aliasKey = flags.alias.toLowerCase();
+        const allGraph = getGraphSnapshot(os.zen);
+        const cachedAlias = allGraph['smollog_aliases']?.[aliasKey];
+        if (cachedAlias) {
+          targetPub = typeof cachedAlias === 'string' ? cachedAlias : (cachedAlias?.[':'] || null);
+        }
+        if (!targetPub) {
+          targetPub = await new Promise((resolve) => {
+            os.zen.get('smollog_aliases').get(aliasKey).once((found) => {
+              resolve(found || null);
+            });
+            setTimeout(() => resolve(null), 3000);
           });
-          setTimeout(() => resolve(null), 3000);
-        });
+        }
       }
       const envUser = flags.user || process.env.ZENOS_USER || process.env.ZENOS_USERNAME;
       const envPass = flags.pass || process.env.ZENOS_PASS || process.env.ZENOS_PASSWORD;
@@ -287,9 +386,9 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       }
       if (!targetPub) throw new Error('Must provide --pub, --alias, or credentials (--user and --pass, or ZENOS_USER and ZENOS_PASS in .env).');
 
-      const timeoutMs = parseInt(flags.timeout || '4500', 10);
+      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
       const posts = await os.readBlogPosts(targetPub, timeoutMs);
-      console.log(JSON.stringify(posts, null, 2));
+      outputResults(posts, flags);
       process.exit(0);
       break;
     }
