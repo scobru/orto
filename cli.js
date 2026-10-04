@@ -5,7 +5,11 @@
  */
 
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import ZenOS, { DEFAULT_RELAYS, resolvePeers } from './zenos.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function parseArgs(args) {
   const flags = {};
@@ -25,28 +29,79 @@ function parseArgs(args) {
   return flags;
 }
 
+function loadEnvFile(filePath) {
+  try {
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      for (const line of content.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eq = trimmed.indexOf('=');
+        if (eq !== -1) {
+          const key = trimmed.slice(0, eq).trim();
+          let val = trimmed.slice(eq + 1).trim();
+          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+          }
+          if (process.env[key] === undefined) {
+            process.env[key] = val;
+          }
+        }
+      }
+    }
+  } catch (_) {}
+}
+
 const [,, cmd, ...rest] = process.argv;
 const flags = parseArgs(rest);
+
+// Load .env files in priority order:
+// 1. Explicit --env flag
+if (flags.env) {
+  loadEnvFile(path.resolve(flags.env));
+}
+// 2. Skill folder (.env, .env.local)
+loadEnvFile(path.join(__dirname, '.env'));
+loadEnvFile(path.join(__dirname, '.env.local'));
+// 3. Current working directory (.env, .env.local) if different
+if (process.cwd() !== __dirname) {
+  loadEnvFile(path.join(process.cwd(), '.env'));
+  loadEnvFile(path.join(process.cwd(), '.env.local'));
+}
+
+function requireCredentials() {
+  const user = flags.user || process.env.ZENOS_USER || process.env.ZENOS_USERNAME;
+  const pass = flags.pass || process.env.ZENOS_PASS || process.env.ZENOS_PASSWORD;
+  if (!user || !pass) {
+    throw new Error('User and password required: provide --user and --pass flags, or set ZENOS_USER and ZENOS_PASS in .env file.');
+  }
+  return { user, pass };
+}
 
 async function main() {
   if (!cmd || cmd === '--help' || cmd === '-h') {
     console.log(`
 ZenOS CLI — Sovereign Agent Tools
 Usage:
-  node cli.js identity --user <user> --pass <pass>
-  node cli.js migrate --user <user> --pass <pass>   # copy vault/calendar/bookmarks from the earlier identities
-  node cli.js vault-write --user <user> --pass <pass> --title <title> --body <body> [--cat <cat>] [--pinned]
-  node cli.js vault-read --user <user> --pass <pass> [--cat <cat>] [--query <q>] [--timeout <ms>]
-  node cli.js calendar-read --user <user> --pass <pass> [--from <date>] [--to <date>]
-  node cli.js event-link   --user <user> --pass <pass> --event <soul> --note <soul>     # link a note to an event
-  node cli.js event-unlink --user <user> --pass <pass> --event <soul> --note <soul>
-  node cli.js bookmarks-import --user <user> --pass <pass> --file <export.html>   # Brave/Chrome/Firefox export
-  node cli.js bookmarks-read --user <user> --pass <pass> [--folder <path>] [--query <q>] [--timeout <ms>]
-  node cli.js bookmarks-export --user <user> --pass <pass> [--folder <path>] [--file <out.html>]   # importable by Brave/Chrome/Firefox
-  node cli.js bookmarks-update --user <user> --pass <pass> --file <changes.json>  # [{soul, title?, folder?, tags?}]
-  node cli.js blog-publish --user <user> --pass <pass> --title <title> --content <content> [--tags <tags>]
+  node cli.js identity [--user <user> --pass <pass>]
+  node cli.js migrate [--user <user> --pass <pass>]   # copy vault/calendar/bookmarks from the earlier identities
+  node cli.js vault-write [--user <user> --pass <pass>] --title <title> --body <body> [--cat <cat>] [--pinned]
+  node cli.js vault-read [--user <user> --pass <pass>] [--cat <cat>] [--query <q>] [--timeout <ms>]
+  node cli.js calendar-read [--user <user> --pass <pass>] [--from <date>] [--to <date>]
+  node cli.js event-link   [--user <user> --pass <pass>] --event <soul> --note <soul>     # link a note to an event
+  node cli.js event-unlink [--user <user> --pass <pass>] --event <soul> --note <soul>
+  node cli.js bookmarks-import [--user <user> --pass <pass>] --file <export.html>   # Brave/Chrome/Firefox export
+  node cli.js bookmarks-read [--user <user> --pass <pass>] [--folder <path>] [--query <q>] [--timeout <ms>]
+  node cli.js bookmarks-export [--user <user> --pass <pass>] [--folder <path>] [--file <out.html>]
+  node cli.js bookmarks-update [--user <user> --pass <pass>] --file <changes.json>  # [{soul, title?, folder?, tags?}]
+  node cli.js blog-publish [--user <user> --pass <pass>] --title <title> --content <content> [--tags <tags>]
   node cli.js blog-read [--pub <pub>] [--alias <alias>] [--user <user> --pass <pass>]
   node cli.js relays                      # print the effective relay list
+
+Credentials:
+  Flags:     --user <user> --pass <pass>
+  Env vars:  ZENOS_USER and ZENOS_PASS (or ZENOS_USERNAME / ZENOS_PASSWORD)
+  Files:     .env in skill directory or current working directory (or --env <path>)
 
 Relay options (all commands):
   --relay <url[,url]>     add custom relay(s) on top of the defaults
@@ -78,8 +133,8 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
 
   switch (cmd) {
     case 'identity': {
-      if (!flags.user || !flags.pass) throw new Error('--user and --pass are required.');
-      const pair = await os.login(flags.user, flags.pass);
+      const { user, pass } = requireCredentials();
+      const pair = await os.login(user, pass);
       console.log(JSON.stringify({
         pub: pair.pub,
         priv: pair.priv,
@@ -91,16 +146,16 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     }
 
     case 'migrate': {
-      if (!flags.user || !flags.pass) throw new Error('--user and --pass are required.');
-      await os.login(flags.user, flags.pass);
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
       console.log(JSON.stringify({ pub: os.pub, legacyPubs: os.legacyPairs.map(p => p.pub), ...await os.migrateLegacy() }, null, 2));
       setTimeout(() => process.exit(0), 500);
       break;
     }
 
     case 'calendar-read': {
-      if (!flags.user || !flags.pass) throw new Error('--user and --pass are required.');
-      await os.login(flags.user, flags.pass);
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
       console.log(JSON.stringify(await os.readCalendarEvents({ from: flags.from, to: flags.to, timeoutMs: 15000 }), null, 2));
       process.exit(0);
       break;
@@ -108,8 +163,9 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
 
     case 'event-link':
     case 'event-unlink': {
-      if (!flags.user || !flags.pass || !flags.event || !flags.note) throw new Error('--user, --pass, --event and --note are required.');
-      await os.login(flags.user, flags.pass);
+      if (!flags.event || !flags.note) throw new Error('--event and --note are required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
       const fn = cmd === 'event-link' ? 'linkToEvent' : 'unlinkFromEvent';
       console.log(JSON.stringify(await os[fn](flags.event, { kind: 'note', soul: flags.note }), null, 2));
       setTimeout(() => process.exit(0), 500);
@@ -117,16 +173,17 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     }
 
     case 'bookmarks-import': {
-      if (!flags.user || !flags.pass || !flags.file) throw new Error('--user, --pass and --file are required.');
-      await os.login(flags.user, flags.pass);
+      if (!flags.file) throw new Error('--file is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
       console.log(JSON.stringify(await os.importBookmarksHtml(fs.readFileSync(flags.file, 'utf8')), null, 2));
       setTimeout(() => process.exit(0), 500);
       break;
     }
 
     case 'bookmarks-read': {
-      if (!flags.user || !flags.pass) throw new Error('--user and --pass are required.');
-      await os.login(flags.user, flags.pass);
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
       const marks = await os.readBookmarks({ folder: flags.folder, query: flags.query, timeoutMs: flags.timeout ? Number(flags.timeout) : 15000 });
       console.log(JSON.stringify(marks, null, 2));
       process.exit(0);
@@ -134,8 +191,8 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     }
 
     case 'bookmarks-export': {
-      if (!flags.user || !flags.pass) throw new Error('--user and --pass are required.');
-      await os.login(flags.user, flags.pass);
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
       const html = await os.exportBookmarksHtml({ folder: flags.folder });
       if (flags.file) fs.writeFileSync(flags.file, html); else process.stdout.write(html);
       process.exit(0);
@@ -143,18 +200,20 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     }
 
     case 'bookmarks-update': {
-      if (!flags.user || !flags.pass || !flags.file) throw new Error('--user, --pass and --file are required.');
-      await os.login(flags.user, flags.pass);
+      if (!flags.file) throw new Error('--file is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
       console.log(JSON.stringify(await os.updateBookmarks(JSON.parse(fs.readFileSync(flags.file, 'utf8'))), null, 2));
       setTimeout(() => process.exit(0), 500);
       break;
     }
 
     case 'vault-write': {
-      if (!flags.user || !flags.pass || !flags.title || !flags.body) {
-        throw new Error('--user, --pass, --title, and --body are required.');
+      if (!flags.title || !flags.body) {
+        throw new Error('--title, and --body are required.');
       }
-      await os.login(flags.user, flags.pass);
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
       const res = await os.writeVaultNote({
         title: flags.title,
         body: flags.body,
@@ -168,8 +227,8 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     }
 
     case 'vault-read': {
-      if (!flags.user || !flags.pass) throw new Error('--user and --pass are required.');
-      await os.login(flags.user, flags.pass);
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
       const timeoutMs = parseInt(flags.timeout || '4500', 10);
       let notes = await os.readVaultNotes(timeoutMs);
 
@@ -187,10 +246,11 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     }
 
     case 'blog-publish': {
-      if (!flags.user || !flags.pass || !flags.title || !flags.content) {
-        throw new Error('--user, --pass, --title, and --content are required.');
+      if (!flags.title || !flags.content) {
+        throw new Error('--title and --content are required.');
       }
-      await os.login(flags.user, flags.pass);
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
       const res = await os.publishBlogPost({
         title: flags.title,
         content: flags.content,
@@ -199,7 +259,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       });
 
       // Register alias
-      await os.registerAlias(flags.user);
+      await os.registerAlias(user);
 
       console.log(JSON.stringify({
         ...res,
@@ -219,11 +279,13 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
           setTimeout(() => resolve(null), 3000);
         });
       }
-      if (!targetPub && flags.user && flags.pass) {
-        const pair = await os.login(flags.user, flags.pass);
+      const envUser = flags.user || process.env.ZENOS_USER || process.env.ZENOS_USERNAME;
+      const envPass = flags.pass || process.env.ZENOS_PASS || process.env.ZENOS_PASSWORD;
+      if (!targetPub && envUser && envPass) {
+        const pair = await os.login(envUser, envPass);
         targetPub = pair.pub;
       }
-      if (!targetPub) throw new Error('Must provide --pub, --alias, or --user and --pass.');
+      if (!targetPub) throw new Error('Must provide --pub, --alias, or credentials (--user and --pass, or ZENOS_USER and ZENOS_PASS in .env).');
 
       const timeoutMs = parseInt(flags.timeout || '4500', 10);
       const posts = await os.readBlogPosts(targetPub, timeoutMs);

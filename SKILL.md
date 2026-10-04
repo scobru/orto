@@ -20,18 +20,26 @@ The skill provides a universal CLI tool [`cli.js`](file:///d:/shogun-2/zenOS/cli
 You can run it from within the repo (`node cli.js ...`) or from any project using its global path:
 `node "C:\Users\scobr\.gemini\config\skills\zenos\cli.js"` (or `node "D:\shogun-2\zenOS\cli.js"`).
 
+### 🔑 Credentials & .env Configuration
+You can place a `.env` file directly inside the skill directory (see [`.env.example`](file:///d:/shogun-2/zenOS/.env.example)) or your working directory:
+```env
+ZENOS_USER=your_username
+ZENOS_PASS=your_password
+```
+When configured, **`--user` and `--pass` can be completely omitted** from all CLI commands! If specified, command flags will override the `.env` variables.
+
 ### 1. Derive Sovereign Identity
 Derive public key (`pair.pub`) and EVM address deterministically from user credentials:
 ```bash
-node cli.js identity --user "<username>" --pass "<password>"
-# Or globally from any folder:
-# node "C:\Users\scobr\.gemini\config\skills\zenos\cli.js" identity --user "<username>" --pass "<password>"
+node cli.js identity
+# Or with explicit credentials:
+# node cli.js identity --user "<username>" --pass "<password>"
 ```
 
-### 2. ZenVault — Read & Decrypt Notes
+### 2. Vault — Read & Decrypt Notes
 Fetch and decrypt all notes from the user's private vault:
 ```bash
-node cli.js vault-read --user "<username>" --pass "<password>"
+node cli.js vault-read
 ```
 
 Filter by category or search query:
