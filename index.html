@@ -1135,12 +1135,21 @@
     }
 
     /* Task list items & Interactive checkboxes */
-    .markdown-rendered-view li.task-list-item {
-      list-style-type: none;
+    .markdown-rendered-view li.task-list-item,
+    .markdown-rendered-view li:has(.bear-checkbox),
+    .markdown-rendered-view li:has(input[type="checkbox"]) {
+      list-style-type: none !important;
       margin-left: -1.2em;
       display: flex;
-      align-items: center;
-      gap: 8px;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 3px 0;
+    }
+
+    .markdown-rendered-view li.task-list-item > p,
+    .markdown-rendered-view li:has(.bear-checkbox) > p {
+      margin: 0;
+      display: inline;
     }
 
     .bear-checkbox {
@@ -1148,6 +1157,8 @@
       -webkit-appearance: none;
       width: 17px;
       height: 17px;
+      min-width: 17px;
+      min-height: 17px;
       border: 1.5px solid #a0a6b2;
       border-radius: 4px;
       background: transparent;
@@ -1159,10 +1170,12 @@
       transition: all 0.15s ease;
       position: relative;
       flex-shrink: 0;
+      margin: 3px 0 0 0;
     }
 
     .bear-checkbox:hover {
       border-color: var(--bear-red);
+      transform: scale(1.05);
     }
 
     .bear-checkbox:checked {
@@ -2620,8 +2633,12 @@
         // Attach event listeners to interactive checkboxes in preview!
         renderedView.querySelectorAll('.bear-checkbox').forEach(box => {
           box.addEventListener('change', (e) => {
+            e.stopPropagation();
             const index = parseInt(e.target.dataset.todoIndex, 10);
             toggleCheckboxAtIndex(index, e.target.checked);
+          });
+          box.addEventListener('click', (e) => {
+            e.stopPropagation();
           });
         });
 
@@ -2665,10 +2682,15 @@
 
       // Replace markdown checklists with interactive checkboxes
       let todoCount = 0;
-      rawHtml = rawHtml.replace(/<input\s+disabled=""\s+type="checkbox"(?:\s+checked="")?>/g, (match) => {
-        const isChecked = match.includes('checked');
+      rawHtml = rawHtml.replace(/<input[^>]*type=["']?checkbox["']?[^>]*>/gi, (match) => {
+        const isChecked = /checked/i.test(match);
         const idx = todoCount++;
         return `<input type="checkbox" class="bear-checkbox" data-todo-index="${idx}" ${isChecked ? 'checked' : ''}>`;
+      });
+
+      // Remove default bullet point for list items containing checkboxes
+      rawHtml = rawHtml.replace(/<li(\s*[^>]*)>(?:\s*<p>)?\s*(<input[^>]*class="bear-checkbox"[^>]*>)/gi, (match, liAttrs, inputHtml) => {
+        return `<li class="task-list-item" ${liAttrs}>${inputHtml}`;
       });
 
       // Highlight Bear tags in text
@@ -2683,19 +2705,20 @@
     function toggleCheckboxAtIndex(targetIndex, newChecked) {
       if (!selectedNoteId) return;
       const note = localNotes[selectedNoteId];
-      if (!note) return;
+      if (!note || !note.body) return;
 
       let count = 0;
-      const updatedBody = note.body.replace(/- \[( |x)\]/g, (match, state) => {
+      const updatedBody = note.body.replace(/^([\s]*(?:[-*+]|\d+\.)\s*\[)([ xX])(\])/gm, (match, prefix, state, suffix) => {
         const index = count++;
         if (index === targetIndex) {
-          return newChecked ? '- [x]' : '- [ ]';
+          return `${prefix}${newChecked ? 'x' : ' '}${suffix}`;
         }
         return match;
       });
 
       note.body = updatedBody;
-      document.getElementById('editor-textarea').value = updatedBody;
+      const textarea = document.getElementById('editor-textarea');
+      if (textarea) textarea.value = updatedBody;
       saveActiveNote(true);
       triggerRender();
     }
