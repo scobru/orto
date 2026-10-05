@@ -18,6 +18,7 @@ All applications within ZenOS are anchored under the user's sovereign cryptograp
 - 🔑 **Secrets (`~{pub}/secrets`)**: Encrypted passwords, API keys and secure notes. Values are hidden until you press Show or Copy; the editor has a CSPRNG password generator.
 - 📁 **Files (`~{pub}/files`)**: Encrypted file storage on IPFS through a [Delay](https://github.com/scobru/delay) relay. The app checks that a configured relay is a Delay relay (plain ZEN relays have no IPFS); the relay token is kept in `localStorage` encrypted with your key.
 - 🪶 **Blog / smollog (`~{pub}/posts`)**: Public, cryptographically signed microblog and article publisher.
+- ✨ **Example entries**: an *Examples* button in Contacts, Secrets, Bookmarks, Tasks and Calendar adds a few fake entries to try things out (fixed ids, so clicking twice never duplicates; the blog is excluded because posts are public).
 - 🤖 **Agent Ready**: Fully interoperable with autonomous AI agents orchestrating via the [ZenOS Core SDK & CLI](https://github.com/scobru/zenos).
 
 ---
