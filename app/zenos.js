@@ -220,6 +220,45 @@ export function bookmarksToHtml(bookmarks) {
   return ['<!DOCTYPE NETSCAPE-Bookmark-file-1>', '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">', '<TITLE>Bookmarks</TITLE>', '<H1>Bookmarks</H1>', '<DL><p>', ...block(root, '    '), '</DL><p>', ''].join('\n');
 }
 
+/** vCard 3.0 parsing/export for contacts (Google/Apple/Outlook "export contacts"). Returns [{ name, emails, phones, org, notes, tags }]. */
+export function parseVcf(text) {
+  const unfold = text.replace(/\r?\n[ \t]/g, '');
+  const un = (v) => v.replace(/\\n/gi, '\n').replace(/\\([,;\\])/g, '$1').trim();
+  const out = [];
+  for (const m of unfold.matchAll(/BEGIN:VCARD([\s\S]*?)END:VCARD/gi)) {
+    const c = { name: '', emails: [], phones: [], org: '', notes: '', tags: [] };
+    for (const line of m[1].split(/\r?\n/)) {
+      const i = line.indexOf(':'); if (i < 0) continue;
+      const key = line.slice(0, i).split(';')[0].toUpperCase(), val = un(line.slice(i + 1));
+      if (key === 'FN') c.name = val;
+      else if (key === 'EMAIL' && val) c.emails.push(val);
+      else if (key === 'TEL' && val) c.phones.push(val);
+      else if (key === 'ORG') c.org = val.replace(/;+/g, ' ').trim();
+      else if (key === 'NOTE') c.notes = val;
+      else if (key === 'CATEGORIES') c.tags = val.split(',').map(t => t.trim()).filter(Boolean);
+    }
+    if (c.name || c.emails.length) out.push({ ...c, name: c.name || c.emails[0] });
+  }
+  return out;
+}
+
+export function contactsToVcf(list) {
+  const esc = (v) => String(v || '').replace(/[\\,;]/g, '\\$&').replace(/\n/g, '\\n');
+  return list.map(c => ['BEGIN:VCARD', 'VERSION:3.0', 'FN:' + esc(c.name),
+    ...(c.emails || []).map(e => 'EMAIL:' + esc(e)), ...(c.phones || []).map(t => 'TEL:' + esc(t)),
+    ...(c.org ? ['ORG:' + esc(c.org)] : []), ...(c.notes ? ['NOTE:' + esc(c.notes)] : []),
+    ...((c.tags || []).length ? ['CATEGORIES:' + c.tags.map(esc).join(',')] : []), 'END:VCARD'].join('\r\n')).join('\r\n') + '\r\n';
+}
+
+/** Random password from the platform CSPRNG. `symbols:false` for sites that reject them. */
+export function generatePassword(length = 20, { symbols = true } = {}) {
+  const set = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789' + (symbols ? '!@#$%^&*-_=+?' : '');
+  const max = 256 - (256 % set.length); // rejection sampling: no modulo bias
+  let out = '';
+  while (out.length < length) for (const b of crypto.getRandomValues(new Uint8Array(length * 2))) if (b < max && out.length < length) out += set[b % set.length];
+  return out;
+}
+
 // what an event or task can point at; the link lives inside the encrypted record, so there is one source of truth
 const LINK_KINDS = ['note', 'bookmark', 'event', 'task'];
 
@@ -1225,6 +1264,160 @@ export class ZenOS {
     });
   }
 
+  // ─── Generic encrypted collection (contacts, secrets) ───────────────
+
+  _newSoul(prefix) {
+    return prefix + Date.now().toString(36) + crypto.getRandomValues(new Uint32Array(1))[0].toString(36);
+  }
+
+  /** Encrypt `obj` whole and store it at `~pub/<path>/<soul>`. */
+  async _putEnc(path, soul, obj) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    const data = await ZEN.encrypt(obj, this.pair);
+    return new Promise((resolve, reject) => {
+      this.userRoot.get(path).get(soul).put({ data, updatedAt: Date.now(), encrypted: true }, (ack) => {
+        if (nodeStorageFlush) nodeStorageFlush();
+        if (ack && ack.err) reject(new Error(ack.err)); else resolve({ soul, status: 'saved' });
+      }, { authenticator: this.pair });
+    });
+  }
+
+  async _decNode(node) {
+    const raw = node && (extractCipher(node.data) || (typeof node.data === 'string' ? node.data : null));
+    if (!raw) return null;
+    try { return await ZEN.decrypt(raw, this.pair); } catch (_) { return null; }
+  }
+
+  async _getEnc(path, soul, timeoutMs = 3000) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    if (!soul) throw new Error('soul is required.');
+    const graph = getGraphSnapshot(this.zen);
+    if (isSoulDeleted(graph, '~' + this.pair.pub + '/' + path, soul)) return null;
+    const node = graph['~' + this.pair.pub + '/' + path + '/' + soul] || await new Promise((resolve) => {
+      const t = setTimeout(() => resolve(null), timeoutMs);
+      this.userRoot.get(path).get(soul).once((n) => { clearTimeout(t); resolve(n); });
+    });
+    const v = await this._decNode(node);
+    return v ? { soul, ...v } : null;
+  }
+
+  /** Read and decrypt every entry of a collection (cache first, then the relays until they go quiet). */
+  async _readEnc(path, timeoutMs = 5000) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    const out = new Map();
+    const prefix = '~' + this.pair.pub + '/' + path + '/', parent = prefix.slice(0, -1);
+    const add = async (node, soul) => { const v = await this._decNode(node); if (v) out.set(soul, { soul, ...v }); };
+    const graph = getGraphSnapshot(this.zen);
+    await Promise.all(Object.keys(graph).filter(k => k.startsWith(prefix)).map(k => {
+      const soul = k.slice(prefix.length);
+      return isSoulDeleted(graph, parent, soul) ? null : add(graph[k], soul);
+    }));
+    if (timeoutMs > 0) {
+      const root = this.userRoot.get(path);
+      await new Promise((resolve) => {
+        let pending = 0, idle = setTimeout(resolve, Math.min(1500, timeoutMs));
+        const kick = () => { clearTimeout(idle); idle = setTimeout(() => (pending ? kick() : resolve()), Math.min(400, timeoutMs)); };
+        setTimeout(resolve, timeoutMs);
+        root.map().once(async (node, soul) => {
+          if (!soul || isSoulDeleted(getGraphSnapshot(this.zen), parent, soul)) return;
+          pending++; kick();
+          try {
+            if (node && node.data) await add(node, soul);
+            else await new Promise((r) => root.get(soul).once(async (full) => { if (full && full.data) await add(full, soul); r(); }));
+          } finally { pending--; kick(); }
+        });
+      });
+    }
+    return [...out.values()];
+  }
+
+  async _delEnc(path, soul) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    return new Promise((resolve, reject) => {
+      this.userRoot.get(path).get(soul).put(null, (ack) => {
+        if (nodeStorageFlush) nodeStorageFlush();
+        if (ack && ack.err) reject(new Error(ack.err)); else resolve({ soul, status: 'deleted' });
+      }, { authenticator: this.pair });
+    });
+  }
+
+  /** Live decrypted updates of a collection: callback(entry, soul, isDeleted). */
+  _onEnc(path, callback) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    const root = this.userRoot.get(path);
+    const handle = async (node, soul) => { const v = await this._decNode(node); if (v) callback({ soul, ...v, updatedAt: node.updatedAt || Date.now() }, soul, false); };
+    return root.map().on(async (node, soul) => {
+      if (!soul) return;
+      if (node === null) callback(null, soul, true);
+      else if (node && node.data) await handle(node, soul);
+      else root.get(soul).once((full) => full && full.data && handle(full, soul));
+    });
+  }
+
+  // ─── Contacts (Encrypted) ───────────────────────────────────────────
+
+  /**
+   * Save a contact at `~pub/contacts/<soul>` (whole record AES-GCM encrypted). Omit `soul` to create.
+   * @param {{soul?:string, name:string, emails?:string[], phones?:string[], org?:string, notes?:string, tags?:string[], pub?:string, addedAt?:number}} c
+   *   `pub` is an optional ZEN public key, so a contact can be a ZenOS user too.
+   */
+  async writeContact({ soul = null, name, emails = [], phones = [], org = '', notes = '', tags = [], pub = '', addedAt = Date.now() }) {
+    if (!name || !String(name).trim()) throw new Error('name is required.');
+    const list = (v) => (Array.isArray(v) ? v : String(v || '').split(',')).map(x => String(x).trim()).filter(Boolean);
+    return this._putEnc('contacts', soul || this._newSoul('ct-'), { name: String(name).trim(), emails: list(emails), phones: list(phones), org, notes, tags: list(tags).map(t => t.replace(/^#/, '')), pub, addedAt });
+  }
+
+  getContact(soul) { return this._getEnc('contacts', soul); }
+
+  /** Read and decrypt contacts, A-Z by name. `query`: space-separated words that must all match name/email/phone/org/notes/tags; `tag` filters by tag. */
+  async readContacts({ query = null, tag = null, timeoutMs = 5000 } = {}) {
+    const words = query ? query.toLowerCase().split(/\s+/).filter(Boolean) : [];
+    return (await this._readEnc('contacts', timeoutMs))
+      .filter(c => !tag || (c.tags || []).includes(tag.replace(/^#/, '')))
+      .filter(c => { const hay = [c.name, c.org, c.notes, c.pub, ...(c.emails || []), ...(c.phones || []), ...(c.tags || [])].join(' ').toLowerCase(); return words.every(w => hay.includes(w)); })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  deleteContact(soul) { return this._delEnc('contacts', soul); }
+  onContact(callback) { return this._onEnc('contacts', callback); }
+
+  /** Import a vCard (.vcf) export. Returns { imported, failed }. */
+  async importContactsVcf(text) {
+    const r = await Promise.allSettled(parseVcf(text).map(c => this.writeContact(c)));
+    return { imported: r.filter(x => x.status === 'fulfilled').length, failed: r.filter(x => x.status === 'rejected').length };
+  }
+
+  async exportContactsVcf(opts) { return contactsToVcf(await this.readContacts(opts)); }
+
+  // ─── Secrets: passwords, API keys, notes (Encrypted) ────────────────
+
+  /**
+   * Save a secret at `~pub/secrets/<soul>`. Name, username, value, url, notes are all inside the ciphertext;
+   * relays only see that a record exists. Omit `soul` to create.
+   * @param {{soul?:string, name:string, kind?:'password'|'api'|'note', username?:string, secret:string, url?:string, notes?:string, tags?:string[], createdAt?:number}} s
+   */
+  async writeSecret({ soul = null, name, kind = 'password', username = '', secret, url = '', notes = '', tags = [], createdAt = Date.now() }) {
+    if (!name || !String(name).trim()) throw new Error('name is required.');
+    if (secret === undefined || secret === null || secret === '') throw new Error('secret is required.');
+    const tagList = (Array.isArray(tags) ? tags : String(tags || '').split(',')).map(t => String(t).trim().replace(/^#/, '')).filter(Boolean);
+    return this._putEnc('secrets', soul || this._newSoul('sc-'), { name: String(name).trim(), kind, username, secret: String(secret), url, notes, tags: tagList, createdAt });
+  }
+
+  getSecret(soul) { return this._getEnc('secrets', soul); }
+
+  /** Read and decrypt secrets, A-Z by name. `query` matches name/username/url/notes/tags, never the secret value itself. */
+  async readSecrets({ query = null, kind = null, tag = null, timeoutMs = 5000 } = {}) {
+    const words = query ? query.toLowerCase().split(/\s+/).filter(Boolean) : [];
+    return (await this._readEnc('secrets', timeoutMs))
+      .filter(x => !kind || x.kind === kind)
+      .filter(x => !tag || (x.tags || []).includes(tag.replace(/^#/, '')))
+      .filter(x => { const hay = [x.name, x.username, x.url, x.notes, ...(x.tags || [])].join(' ').toLowerCase(); return words.every(w => hay.includes(w)); })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  deleteSecret(soul) { return this._delEnc('secrets', soul); }
+  onSecret(callback) { return this._onEnc('secrets', callback); }
+
   // ─── Tasks & Kanban (Encrypted) ─────────────────────────────────────
 
   /**
@@ -1559,7 +1752,7 @@ export class ZenOS {
   /**
    * Publish a public markdown blog post to smollog.
    */
-  async publishBlogPost({ title, content, tags = [], id = null }) {
+  async publishBlogPost({ title, content, tags = [], id = null, createdAt = Date.now() }) {
     if (!this.pair) throw new Error('Not authenticated.');
 
     const postId = id || ('post-' + Date.now());
@@ -1572,7 +1765,7 @@ export class ZenOS {
       tags: tagList.join(', '),
       authorAlias: this.username || '',
       authorPub: this.pair.pub,
-      createdAt: Date.now(),
+      createdAt,
       updatedAt: Date.now(),
       deleted: false
     };
