@@ -3080,10 +3080,11 @@
 
   <!-- P2P and Encryption Module -->
   <script type="module">
-    import ZEN from 'https://cdn.jsdelivr.net/gh/scobru/zen@main/zen.min.js';
-    // The one shared alias+passphrase -> keypair derivation (scobru/fid), pinned to a commit so it can't change under us
-    import { deriveMasterPair } from 'https://cdn.jsdelivr.net/gh/scobru/fid@7887fc3468a77943da8ef18a70c3936d1dc45a2a/identity.js';
+    import { ZenOS } from './zenos.js';
+    import ZEN from './zen.min.js';
+    import { deriveMasterPair } from './identity.js';
 
+    let os;
     let zen;
     let pair;
     let isAuthenticated = false;
@@ -3143,70 +3144,6 @@
     }
 
 
-    // ── Identity: the FID derivation (identity.js) is the one in use. This is the smollog PBKDF2 scheme
-    // that ZenVault used for a short time, kept only so migrateLegacy() can find data written under it. ──
-    async function legacySmollogPair(username, password) {
-      const enc = new TextEncoder();
-      const key = await crypto.subtle.importKey('raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']);
-      const bits = await crypto.subtle.deriveBits(
-        { name: 'PBKDF2', salt: enc.encode('scobru:zen:blog:' + username.trim().toLowerCase()), iterations: 100000, hash: 'SHA-256' },
-        key, 256);
-      return ZEN.pair(null, { seed: [...new Uint8Array(bits)].map(b => b.toString(16).padStart(2, '0')).join('') });
-    }
-
-    // Copy vault/calendar/bookmarks written under each earlier identity (smollog PBKDF2, plain `user + pass`)
-    // to the current one, re-encrypting with the new key. Idempotent: souls already under the new pub are skipped.
-    // Runs once per identity: it re-reads every vault/calendar/bookmark node, which is slow on each refresh.
-    // The flag is only set once a relay actually answered (seen > 0), so an offline first load retries.
-    let migrationSeen = 0;
-    async function migrateLegacy(username, password) {
-      const doneKey = 'zenos_migrated:' + pair.pub;
-      try { if (localStorage.getItem(doneKey)) return; } catch (_) { }
-      const legacyPairs = [await legacySmollogPair(username, password), await ZEN.pair(null, { seed: username + password.trim() })];
-      let migrated = 0;
-      for (const legacyPair of legacyPairs) migrated += await migrateFrom(legacyPair);
-      if (migrationSeen) try { localStorage.setItem(doneKey, '1'); } catch (_) { }
-      if (migrated) showToast('Migrated ' + migrated + ' items from your previous identity');
-    }
-    async function migrateFrom(legacyPair) {
-      const readAll = (pub, path) => new Promise((resolve) => {
-        const nodes = new Map();
-        setTimeout(() => { migrationSeen += nodes.size; resolve(nodes); }, 4000);
-        const root = zen.get('~' + pub).get(path);
-        root.map().once((node, soul) => {
-          if (!soul) return;
-          if (node && typeof node === 'object') nodes.set(soul, node);
-          else root.get(soul).once((full) => full && nodes.set(soul, full));
-        });
-      });
-      const enc = (v) => ZEN.encrypt(v, pair), dec = (v) => ZEN.decrypt(v, legacyPair);
-      const convert = {
-        vault: [n => n.title, async n => ({ title: await enc(await dec(n.title)), body: await enc(await dec(n.body)), cat: await enc(await dec(n.cat)), pinned: !!n.pinned, trash: !!n.trash, timestamp: n.timestamp, encrypted: true })],
-        calendar: [n => n.data, async n => ({ data: await enc(await dec(n.data)), updatedAt: n.updatedAt, encrypted: true })],
-        bookmarks: [n => n.data, async n => ({ data: await enc(await dec(n.data)), updatedAt: n.updatedAt, encrypted: true })],
-        tasks: [n => n.data, async n => ({ data: await enc(await dec(n.data)), updatedAt: n.updatedAt, encrypted: true })]
-      };
-      let migrated = 0;
-      try {
-        for (const [path, [probe, toNew]] of Object.entries(convert)) {
-          const [old, cur] = await Promise.all([readAll(legacyPair.pub, path), readAll(pair.pub, path)]);
-          // puts resolve on ack or after 8s, so an unreachable relay can't hang the migration
-          const results = await Promise.all([...old].filter(([soul, node]) => probe(node) && !cur.has(soul)).map(async ([soul, node]) => {
-            try {
-              const payload = await toNew(node);
-              await new Promise((resolve, reject) => {
-                const t = setTimeout(resolve, 8000);
-                zen.get('~' + pair.pub).get(path).get(soul).put(payload, (ack) => { clearTimeout(t); ack && ack.err ? reject(new Error(ack.err)) : resolve(); }, { authenticator: pair });
-              });
-              return true;
-            } catch (e) { console.warn('Migration skipped', path, soul, e.message); return false; }
-          }));
-          migrated += results.filter(Boolean).length;
-        }
-      } catch (e) { console.warn('Legacy migration failed:', e); }
-      return migrated;
-    }
-
     // ZEN has no "all loaded" signal. Nodes already in the local ZEN cache arrive within ms, so hide the overlay
     // as soon as events go quiet for 400ms; relay updates keep streaming in and render progressively.
     let syncTimer = null, syncCap = null;
@@ -3237,8 +3174,11 @@
         btn.innerHTML = '<i class="ti ti-loader animate-spin"></i> Decrypting...';
         btn.disabled = true;
 
-        pair = await deriveMasterPair(ZEN, userInput, passInput);
+        os = new ZenOS({ peers: relays });
+        pair = await os.login(userInput, passInput);
+        zen = os.zen;
         isAuthenticated = true;
+        window.os = os; window.zen = zen; window.pair = pair;
 
         sessionStorage.setItem('zen_user', userInput);
         sessionStorage.setItem('zen_pass', passInput);
@@ -3263,7 +3203,9 @@
         loadBlog();
         loadBookmarks();
         loadTasks();
-        migrateLegacy(userInput, passInput);
+        os.migrateLegacy().then(r => {
+          if (r && r.migrated > 0) showToast('Migrated ' + r.migrated + ' items from your previous identity');
+        }).catch(() => {});
       } catch (e) {
         console.error("Login Error:", e);
         alert("Decryption failed: " + e.message);
@@ -3283,9 +3225,9 @@
         syncBump();
         triggerRender();
       }
-      zen.get('~' + pair.pub).get('vault').map().on(async (note, id) => {
+      os.onVaultNote((note, id, isDeleted) => {
         syncBump();
-        if (!note) {
+        if (isDeleted) {
           delete localNotes[id];
           notesCache.del(id);
           if (selectedNoteId === id) {
@@ -3295,30 +3237,9 @@
           return;
         }
 
+        localNotes[id] = note;
         const sig = JSON.stringify([note.title, note.body, note.cat, note.pinned, note.trash, note.timestamp]);
-        if (notesCache.same(id, sig)) return;
-
-        let title, body, cat;
-        try {
-          title = await ZEN.decrypt(note.title, pair);
-          body = await ZEN.decrypt(note.body, pair);
-          cat = await ZEN.decrypt(note.cat, pair) || '';
-        } catch (e) {
-          console.warn("Could not decrypt note:", id);
-          return;
-        }
-
-        localNotes[id] = {
-          id,
-          title: title || '',
-          body: body || '',
-          cat: cat || '',
-          pinned: !!note.pinned,
-          trash: !!note.trash,
-          timestamp: note.timestamp || Date.now()
-        };
-        notesCache.set(id, sig, localNotes[id]);
-
+        notesCache.set(id, sig, note);
         triggerRender();
       });
     }
@@ -3795,39 +3716,31 @@
       const isPinned = !!currentNote.pinned;
       const soul = isNew ? ('vault-' + Date.now() + '-' + Math.random().toString(36).substring(7)) : selectedNoteId;
 
-      const encTitle = await ZEN.encrypt(title, pair);
-      const encBody = await ZEN.encrypt(body, pair);
-      const encCat = await ZEN.encrypt(currentNote.cat || '', pair);
-
-      const notePayload = {
-        title: encTitle,
-        body: encBody,
-        cat: encCat,
-        pinned: isPinned,
-        timestamp: Date.now(),
-        encrypted: true
-      };
-
-      zen.get('~' + pair.pub).get('vault').get(soul).put(notePayload, (ack) => {
-        if (ack && ack.err) {
-          console.error("Storage failed:", ack.err);
-          if (!silent) showToast("Save failed: " + ack.err);
-        } else {
-          localNotes[soul] = {
-            id: soul,
-            title,
-            body,
-            cat: currentNote.cat || '',
-            pinned: isPinned,
-            timestamp: Date.now()
-          };
-          if (isNew) {
-            selectedNoteId = soul;
-          }
-          if (!silent) showToast(isNew ? "Note encrypted & secured" : "Note saved");
-          triggerRender();
+      try {
+        await os.writeVaultNote({
+          title,
+          body,
+          cat: currentNote.cat || '',
+          pinned: isPinned,
+          soul
+        });
+        localNotes[soul] = {
+          id: soul,
+          title,
+          body,
+          cat: currentNote.cat || '',
+          pinned: isPinned,
+          timestamp: Date.now()
+        };
+        if (isNew) {
+          selectedNoteId = soul;
         }
-      }, { authenticator: pair });
+        if (!silent) showToast(isNew ? "Note encrypted & secured" : "Note saved");
+        triggerRender();
+      } catch (err) {
+        console.error("Storage failed:", err.message);
+        if (!silent) showToast("Save failed: " + err.message);
+      }
     }
 
     // Auto-save debouncer
@@ -4129,25 +4042,25 @@ print("Welcome to ZenOS!")
       showToast("Exported .md file");
     }
 
-    function deleteActiveNote() {
+    async function deleteActiveNote() {
       if (!selectedNoteId || selectedNoteId === 'new') return;
       if (!confirm("Are you sure you want to delete this note?")) return;
 
       const soul = selectedNoteId;
-      zen.get('~' + pair.pub).get('vault').get(soul).put(null, (ack) => {
-        if (ack && !ack.err) {
-          delete localNotes[soul];
-          selectedNoteId = null;
-          showToast("Note erased from network");
-          closePopovers();
-          if (window.innerWidth <= 768) {
-            mobileBackToList();
-          }
-          triggerRender();
-        } else {
-          alert("Deletion failed: " + (ack ? ack.err : 'unknown'));
+      try {
+        await os.deleteVaultNote(soul);
+        delete localNotes[soul];
+        notesCache.del(soul);
+        selectedNoteId = null;
+        showToast("Note erased from network");
+        closePopovers();
+        if (window.innerWidth <= 768) {
+          mobileBackToList();
         }
-      }, { authenticator: pair });
+        triggerRender();
+      } catch (err) {
+        alert("Deletion failed: " + err.message);
+      }
     }
 
     function setFilter(filter) {
@@ -4392,18 +4305,14 @@ print("Welcome to ZenOS!")
         if (calMode) renderCalendar();
         renderNoteEvents();
       }
-      zen.get('~' + pair.pub).get('calendar').map().on(async (node, soul) => {
+      os.onCalendarEvent((ev, soul, isDeleted) => {
         syncBump();
-        if (!node || !node.data) {
+        if (isDeleted) {
           delete calEvents[soul];
           calCache.del(soul);
-        } else if (calCache.same(soul, node.data)) {
-          return;
         } else {
-          try {
-            const ev = await ZEN.decrypt(node.data, pair);
-            if (ev && ev.start != null) { calEvents[soul] = ev; calCache.set(soul, node.data, ev); }
-          } catch (_) { console.warn('Could not decrypt event:', soul); return; }
+          calEvents[soul] = ev;
+          calCache.set(soul, ev.data || JSON.stringify(ev), ev);
         }
         document.getElementById('count-calendar').textContent = Object.keys(calEvents).length;
         if (calMode) renderCalendar();
@@ -4589,19 +4498,28 @@ print("Welcome to ZenOS!")
       if (Number.isNaN(start)) return showToast('Invalid start date');
       if (Number.isNaN(end) || end < start) end = start;
       const ev = { title, start, end, allDay, location: $('ev-loc').value.trim(), notes: $('ev-notes').value.trim(), color: $('ev-colors').querySelector('.sel')?.dataset.c || CAL_COLORS[0], links: evLinks };
-      const id = soul || ('cal-' + Date.now() + '-' + Math.random().toString(36).substring(7));
-      const data = await ZEN.encrypt(ev, pair);
-      zen.get('~' + pair.pub).get('calendar').get(id).put({ data, updatedAt: Date.now(), encrypted: true }, (ack) => {
-        if (ack && ack.err) showToast('Save failed: ' + ack.err);
-      }, { authenticator: pair });
-      calEvents[id] = ev; // optimistic; relay echo confirms
-      closeEventModal(); renderCalendar(); renderNoteEvents(); showToast('Event encrypted & saved');
+      try {
+        const res = await os.writeCalendarEvent({ ...ev, soul });
+        const id = res.soul;
+        calEvents[id] = { soul: id, ...ev };
+        calCache.set(id, JSON.stringify(ev), calEvents[id]);
+        document.getElementById('count-calendar').textContent = Object.keys(calEvents).length;
+        closeEventModal(); renderCalendar(); renderNoteEvents(); showToast('Event encrypted & saved');
+      } catch (err) {
+        showToast('Save failed: ' + err.message);
+      }
     }
 
-    function deleteCalEvent(soul) {
-      zen.get('~' + pair.pub).get('calendar').get(soul).put(null, null, { authenticator: pair });
-      delete calEvents[soul];
-      closeEventModal(); renderCalendar(); renderNoteEvents(); showToast('Event deleted');
+    async function deleteCalEvent(soul) {
+      try {
+        await os.deleteCalendarEvent(soul);
+        delete calEvents[soul];
+        calCache.del(soul);
+        document.getElementById('count-calendar').textContent = Object.keys(calEvents).length;
+        closeEventModal(); renderCalendar(); renderNoteEvents(); showToast('Event deleted');
+      } catch (err) {
+        showToast('Delete failed: ' + err.message);
+      }
     }
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeEventModal(); if (typeof closeTaskModal === 'function') closeTaskModal(); } });
     Object.assign(window, { openCalendar, calToday, calNav, calSetView, calNewEvent, calEditEvent, calColClick, calNewEventForNote, linkNoteFromModal, unlinkNoteFromModal, openLinkedNote });
@@ -4615,10 +4533,10 @@ print("Welcome to ZenOS!")
     let blogMode = false, blogSelected = null;
 
     function loadBlog() {
-      zen.get('~' + pair.pub).get('posts').map().on((post, id) => {
+      os.onPost(pair.pub, (post, id, isDeleted) => {
         syncBump();
-        if (!post || post.deleted === true || !post.title) delete blogPosts[id];
-        else blogPosts[id] = { id, title: post.title, content: post.content || '', tags: post.tags || '', createdAt: post.createdAt || 0 };
+        if (isDeleted) delete blogPosts[id];
+        else blogPosts[id] = post;
         document.getElementById('count-blog').textContent = Object.keys(blogPosts).length;
         if (blogMode) renderBlog();
       });
@@ -4763,15 +4681,14 @@ print("Welcome to ZenOS!")
         if (bmMode) bmScheduleRender();
         syncBump();
       }
-      zen.get('~' + pair.pub).get('bookmarks').map().on(async (node, soul) => {
+      os.onBookmark((bm, soul, isDeleted) => {
         syncBump();
-        if (!node || !node.data) { delete bookmarks[soul]; bmCache.del(soul); }
-        else if (bmCache.same(soul, node.data)) return;
-        else {
-          try {
-            const bm = await ZEN.decrypt(node.data, pair);
-            if (bm && /^https?:\/\//i.test(bm.url)) { bookmarks[soul] = bm; bmCache.set(soul, node.data, bm); }
-          } catch (_) { console.warn('Could not decrypt bookmark:', soul); return; }
+        if (isDeleted) {
+          delete bookmarks[soul];
+          bmCache.del(soul);
+        } else {
+          bookmarks[soul] = bm;
+          bmCache.set(soul, bm.url, bm);
         }
         document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
         if (bmMode) bmScheduleRender();
@@ -4889,11 +4806,15 @@ print("Welcome to ZenOS!")
       bmFolder = to || null; renderBookmarks();
       showToast('Moved ' + (hit.length - failed) + ' bookmarks' + (failed ? ' (' + failed + ' failed)' : ''));
     }
-    function bmDelete(soul) {
-      zen.get('~' + pair.pub).get('bookmarks').get(soul).put(null, null, { authenticator: pair });
-      delete bookmarks[soul]; bmCache.del(soul);
-      document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
-      renderBookmarks();
+    async function bmDelete(soul) {
+      try {
+        await os.deleteBookmark(soul);
+        delete bookmarks[soul]; bmCache.del(soul);
+        document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
+        renderBookmarks();
+      } catch (err) {
+        showToast('Delete failed: ' + err.message);
+      }
     }
     Object.assign(window, { openBookmarks, bmSearch, bmPickFolder, bmAdd, bmImport, bmDelete, bmEdit, bmRenameFolder, bmExport });
 
@@ -4920,24 +4841,14 @@ print("Welcome to ZenOS!")
         renderNoteEvents();
         syncBump();
       }
-      zen.get('~' + pair.pub).get('tasks').map().on(async (node, soul) => {
+      os.onTask((tsk, soul, isDeleted) => {
         syncBump();
-        if (!node || !node.data) {
+        if (isDeleted) {
           delete tasks[soul];
           tasksCache.del(soul);
-        } else if (tasksCache.same(soul, node.data)) {
-          return;
         } else {
-          try {
-            const tsk = await ZEN.decrypt(node.data, pair);
-            if (tsk && tsk.title) {
-              tasks[soul] = { soul, ...tsk };
-              tasksCache.set(soul, node.data, tasks[soul]);
-            }
-          } catch (_) {
-            console.warn('Could not decrypt task:', soul);
-            return;
-          }
+          tasks[soul] = tsk;
+          tasksCache.set(soul, tsk.title, tsk);
         }
         document.getElementById('count-tasks').textContent = Object.keys(tasks).length;
         if (tasksMode) renderTasks();
@@ -5288,17 +5199,21 @@ print("Welcome to ZenOS!")
       showToast('Task encrypted & saved');
     }
 
-    function taskDelete(soul, event) {
+    async function taskDelete(soul, event) {
       if (event) event.stopPropagation();
       if (!soul) return;
-      zen.get('~' + pair.pub).get('tasks').get(soul).put(null, null, { authenticator: pair });
-      delete tasks[soul];
-      tasksCache.del(soul);
-      closeTaskModal();
-      document.getElementById('count-tasks').textContent = Object.keys(tasks).length;
-      if (tasksMode) renderTasks();
-      renderNoteEvents();
-      showToast('Task deleted');
+      try {
+        await os.deleteTask(soul);
+        delete tasks[soul];
+        tasksCache.del(soul);
+        closeTaskModal();
+        document.getElementById('count-tasks').textContent = Object.keys(tasks).length;
+        if (tasksMode) renderTasks();
+        renderNoteEvents();
+        showToast('Task deleted');
+      } catch (err) {
+        showToast('Delete failed: ' + err.message);
+      }
     }
 
     Object.assign(window, {
