@@ -10,8 +10,9 @@ ZenOS is a decentralized, zero-backend, multi-app operating system powered by **
 This skill provides autonomous AI agents with tools, schemas, and workflows to orchestrate across a user's sovereign decentralized data nodes:
 1. **Vault (`~{pub}/vault`)**: End-to-end encrypted private notes & knowledge base (AES-GCM-256).
 2. **Calendar (`~{pub}/calendar`)**: E2EE event scheduling, reminders, and bidirectional note linking.
-3. **Bookmarks (`~{pub}/bookmarks`)**: Private encrypted web library with browser Netscape HTML import/export.
-4. **smollog (`~{pub}/posts`)**: Public verifiable Markdown blog posts and journals signed with ECDSA.
+3. **Tasks & Kanban (`~{pub}/tasks`)**: E2EE interactive cross-agent task tracking, priorities, due dates, and graph links.
+4. **Bookmarks (`~{pub}/bookmarks`)**: Private encrypted web library with browser Netscape HTML import/export.
+5. **smollog (`~{pub}/posts`)**: Public verifiable Markdown blog posts and journals signed with ECDSA.
 
 ---
 
@@ -90,7 +91,32 @@ node cli.js calendar-events-for --note <note-soul>       # list events linking t
 node cli.js calendar-notes-for  --event <event-soul>     # list notes linked to event
 ```
 
-### 4. Bookmarks — Full CRUD, Import/Export & Agent Tools
+### 4. Tasks & Kanban — Full CRUD, Priorities & Graph Links
+```bash
+# Create or update task
+node cli.js task-write --title "Build Agent Bridge" --priority "high" --status "todo" --desc "Design specs" --due "2026-12-01" --tags "ai,core" --assignee "agent-01"
+
+# Read single task by soul
+node cli.js task-get --soul "task-1791155890855-rmxf33"
+
+# List tasks (supports --status, --priority, --tag, --query, --table, --count, -n, -p)
+node cli.js task-read --status "todo" --priority "high" --table
+
+# Update task status or fields
+node cli.js task-update --soul <soul> --status "done"
+
+# Delete task by soul
+node cli.js task-delete --soul <soul>
+
+# Link / unlink note, event, bookmark, or another task to a task
+node cli.js task-link   --task <task-soul> --note <note-soul>
+node cli.js task-unlink --task <task-soul> --note <note-soul>
+
+# Query tasks linking to a note, event, bookmark or task
+node cli.js tasks-for --note <note-soul>
+```
+
+### 5. Bookmarks — Full CRUD, Import/Export & Agent Tools
 ```bash
 # Create or update bookmark
 node cli.js bookmarks-write --url "https://github.com/scobru/zenos" --title "ZenOS Repo" --folder "Dev/Zen" --tags "github,sovereign"
@@ -113,7 +139,7 @@ node cli.js bookmarks-export [--folder Dev] [--file out.html]
 node cli.js bookmarks-update --file changes.json
 ```
 
-### 5. smollog — Full Blog CRUD & Aliases
+### 6. smollog — Full Blog CRUD & Aliases
 ```bash
 # Publish or update post
 node cli.js blog-publish --title "Dispatches from ZenOS" --content "### Sovereign Publishing\n..." --tags "zenos,agents" [--id <id>]
@@ -131,13 +157,13 @@ node cli.js blog-delete --id "post-cli-demo"
 node cli.js blog-alias --alias "scobru"
 ```
 
-### 6. Migrate Legacy Data
-Copy vault/calendar/bookmarks written under earlier identity schemes into the current identity:
+### 7. Migrate Legacy Data
+Copy vault/calendar/bookmarks/tasks written under earlier identity schemes into the current identity:
 ```bash
 node cli.js migrate
 ```
 
-### 7. Custom Relays
+### 8. Custom Relays
 If the user provides their own relay, pass it on **every** command (or set `ZENOS_RELAYS` once):
 ```bash
 # add to the default relays

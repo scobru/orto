@@ -131,6 +131,10 @@ function outputResults(items, flags) {
       console.table(displayItems.map(item => {
         const row = {};
         if (item.title !== undefined) row.Title = item.title ? item.title.slice(0, 40) : '';
+        if (item.status !== undefined) row.Status = item.status || '';
+        if (item.priority !== undefined) row.Priority = item.priority || '';
+        if (item.dueDate !== undefined) row.Due = item.dueDate ? new Date(item.dueDate).toISOString().slice(0, 10) : '';
+        if (item.assignee !== undefined && item.assignee) row.Assignee = item.assignee;
         if (item.folder !== undefined) row.Folder = item.folder || '';
         if (item.url !== undefined) row.URL = item.url ? item.url.slice(0, 50) : '';
         if (item.start !== undefined) row.Start = new Date(item.start).toISOString();
@@ -177,8 +181,18 @@ Usage:
   node cli.js calendar-delete     [--user <user> --pass <pass>] --soul <soul>
   node cli.js calendar-events-for [--user <user> --pass <pass>] (--note <soul> | --bookmark <soul>)
   node cli.js calendar-notes-for  [--user <user> --pass <pass>] --event <soul>
-  node cli.js event-link          [--user <user> --pass <pass>] --event <soul> --note <soul>     # link note to event
-  node cli.js event-unlink        [--user <user> --pass <pass>] --event <soul> --note <soul>
+  node cli.js event-link          [--user <user> --pass <pass>] --event <soul> (--note <soul> | --bookmark <soul> | --task <soul>)
+  node cli.js event-unlink        [--user <user> --pass <pass>] --event <soul> (--note <soul> | --bookmark <soul> | --task <soul>)
+
+  # Tasks & Kanban (Encrypted Projects & Tasks)
+  node cli.js task-write   [--user <user> --pass <pass>] --title <title> [--status <todo|in_progress|done|blocked>] [--priority <low|medium|high|urgent>] [--desc <desc>] [--due <date>] [--tags <t1,t2>] [--assignee <who>] [--column <col>] [--soul <soul>]
+  node cli.js task-get     [--user <user> --pass <pass>] --soul <soul>
+  node cli.js task-read    [--user <user> --pass <pass>] [--status <s>] [--priority <p>] [--tag <t>] [--query <q>] [--timeout <ms>] [--fast]
+  node cli.js task-update  [--user <user> --pass <pass>] --soul <soul> [--title <title>] [--status <s>] [--priority <p>] [--desc <desc>] [--due <date>] [--tags <tags>] [--assignee <who>]
+  node cli.js task-delete  [--user <user> --pass <pass>] --soul <soul>
+  node cli.js task-link    [--user <user> --pass <pass>] --task <soul> (--note <soul> | --event <soul> | --bookmark <soul> | --linked-task <soul>)
+  node cli.js task-unlink  [--user <user> --pass <pass>] --task <soul> (--note <soul> | --event <soul> | --bookmark <soul> | --linked-task <soul>)
+  node cli.js tasks-for    [--user <user> --pass <pass>] (--note <soul> | --event <soul> | --bookmark <soul> | --task <soul>)
 
   # Bookmarks (Encrypted & Deduplicated)
   node cli.js bookmarks-write  [--user <user> --pass <pass>] --url <url> [--title <title>] [--folder <path>] [--tags <t1,t2>]
@@ -392,10 +406,11 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     case 'calendar-events-for': {
       const noteSoul = flags.note;
       const bmSoul = flags.bookmark;
-      if (!noteSoul && !bmSoul) throw new Error('--note or --bookmark soul is required.');
+      const taskSoul = flags.task;
+      if (!noteSoul && !bmSoul && !taskSoul) throw new Error('--note, --bookmark, or --task soul is required.');
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const target = noteSoul ? { kind: 'note', soul: noteSoul } : { kind: 'bookmark', soul: bmSoul };
+      const target = noteSoul ? { kind: 'note', soul: noteSoul } : (bmSoul ? { kind: 'bookmark', soul: bmSoul } : { kind: 'task', soul: taskSoul });
       const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
       const evs = await os.eventsFor(target, timeoutMs);
       outputResults(evs, flags);
@@ -416,13 +431,13 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
 
     case 'event-link':
     case 'event-unlink': {
-      if (!flags.event || (!flags.note && !flags.bookmark)) {
-        throw new Error('--event and --note (or --bookmark) are required.');
+      if (!flags.event || (!flags.note && !flags.bookmark && !flags.task)) {
+        throw new Error('--event and one of --note, --bookmark, or --task are required.');
       }
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       const fn = cmd === 'event-link' ? 'linkToEvent' : 'unlinkFromEvent';
-      const target = flags.note ? { kind: 'note', soul: flags.note } : { kind: 'bookmark', soul: flags.bookmark };
+      const target = flags.note ? { kind: 'note', soul: flags.note } : (flags.bookmark ? { kind: 'bookmark', soul: flags.bookmark } : { kind: 'task', soul: flags.task });
       console.log(JSON.stringify(await os[fn](flags.event, target), null, 2));
       flushStorage();
       setTimeout(() => process.exit(0), 500);
@@ -515,6 +530,137 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       console.log(JSON.stringify(await os.updateBookmarks(JSON.parse(fs.readFileSync(flags.file, 'utf8'))), null, 2));
       flushStorage();
       setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    // ─── Tasks & Kanban CRUD ──────────────────────────────────────────
+
+    case 'task-write':
+    case 'task-add': {
+      const title = flags.title;
+      if (!title) throw new Error('--title is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const tags = flags.tags ? String(flags.tags).split(',').map(t => t.trim()).filter(Boolean) : [];
+      const res = await os.writeTask({
+        title,
+        status: flags.status || 'todo',
+        priority: flags.priority || 'medium',
+        desc: flags.desc || flags.description || flags.notes || flags.body || '',
+        dueDate: flags.due || flags.dueDate || null,
+        tags,
+        assignee: flags.assignee || '',
+        column: flags.column || '',
+        soul: flags.soul
+      });
+      console.log(JSON.stringify(res, null, 2));
+      flushStorage();
+      setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    case 'task-get': {
+      if (!flags.soul) throw new Error('--soul is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const tsk = await os.getTask(flags.soul);
+      if (!tsk) {
+        console.error(JSON.stringify({ error: 'Task not found: ' + flags.soul }));
+        process.exit(1);
+      }
+      console.log(JSON.stringify(tsk, null, 2));
+      process.exit(0);
+      break;
+    }
+
+    case 'task-update': {
+      if (!flags.soul) throw new Error('--soul is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const patch = {};
+      if (flags.title !== undefined) patch.title = flags.title;
+      if (flags.status !== undefined) patch.status = flags.status;
+      if (flags.priority !== undefined) patch.priority = flags.priority;
+      if (flags.desc !== undefined) patch.desc = flags.desc;
+      if (flags.description !== undefined) patch.desc = flags.description;
+      if (flags.due !== undefined) patch.dueDate = flags.due;
+      if (flags.dueDate !== undefined) patch.dueDate = flags.dueDate;
+      if (flags.tags !== undefined) patch.tags = String(flags.tags).split(',').map(t => t.trim()).filter(Boolean);
+      if (flags.assignee !== undefined) patch.assignee = flags.assignee;
+      if (flags.column !== undefined) patch.column = flags.column;
+      const res = await os.updateTask(flags.soul, patch);
+      console.log(JSON.stringify(res, null, 2));
+      flushStorage();
+      setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    case 'task-read': {
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
+      const tasks = await os.readTasks({
+        status: flags.status,
+        priority: flags.priority,
+        tag: flags.tag,
+        query: flags.query,
+        timeoutMs
+      });
+      outputResults(tasks, flags);
+      process.exit(0);
+      break;
+    }
+
+    case 'task-delete': {
+      if (!flags.soul) throw new Error('--soul is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const res = await os.deleteTask(flags.soul);
+      console.log(JSON.stringify(res, null, 2));
+      flushStorage();
+      setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    case 'task-link':
+    case 'task-unlink': {
+      if (!flags.task || (!flags.note && !flags.event && !flags.bookmark && !flags['linked-task'])) {
+        throw new Error('--task and one of --note, --event, --bookmark, or --linked-task are required.');
+      }
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const fn = cmd === 'task-link' ? 'linkToTask' : 'unlinkFromTask';
+      const target = flags.note
+        ? { kind: 'note', soul: flags.note }
+        : (flags.event
+          ? { kind: 'event', soul: flags.event }
+          : (flags.bookmark
+            ? { kind: 'bookmark', soul: flags.bookmark }
+            : { kind: 'task', soul: flags['linked-task'] }));
+      console.log(JSON.stringify(await os[fn](flags.task, target), null, 2));
+      flushStorage();
+      setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    case 'tasks-for':
+    case 'task-links-for': {
+      if (!flags.note && !flags.event && !flags.bookmark && !flags.task) {
+        throw new Error('--note, --event, --bookmark, or --task soul is required.');
+      }
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const target = flags.note
+        ? { kind: 'note', soul: flags.note }
+        : (flags.event
+          ? { kind: 'event', soul: flags.event }
+          : (flags.bookmark
+            ? { kind: 'bookmark', soul: flags.bookmark }
+            : { kind: 'task', soul: flags.task }));
+      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
+      const tsks = await os.tasksFor(target, timeoutMs);
+      outputResults(tsks, flags);
+      process.exit(0);
       break;
     }
 

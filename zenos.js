@@ -198,8 +198,8 @@ export function bookmarksToHtml(bookmarks) {
   return ['<!DOCTYPE NETSCAPE-Bookmark-file-1>', '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">', '<TITLE>Bookmarks</TITLE>', '<H1>Bookmarks</H1>', '<DL><p>', ...block(root, '    '), '</DL><p>', ''].join('\n');
 }
 
-// what an event can point at; the link lives inside the encrypted event, so there is one source of truth
-const LINK_KINDS = ['note', 'bookmark'];
+// what an event or task can point at; the link lives inside the encrypted record, so there is one source of truth
+const LINK_KINDS = ['note', 'bookmark', 'event', 'task'];
 
 export async function bookmarkSoul(url) {
   const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(url));
@@ -325,9 +325,10 @@ export class ZenOS {
     const convert = {
       vault: async (n) => ({ title: await enc(await dec(n.title)), body: await enc(await dec(n.body)), cat: await enc(await dec(n.cat)), pinned: !!n.pinned, trash: !!n.trash, timestamp: n.timestamp, encrypted: true }),
       calendar: async (n) => ({ data: await enc(await dec(n.data)), updatedAt: n.updatedAt, encrypted: true }),
-      bookmarks: async (n) => ({ data: await enc(await dec(n.data)), updatedAt: n.updatedAt, encrypted: true })
+      bookmarks: async (n) => ({ data: await enc(await dec(n.data)), updatedAt: n.updatedAt, encrypted: true }),
+      tasks: async (n) => ({ data: await enc(await dec(n.data)), updatedAt: n.updatedAt, encrypted: true })
     };
-    const field = { vault: 'title', calendar: 'data', bookmarks: 'data' };
+    const field = { vault: 'title', calendar: 'data', bookmarks: 'data', tasks: 'data' };
 
     const stats = { migrated: 0, skipped: 0, failed: 0 };
     for (const path of Object.keys(convert)) {
@@ -961,6 +962,288 @@ export class ZenOS {
         else resolve({ soul, status: 'deleted' });
       }, { authenticator: this.pair });
     });
+  }
+
+  // ─── Tasks & Kanban (Encrypted) ─────────────────────────────────────
+
+  /**
+   * Write an encrypted task to `~pub/tasks/<soul>`.
+   * The whole task is encrypted with AES-GCM; only `updatedAt` and `encrypted` stay in clear.
+   *
+   * @param {object} task
+   * @param {string} task.title
+   * @param {'todo'|'in_progress'|'done'|'blocked'|string} [task.status='todo']
+   * @param {'low'|'medium'|'high'|'urgent'|string} [task.priority='medium']
+   * @param {string} [task.desc='']
+   * @param {number|string|null} [task.dueDate=null]
+   * @param {string[]|string} [task.tags=[]]
+   * @param {string} [task.assignee='']
+   * @param {string} [task.column='']
+   * @param {Array<{kind:'note'|'bookmark'|'event'|'task', soul:string}>} [task.links=[]]
+   * @param {number|null} [task.completedAt=null]
+   * @param {number} [task.createdAt]
+   * @param {string} [task.soul=null]
+   */
+  async writeTask({ soul = null, ...task }) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    if (!task.title) throw new Error('title is required');
+
+    const taskSoul = soul || ('task-' + Date.now() + '-' + Math.random().toString(36).substring(7));
+    const status = task.status || 'todo';
+    const priority = task.priority || 'medium';
+    const desc = task.desc || task.description || '';
+    const assignee = task.assignee || '';
+    const column = task.column || status;
+
+    let dueDate = null;
+    if (task.dueDate != null && task.dueDate !== '') {
+      dueDate = new Date(task.dueDate).getTime();
+      if (Number.isNaN(dueDate)) throw new Error('Invalid dueDate');
+    }
+
+    const tagList = Array.isArray(task.tags)
+      ? task.tags
+      : String(task.tags || '').split(',').map(t => t.trim()).filter(Boolean);
+
+    if (task.links !== undefined && !(Array.isArray(task.links) && task.links.every(l => LINK_KINDS.includes(l?.kind) && typeof l.soul === 'string'))) {
+      throw new Error(`links must be [{ kind: "${LINK_KINDS.join('|')}", soul }]`);
+    }
+
+    const now = Date.now();
+    const createdAt = task.createdAt != null ? Number(task.createdAt) : now;
+    let completedAt = task.completedAt !== undefined ? task.completedAt : null;
+    if (status === 'done' && !completedAt) {
+      completedAt = now;
+    } else if (status !== 'done' && task.completedAt === undefined) {
+      completedAt = null;
+    }
+
+    const payloadObj = {
+      title: task.title.trim(),
+      status,
+      priority,
+      desc,
+      dueDate,
+      tags: tagList,
+      assignee,
+      column,
+      links: task.links || [],
+      createdAt,
+      completedAt
+    };
+
+    const data = await ZEN.encrypt(payloadObj, this.pair);
+    const payload = { data, updatedAt: now, encrypted: true };
+
+    return new Promise((resolve, reject) => {
+      this.userRoot.get('tasks').get(taskSoul).put(payload, (ack) => {
+        if (nodeStorageFlush) nodeStorageFlush();
+        if (ack && ack.err) reject(new Error(ack.err));
+        else resolve({ soul: taskSoul, status: 'saved', updatedAt: payload.updatedAt });
+      }, { authenticator: this.pair });
+    });
+  }
+
+  /**
+   * Read and decrypt one task by soul (null if missing or not decryptable).
+   */
+  async getTask(soul) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    if (!soul) throw new Error('Task soul is required.');
+
+    const allGraph = getGraphSnapshot(this.zen);
+    const parentSoul = '~' + this.pair.pub + '/tasks';
+    if (isSoulDeleted(allGraph, parentSoul, soul)) return null;
+
+    const cachedNode = allGraph['~' + this.pair.pub + '/tasks/' + soul];
+    if (cachedNode && cachedNode.data) {
+      try {
+        const rawData = extractCipher(cachedNode.data) || cachedNode.data;
+        const decrypted = await ZEN.decrypt(rawData, this.pair);
+        if (decrypted && decrypted.title) {
+          return { soul, ...decrypted, updatedAt: cachedNode.updatedAt || Date.now() };
+        }
+      } catch (_) {}
+    }
+
+    const node = await new Promise((resolve) => {
+      const t = setTimeout(() => resolve(null), 3000);
+      this.userRoot.get('tasks').get(soul).once((n) => { clearTimeout(t); resolve(n); });
+    });
+    if (!node || !node.data) return null;
+    try {
+      const rawData = extractCipher(node.data) || node.data;
+      const decrypted = await ZEN.decrypt(rawData, this.pair);
+      if (decrypted && decrypted.title) {
+        return { soul, ...decrypted, updatedAt: node.updatedAt || Date.now() };
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /**
+   * Update one task by soul (merges patch with current task data).
+   */
+  async updateTask(soul, patch) {
+    if (!soul) throw new Error('Task soul is required.');
+    const cur = await this.getTask(soul);
+    if (!cur) throw new Error('Task not found: ' + soul);
+    const updated = { ...cur, ...patch, soul };
+    return this.writeTask(updated);
+  }
+
+  /**
+   * Read and decrypt tasks, optionally filtered by status, priority, tag or query.
+   */
+  async readTasks({ status = null, priority = null, tag = null, query = null, timeoutMs = 5000 } = {}) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    const q = query ? query.toLowerCase() : null;
+    const s = status ? status.toLowerCase() : null;
+    const p = priority ? priority.toLowerCase() : null;
+    const t = tag ? tag.toLowerCase() : null;
+
+    const tasks = new Map();
+    const prefix = '~' + this.pair.pub + '/tasks/';
+    const parentSoul = '~' + this.pair.pub + '/tasks';
+
+    const processNode = async (node, soul) => {
+      if (!node || !soul) return;
+      const rawData = extractCipher(node.data) || (typeof node.data === 'string' ? node.data : null);
+      if (!rawData) return;
+      try {
+        const tsk = await ZEN.decrypt(rawData, this.pair);
+        if (!tsk || !tsk.title) return;
+        if (s && (tsk.status || '').toLowerCase() !== s) return;
+        if (p && (tsk.priority || '').toLowerCase() !== p) return;
+        if (t && !(tsk.tags || []).some(x => x.toLowerCase() === t)) return;
+        if (q && !(tsk.title + ' ' + (tsk.desc || '') + ' ' + (tsk.assignee || '')).toLowerCase().includes(q)) return;
+        tasks.set(soul, { soul, ...tsk, updatedAt: node.updatedAt || Date.now() });
+      } catch (_) {}
+    };
+
+    // 1. Gather nodes from snapshot
+    const allGraph = getGraphSnapshot(this.zen);
+    const snapTasks = [];
+    for (const k of Object.keys(allGraph)) {
+      if (k.startsWith(prefix)) {
+        const soul = k.slice(prefix.length);
+        if (isSoulDeleted(allGraph, parentSoul, soul)) continue;
+        snapTasks.push(processNode(allGraph[k], soul));
+      }
+    }
+    await Promise.all(snapTasks);
+
+    const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
+    const sortTasks = (list) => list.sort((a, b) => {
+      // Open tasks first, done tasks last
+      const aDone = a.status === 'done' ? 1 : 0;
+      const bDone = b.status === 'done' ? 1 : 0;
+      if (aDone !== bDone) return aDone - bDone;
+
+      // Priority sort
+      const pa = PRIORITY_ORDER[a.priority?.toLowerCase()] ?? 2;
+      const pb = PRIORITY_ORDER[b.priority?.toLowerCase()] ?? 2;
+      if (pa !== pb) return pa - pb;
+
+      // Due date sort (earlier due dates come first)
+      if (a.dueDate && b.dueDate && a.dueDate !== b.dueDate) return a.dueDate - b.dueDate;
+      if (a.dueDate && !b.dueDate) return -1;
+      if (!a.dueDate && b.dueDate) return 1;
+
+      return (b.updatedAt || 0) - (a.updatedAt || 0);
+    });
+
+    if (timeoutMs === 0) {
+      return sortTasks([...tasks.values()]);
+    }
+
+    // 2. Live Gun listener
+    return new Promise((resolve) => {
+      let resolved = false;
+      const done = () => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(maxTimer);
+        clearTimeout(settleTimer);
+        resolve(sortTasks([...tasks.values()]));
+      };
+
+      const maxTimer = setTimeout(done, timeoutMs);
+      let settleTimer = setTimeout(done, tasks.size > 0 ? Math.min(350, timeoutMs) : timeoutMs);
+
+      const kickSettle = () => {
+        clearTimeout(settleTimer);
+        settleTimer = setTimeout(done, Math.min(300, timeoutMs));
+      };
+
+      try {
+        this.userRoot.get('tasks').map().on(async (node, soul) => {
+          if (!soul) return;
+          if (node === null) {
+            tasks.delete(soul);
+            kickSettle();
+            return;
+          }
+          if (node && node.data) {
+            await processNode(node, soul);
+            if (nodeStorageFlush) nodeStorageFlush();
+            kickSettle();
+          } else {
+            this.userRoot.get('tasks').get(soul).once(async (full) => {
+              if (full && full.data) {
+                await processNode(full, soul);
+                if (nodeStorageFlush) nodeStorageFlush();
+                kickSettle();
+              }
+            });
+          }
+        });
+      } catch (_) {}
+    });
+  }
+
+  /**
+   * Delete a task by soul.
+   */
+  async deleteTask(soul) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    return new Promise((resolve, reject) => {
+      this.userRoot.get('tasks').get(soul).put(null, (ack) => {
+        if (nodeStorageFlush) nodeStorageFlush();
+        if (ack && ack.err) reject(new Error(ack.err));
+        else resolve({ soul, status: 'deleted' });
+      }, { authenticator: this.pair });
+    });
+  }
+
+  /**
+   * Link a note, bookmark, event, or task to a task. Idempotent.
+   * @param {string} taskSoul
+   * @param {{kind?:'note'|'bookmark'|'event'|'task', soul:string}} target
+   */
+  async linkToTask(taskSoul, { kind = 'note', soul }) {
+    const tsk = await this.getTask(taskSoul);
+    if (!tsk) throw new Error('Task not found: ' + taskSoul);
+    const links = tsk.links || [];
+    if (!links.some(l => l.kind === kind && l.soul === soul)) links.push({ kind, soul });
+    return this.writeTask({ ...tsk, soul: taskSoul, links });
+  }
+
+  /**
+   * Remove a link from a task.
+   */
+  async unlinkFromTask(taskSoul, { kind = 'note', soul }) {
+    const tsk = await this.getTask(taskSoul);
+    if (!tsk) throw new Error('Task not found: ' + taskSoul);
+    return this.writeTask({ ...tsk, soul: taskSoul, links: (tsk.links || []).filter(l => !(l.kind === kind && l.soul === soul)) });
+  }
+
+  /**
+   * Tasks that link to a given note, bookmark, event, or task.
+   */
+  async tasksFor({ kind = 'note', soul }, timeoutMs = 5000) {
+    const allTasks = await this.readTasks({ timeoutMs });
+    return allTasks.filter(t => (t.links || []).some(l => l.kind === kind && l.soul === soul));
   }
 
   // ─── smollog (Public Verifiable Blog) ─────────────────────────────

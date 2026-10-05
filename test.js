@@ -133,5 +133,69 @@ await os.deleteBlogPost('post-test-1');
 const deletedPost = await os.getBlogPost('post-test-1', os.pub);
 assert.equal(deletedPost, null);
 
+// Tasks & Kanban CRUD, encryption check, and bidirectional links
+console.log('6. Testing Tasks & Kanban...');
+const { soul: taskSoul } = await os.writeTask({
+  title: 'Build Autonomous Agent Bridge',
+  status: 'todo',
+  priority: 'high',
+  desc: 'Top secret agent blueprints',
+  dueDate: '2026-12-01T00:00:00Z',
+  tags: ['ai', 'core'],
+  assignee: 'agent-007'
+});
+assert.ok(taskSoul.startsWith('task-'));
+
+// Ensure no plaintext leaks on relay/graph
+const taskRaw = await new Promise((r) => os.userRoot.get('tasks').get(taskSoul).once(r));
+assert(!JSON.stringify(taskRaw).includes('Autonomous Agent Bridge') && !JSON.stringify(taskRaw).includes('Top secret'), 'task plaintext leaked in graph');
+
+// Read task by soul
+const singleTask = await os.getTask(taskSoul);
+assert.equal(singleTask.title, 'Build Autonomous Agent Bridge');
+assert.equal(singleTask.status, 'todo');
+assert.equal(singleTask.priority, 'high');
+assert.equal(singleTask.assignee, 'agent-007');
+assert.deepEqual(singleTask.tags, ['ai', 'core']);
+
+// Read tasks list with filters
+let allTasks = await os.readTasks({ timeoutMs: 500 });
+assert.ok(allTasks.some(t => t.soul === taskSoul));
+let filteredTodo = await os.readTasks({ status: 'todo', timeoutMs: 500 });
+assert.ok(filteredTodo.some(t => t.soul === taskSoul));
+let filteredDone = await os.readTasks({ status: 'done', timeoutMs: 500 });
+assert.ok(!filteredDone.some(t => t.soul === taskSoul));
+
+// Update task to done (completedAt auto-stamped)
+await os.updateTask(taskSoul, { status: 'done' });
+const updatedTask = await os.getTask(taskSoul);
+assert.equal(updatedTask.status, 'done');
+assert.ok(updatedTask.completedAt > 0);
+
+// Graph links: link task to a vault note & link calendar event to task
+const taskNote = await os.writeVaultNote({ title: 'Task Specs', body: 'Spec details' });
+await os.linkToTask(taskSoul, { kind: 'note', soul: taskNote.soul });
+const taskWithLinks = await os.getTask(taskSoul);
+assert.ok(taskWithLinks.links.some(l => l.kind === 'note' && l.soul === taskNote.soul));
+
+const tasksFound = await os.tasksFor({ kind: 'note', soul: taskNote.soul }, 500);
+assert.equal(tasksFound.length, 1);
+assert.equal(tasksFound[0].soul, taskSoul);
+
+// Calendar event linking to task (via expanded LINK_KINDS)
+const calForTask = await os.writeCalendarEvent({ title: 'Task Deadline', start: Date.now() + 7200000 });
+await os.linkToEvent(calForTask.soul, { kind: 'task', soul: taskSoul });
+const evsForTask = await os.eventsFor({ kind: 'task', soul: taskSoul }, 500);
+assert.equal(evsForTask.length, 1);
+assert.equal(evsForTask[0].soul, calForTask.soul);
+
+// Delete task
+await os.deleteTask(taskSoul);
+assert.equal(await os.getTask(taskSoul), null);
+const afterDel = await os.readTasks({ timeoutMs: 500 });
+assert.ok(!afterDel.some(t => t.soul === taskSoul));
+console.log('7. Tasks & Kanban tests passed!');
+
 console.log('ok - all CRUD tests passed');
 process.exit(0);
+

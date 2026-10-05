@@ -71,15 +71,21 @@ ZenOS reimagines personal computing in the decentralized AI era. Instead of silo
 - **Security**: Signed public posts authenticated with `{ authenticator: pair }`.
 - **Data Model**: Clean Markdown journal entries, reading time estimation, tags, and custom author aliases.
 
-### 5. Future Nodes
-- ✅ **Tasks & Kanban (`~{pub}/tasks`)**: Interactive cross-agent project tracking.
+### 5. Tasks & Kanban (`~{pub}/tasks`)
+- **Status**: Live
+- **Security**: Client-side AES-GCM-256 encryption.
+- **Data Model**: Task title, status (`todo`, `in_progress`, `done`, `blocked`), priority (`low`, `medium`, `high`, `urgent`), markdown descriptions, due dates, tags, assignees, custom kanban columns, and bidirectional links to Vault notes, calendar events, bookmarks or other tasks.
+
+### 6. Future Nodes
 - 📬 **P2P Inbox (`~{pub}/inbox`)**: Direct asymmetric encrypted agent-to-agent messaging.
+- 🔑 **Secrets & Keyring (`~{pub}/secrets`)**: E2EE API keys, passwords and credentials vault.
+- 🤖 **Agents Registry (`~{pub}/agents`)**: Delegation of scoped PEN certificates and permissions.
 
 ---
 
 ## 🤖 For AI Agents & Automation Scripts
 
-Read the complete AI integration guide in [llm.txt](file:///d:/shogun-2/zenOS/llm.txt).
+Read the complete AI integration guide in [llm.txt](file:///d:/shogun-2/zenos/llm.txt).
 
 ### Quickstart Example (JavaScript SDK)
 ```javascript
@@ -99,7 +105,11 @@ await os.linkToEvent(ev.soul, { soul: note.soul });
 // 3. Bookmarks CRUD
 await os.writeBookmark({ url: 'https://github.com/scobru/zenos', title: 'ZenOS', folder: 'Dev' });
 
-// 4. smollog Blog CRUD
+// 4. Tasks & Kanban CRUD
+const task = await os.writeTask({ title: 'Deploy Relays', priority: 'high', status: 'todo' });
+await os.linkToTask(task.soul, { kind: 'note', soul: note.soul });
+
+// 5. smollog Blog CRUD
 await os.publishBlogPost({
   title: '🚀 Dispatches from ZenOS',
   content: 'Automated dispatch synchronized directly to the decentralized P2P graph.',
@@ -121,6 +131,14 @@ node cli.js calendar-get   --soul <soul>
 node cli.js calendar-read  --table
 node cli.js event-link     --event <ev-soul> --note <note-soul>
 node cli.js calendar-delete --soul <soul>
+
+# Tasks & Kanban CRUD & Graph Links
+node cli.js task-write  --title "Sprint Task" --priority "high" --status "todo"
+node cli.js task-get    --soul <soul>
+node cli.js task-read   --table
+node cli.js task-update --soul <soul> --status "done"
+node cli.js task-link   --task <task-soul> --note <note-soul>
+node cli.js task-delete --soul <soul>
 
 # Bookmarks CRUD & Netscape HTML
 node cli.js bookmarks-write --url "https://github.com/scobru/zenos" --title "ZenOS"

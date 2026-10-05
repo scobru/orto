@@ -34,9 +34,9 @@ ZenOS unifies a user's digital life under a **single sovereign cryptographic ide
 ```
 
 - **Zero Central Server**: All data lives across a peer-to-peer graph overlay (GunDB / ZEN protocol).
-- **Zero-Knowledge Private Nodes (`/vault`, `/calendar`, `/bookmarks`)**: Payloads are encrypted with AES-GCM-256 before leaving the client. Relays only relay blind ciphertexts.
+- **Zero-Knowledge Private Nodes (`/vault`, `/calendar`, `/bookmarks`, `/tasks`)**: Payloads are encrypted with AES-GCM-256 before leaving the client. Relays only relay blind ciphertexts.
 - **Verifiable Public Nodes (`/posts`)**: Blog entries are signed using ECDSA (secp256k1) and readable by anyone knowing the author's public key or alias.
-- **Cross-App Synergies for AI**: An AI agent can read notes in ZenVault, link them to Calendar events, curate Bookmarks, and publish reports directly to smollog!
+- **Cross-App Synergies for AI**: An AI agent can read notes in ZenVault, link them to Calendar events and Tasks, curate Bookmarks, and publish reports directly to smollog!
 
 ---
 
@@ -185,7 +185,43 @@ const html = await os.exportBookmarksHtml({ folder });
 
 ---
 
-## 7. Node Specification: smollog (Public Decentralized Blog)
+## 7. Node Specification: Tasks & Kanban (Encrypted Projects & Tasks)
+
+### Path
+`zen.get('~' + pair.pub).get('tasks')`
+
+### Task Schema (Encrypted Payload)
+| Field | Type | Description |
+|---|---|---|
+| `title` | `string` | Task title (e.g. `Implement Bridge`) |
+| `status` | `'todo'\|'in_progress'\|'done'\|'blocked'` | Task status (default: `'todo'`) |
+| `priority` | `'low'\|'medium'\|'high'\|'urgent'` | Priority level (default: `'medium'`) |
+| `desc` | `string` | Optional Markdown description |
+| `dueDate` | `number\|null` | Optional due date in epoch ms |
+| `tags` | `string[]` | Tags or project labels |
+| `assignee` | `string` | Assignee identifier (e.g. `'human'`, `'agent-01'`) |
+| `column` | `string` | Custom Kanban board column |
+| `links` | `Array<{kind: 'note'\|'event'\|'bookmark'\|'task', soul: string}>` | Bidirectional graph references |
+| `createdAt` | `number` | Creation timestamp in epoch ms |
+| `completedAt` | `number\|null` | Completion timestamp in epoch ms |
+
+### SDK Methods
+```javascript
+const task = await os.writeTask({ title, status, priority, desc, dueDate, tags, assignee, column });
+const single = await os.getTask(soul);
+const list = await os.readTasks({ status, priority, tag, query, timeoutMs });
+const update = await os.updateTask(soul, { status: 'done' });
+const del = await os.deleteTask(soul);
+
+// Graph links
+await os.linkToTask(taskSoul, { kind: 'note', soul: noteSoul });
+await os.unlinkFromTask(taskSoul, { kind: 'note', soul: noteSoul });
+const linkedTasks = await os.tasksFor({ kind: 'note', soul: noteSoul });
+```
+
+---
+
+## 8. Node Specification: smollog (Public Decentralized Blog)
 
 ### Path
 `zen.get('~' + pair.pub).get('posts')`
@@ -217,7 +253,7 @@ const pubKey = await os.resolveAlias(aliasName);
 
 ---
 
-## 8. CLI Universal Command Reference
+## 9. CLI Universal Command Reference
 
 All CLI commands support automatic `.env` loading and flags:
 
@@ -238,10 +274,20 @@ node cli.js calendar-write      --title <title> --start <date> [--end <date>] [-
 node cli.js calendar-get        --soul <soul>
 node cli.js calendar-read       [--from <date>] [--to <date>] [--table] [--count]
 node cli.js calendar-delete     --soul <soul>
-node cli.js event-link          --event <event-soul> --note <note-soul>
-node cli.js event-unlink        --event <event-soul> --note <note-soul>
-node cli.js calendar-events-for --note <note-soul>
+node cli.js event-link          --event <event-soul> (--note <note-soul> | --task <task-soul>)
+node cli.js event-unlink        --event <event-soul> (--note <note-soul> | --task <task-soul>)
+node cli.js calendar-events-for (--note <note-soul> | --task <task-soul>)
 node cli.js calendar-notes-for  --event <event-soul>
+
+# Tasks & Kanban CRUD
+node cli.js task-write   --title <title> [--status <todo|in_progress|done|blocked>] [--priority <low|medium|high|urgent>] [--desc <desc>] [--due <date>] [--tags <t1,t2>] [--assignee <who>] [--column <col>]
+node cli.js task-get     --soul <soul>
+node cli.js task-read    [--status <s>] [--priority <p>] [--tag <t>] [--query <q>] [--table] [--count] [-n 20] [-p 1]
+node cli.js task-update  --soul <soul> [--status <s>] [--priority <p>] [--desc <desc>] [--due <date>]
+node cli.js task-delete  --soul <soul>
+node cli.js task-link    --task <task-soul> (--note <note-soul> | --event <event-soul> | --bookmark <bm-soul>)
+node cli.js task-unlink  --task <task-soul> (--note <note-soul> | --event <event-soul> | --bookmark <bm-soul>)
+node cli.js tasks-for    (--note <note-soul> | --event <event-soul> | --bookmark <bm-soul>)
 
 # Bookmarks CRUD & Tools
 node cli.js bookmarks-write  --url <url> [--title <title>] [--folder <path>] [--tags <t1,t2>]
@@ -262,7 +308,7 @@ node cli.js blog-alias   --alias <alias>
 
 ---
 
-## 9. Full Autonomous Agent Pipeline Example
+## 10. Full Autonomous Agent Pipeline Example
 
 ```javascript
 import ZenOS from './zenos.js';
@@ -307,7 +353,7 @@ async function runAutonomousWorkflow() {
 
 ---
 
-## 10. Best Practices for Agents
+## 11. Best Practices for Agents
 
 1. **Always use `{ authenticator: pair }` on `.put()`**: The P2P relay requires cryptographic proof of authority to modify any child of `~pair.pub`.
 2. **Local snapshot cache**: In Node.js, `ZenOS` automatically maintains a persistent encrypted snapshot at `~/.zenos/cache.json`, enabling warm reads in <350ms.
