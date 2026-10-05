@@ -1559,7 +1559,7 @@ export class ZenOS {
   /**
    * Publish a public markdown blog post to smollog.
    */
-  async publishBlogPost({ title, content, tags = [], id = null }) {
+  async publishBlogPost({ title, content, tags = [], id = null, createdAt = Date.now() }) {
     if (!this.pair) throw new Error('Not authenticated.');
 
     const postId = id || ('post-' + Date.now());
@@ -1572,7 +1572,7 @@ export class ZenOS {
       tags: tagList.join(', '),
       authorAlias: this.username || '',
       authorPub: this.pair.pub,
-      createdAt: Date.now(),
+      createdAt,
       updatedAt: Date.now(),
       deleted: false
     };
