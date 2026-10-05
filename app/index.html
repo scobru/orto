@@ -1906,7 +1906,7 @@
     }
 
 
-    /* ── Blog view (read-only smollog posts at ~pub/posts) ── */
+    /* ── Blog view (smollog posts at ~pub/posts) ── */
     .blog-pane {
       flex: 1;
       display: none;
@@ -2664,6 +2664,7 @@
           <i class="ti ti-lock-open"></i> Unlock ZenOS
         </button>
       </div>
+      <p class="login-footer-desc"><a href="#" onclick="relaysConfig();return false" style="color:inherit">Relays</a></p>
       <p class="login-footer-desc">
         <i class="ti ti-shield-check"></i> AES-GCM 256 keys derived locally in your browser. Master credentials never
         leave your device.
@@ -2885,11 +2886,15 @@
       <div class="cal-body" id="cal-body"></div>
     </section>
 
-    <!-- Blog pane: read-only view of the user's public smollog posts -->
+    <!-- Blog pane: the user's public smollog posts, with write support -->
     <section class="blog-pane" id="blog-pane">
       <div class="blog-list">
         <div class="blog-list-head"><span>Blog</span><a id="blog-open-link" target="_blank" rel="noopener">Open in
             smollog ↗</a></div>
+        <div style="display:flex;gap:8px;padding:8px 12px">
+          <button class="cal-btn primary" onclick="blogEdit()"><i class="ti ti-plus"></i> New post</button>
+          <button class="cal-btn" onclick="blogAlias()" title="Make smollog.vercel.app/<alias> point to you">Alias</button>
+        </div>
         <div id="blog-items"></div>
       </div>
       <div class="blog-reader" id="blog-reader"></div>
@@ -2919,6 +2924,7 @@
       <div class="bm-main">
         <div class="bm-bar">
           <span id="files-status" style="flex:1;font-size:13px;color:var(--text-muted)"></span>
+          <button class="cal-btn" onclick="relaysConfig()" title="Choose which relays to sync with"><i class="ti ti-server"></i> Relays</button>
           <button class="cal-btn" onclick="filesToken()" title="Delay admin token or API key"><i class="ti ti-key"></i> Token</button>
           <button class="cal-btn primary" onclick="document.getElementById('files-input').click()"><i class="ti ti-upload"></i> Upload</button>
           <input type="file" id="files-input" class="hidden" onchange="filesUpload(this)">
@@ -3105,7 +3111,7 @@
 
   <!-- P2P and Encryption Module -->
   <script type="module">
-    import { ZenOS } from './zenos.js';
+    import { ZenOS, normalizeRelay } from './zenos.js';
     import ZEN from './zen.min.js';
     import { deriveMasterPair } from './identity.js';
 
@@ -3123,8 +3129,26 @@
     let autoSaveTimeout = null;
 
     // Relay list
-    const relays = ["wss://delay.scobrudot.dev/zen"];
+    // defaults, plus the user's own relays (Relays button), or only those when "only" is set
+    const DEFAULT_RELAYS = ["wss://delay.scobrudot.dev/zen"];
+    let relays = DEFAULT_RELAYS;
+    try {
+      const c = JSON.parse(localStorage.getItem('zenRelays') || 'null');
+      if (c && c.list && c.list.length) relays = [...new Set([...(c.only ? [] : DEFAULT_RELAYS), ...c.list.map(normalizeRelay)])];
+    } catch (_) { }
     localStorage.removeItem('zenPeers');
+    function relaysConfig() {
+      let cur = {}; try { cur = JSON.parse(localStorage.getItem('zenRelays') || '{}') || {}; } catch (_) { }
+      const t = prompt('Your relays, comma separated (wss://host/zen). Empty = defaults only.\nCurrent: ' + relays.join(', '), (cur.list || []).join(', '));
+      if (t === null) return;
+      try {
+        const list = t.split(',').map(x => x.trim()).filter(Boolean).map(normalizeRelay);
+        const only = list.length > 0 && confirm('Use ONLY these relays and drop the default one?\n(Data on the default relay will not be seen.)');
+        if (list.length) localStorage.setItem('zenRelays', JSON.stringify({ list, only })); else localStorage.removeItem('zenRelays');
+      } catch (e) { return alert(e.message); }
+      location.reload();
+    }
+    window.relaysConfig = relaysConfig;
 
     zen = new ZEN({
       peers: relays,
@@ -4551,7 +4575,7 @@ print("Welcome to ZenOS!")
 
 
     // ═══════════════════════════════════════════════════════════════
-    // Blog — read-only view of the user's public smollog posts.
+    // Blog — the user's public smollog posts (read, publish, edit, delete).
     // Posts are plaintext by design (published at ~pub/posts/<id>).
     // ═══════════════════════════════════════════════════════════════
     const blogPosts = {};
@@ -4587,14 +4611,46 @@ print("Welcome to ZenOS!")
       document.getElementById('blog-items').innerHTML = posts.length ? posts.map(p => `
         <div class="blog-item ${p.id === blogSelected ? 'active' : ''}" onclick="blogSelect('${escapeHtml(p.id)}')">
           <h4>${escapeHtml(p.title)}</h4><small>${p.createdAt ? new Date(p.createdAt).toLocaleDateString(navigator.language || 'en-US') : ''}${p.tags ? ' · ' + escapeHtml(String(p.tags)) : ''}</small>
-        </div>`).join('') : '<div class="blog-empty">No smollog posts yet.<br>Publish from smollog and they show up here.</div>';
+        </div>`).join('') : '<div class="blog-empty">No smollog posts yet.<br>Use New post to publish one.</div>';
       const cur = blogPosts[blogSelected];
       document.getElementById('blog-reader').innerHTML = cur
-        ? `<article><h1>${escapeHtml(cur.title)}</h1>${window.marked ? window.marked.parse(cur.content) : escapeHtml(cur.content).replace(/\n/g, '<br>')}</article>`
+        ? `<div style="display:flex;gap:8px;justify-content:flex-end;padding:8px 16px"><button class="cal-btn" onclick="blogEdit('${escapeHtml(cur.id)}')"><i class="ti ti-pencil"></i> Edit</button><button class="cal-btn" onclick="blogDelete('${escapeHtml(cur.id)}')"><i class="ti ti-trash"></i> Delete</button></div><article><h1>${escapeHtml(cur.title)}</h1>${window.marked ? window.marked.parse(cur.content) : escapeHtml(cur.content).replace(/\n/g, '<br>')}</article>`
         : '';
     }
     function blogSelect(id) { blogSelected = id; renderBlog(); }
-    Object.assign(window, { openBlog, blogSelect });
+    function blogEdit(id) {
+      const p = id ? blogPosts[id] : null;
+      document.getElementById('cal-modal-bg')?.remove();
+      const bg = document.createElement('div');
+      bg.className = 'cal-modal-bg'; bg.id = 'cal-modal-bg';
+      bg.onclick = (e) => { if (e.target === bg) bg.remove(); };
+      bg.innerHTML = `<div class="cal-modal">
+        <label>Title<input type="text" id="blog-e-title" value="${escapeHtml(p ? p.title : '')}"></label>
+        <label>Tags (comma separated)<input type="text" id="blog-e-tags" value="${escapeHtml(p ? String(p.tags || '') : '')}"></label>
+        <label>Content (Markdown, public)<textarea id="blog-e-content" rows="12" style="width:100%;font:inherit;background:var(--input-bg);color:var(--text-primary);border:1px solid var(--border-color);border-radius:7px;padding:8px">${escapeHtml(p ? p.content : '')}</textarea></label>
+        <div class="cal-actions"><button class="cal-btn" id="blog-e-cancel">Cancel</button><button class="cal-btn primary" id="blog-e-save">Publish</button></div></div>`;
+      document.body.appendChild(bg);
+      document.getElementById('blog-e-cancel').onclick = () => bg.remove();
+      document.getElementById('blog-e-save').onclick = async () => {
+        const v = (k) => document.getElementById('blog-e-' + k).value.trim();
+        if (!v('title') || !v('content')) return showToast('Title and content are required');
+        try {
+          const r = await os.publishBlogPost({ title: v('title'), content: v('content'), tags: v('tags'), id: id || null, createdAt: p ? p.createdAt : Date.now() });
+          blogSelected = r.id; bg.remove(); showToast('Post published (public)');
+        } catch (e) { showToast(e.message); }
+      };
+      document.getElementById('blog-e-title').focus();
+    }
+    async function blogDelete(id) {
+      if (!confirm('Delete this post?')) return;
+      try { await os.deleteBlogPost(id); delete blogPosts[id]; renderBlog(); showToast('Post deleted'); } catch (e) { showToast(e.message); }
+    }
+    async function blogAlias() {
+      const a = prompt('Blog alias (smollog.vercel.app/<alias>):', os.username || '');
+      if (!a) return;
+      try { const r = await os.registerAlias(a); showToast('Alias registered: ' + r.alias); } catch (e) { showToast(e.message); }
+    }
+    Object.assign(window, { openBlog, blogSelect, blogEdit, blogDelete, blogAlias });
 
 
     // ═══════════════════════════════════════════════════════════════
