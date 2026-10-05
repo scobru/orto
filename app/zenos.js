@@ -146,6 +146,25 @@ export function resolvePeers(opts = {}) {
 }
 
 /**
+ * Delay relays (https://github.com/scobru/delay) expose a REST API next to the `/zen` websocket,
+ * including IPFS file storage. Plain ZEN relays do not, so file storage needs this check.
+ * @param {string} relay  ws(s)/http(s) relay URL
+ * @returns {Promise<string|null>}  HTTP base URL of the Delay hub, or null for a plain ZEN relay
+ */
+export async function detectDelayRelay(relay, timeoutMs = 4000) {
+  const u = new URL(normalizeRelay(relay));
+  u.protocol = u.protocol === 'wss:' || u.protocol === 'https:' ? 'https:' : 'http:';
+  const base = u.origin;
+  try {
+    const r = await fetch(base + '/api/v1/system/health', { signal: AbortSignal.timeout(timeoutMs) });
+    const j = await r.json();
+    return j && j.success && /^delay/i.test(j.message || '') ? base : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
  * Parse a Netscape bookmarks export (Brave / Chrome / Firefox "Export bookmarks" HTML).
  * Returns [{ url, title, folder, addedAt, tags }]; folder is a "A/B" path, addedAt is ms.
  * Only http(s) URLs are kept (drops javascript:, chrome:, file: ...).
@@ -271,6 +290,7 @@ export class ZenOS {
     });
     this.pair = null;
     this.username = null;
+    this.storageToken = options.storageToken || env.ZENOS_STORAGE_TOKEN || null;
   }
 
   /**
@@ -870,6 +890,83 @@ export class ZenOS {
         });
       }
     });
+  }
+
+  // ─── File storage (Delay relay + IPFS) ──────────────────────────────
+
+  /**
+   * First configured relay that is a Delay hub (cached). Throws if all relays are plain ZEN.
+   */
+  async delayRelay() {
+    if (!this._delayBase) {
+      const bases = await Promise.all(this.peers.map((p) => detectDelayRelay(p)));
+      this._delayBase = bases.find(Boolean);
+      if (!this._delayBase) throw new Error('File storage needs a Delay relay; none of the configured relays is one (plain ZEN relays have no IPFS). Add one with --relay / ZENOS_RELAYS.');
+    }
+    return this._delayBase;
+  }
+
+  /**
+   * Upload bytes to IPFS through the Delay relay. Needs the relay's admin token or API key
+   * (`storageToken` option or ZENOS_STORAGE_TOKEN). Encrypted by default (AES-GCM with the user key),
+   * and an encrypted index entry is kept at `~pub/files/<cid>` so listFiles()/downloadFile() work.
+   * @param {Uint8Array|Buffer} data
+   * @returns {Promise<{cid:string, name:string, size:number, encrypted:boolean}>}
+   */
+  async uploadFile(data, name, { encrypt = true } = {}) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    if (!this.storageToken) throw new Error('Storage token required (storageToken option or ZENOS_STORAGE_TOKEN).');
+    const base = await this.delayRelay();
+    const size = data.length;
+    const body = encrypt ? new TextEncoder().encode(JSON.stringify(await ZEN.encrypt(Buffer.from(data).toString('base64'), this.pair))) : data;
+    const form = new FormData();
+    form.append('file', new Blob([body]), encrypt ? name + '.enc' : name);
+    form.append('isEncrypted', String(encrypt));
+    const r = await fetch(base + '/api/v1/ipfs/upload', { method: 'POST', headers: { Authorization: 'Bearer ' + this.storageToken }, body: form });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.cid) throw new Error('Upload failed: ' + (j.error || r.status));
+    const meta = { cid: j.cid, name, size, encrypted: encrypt, addedAt: Date.now() };
+    const encMeta = await ZEN.encrypt(meta, this.pair);
+    await new Promise((resolve, reject) => {
+      this.userRoot.get('files').get(j.cid).put({ data: encMeta, updatedAt: Date.now(), encrypted: true }, (ack) => {
+        if (nodeStorageFlush) nodeStorageFlush();
+        if (ack && ack.err) reject(new Error(ack.err)); else resolve();
+      }, { authenticator: this.pair });
+    });
+    return meta;
+  }
+
+  /** List the user's uploaded files (decrypted index entries), newest first. */
+  async listFiles(timeoutMs = 4000) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    const files = new Map();
+    const root = this.userRoot.get('files');
+    const add = async (node, soul) => {
+      const raw = node && (extractCipher(node.data) || (typeof node.data === 'string' ? node.data : null));
+      if (!raw) return;
+      try { const m = await ZEN.decrypt(raw, this.pair); if (m && m.cid) files.set(soul, m); } catch (_) {}
+    };
+    await new Promise((resolve) => {
+      setTimeout(resolve, timeoutMs);
+      root.map().once((node, soul) => { if (soul) add(node, soul); });
+    });
+    return [...files.values()].sort((a, b) => b.addedAt - a.addedAt);
+  }
+
+  /**
+   * Download a file by CID from the Delay relay. Decrypts if the index says it was encrypted
+   * (pass `encrypted` to skip the index lookup).
+   * @returns {Promise<Uint8Array>}
+   */
+  async downloadFile(cid, { encrypted } = {}) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    const base = await this.delayRelay();
+    if (encrypted === undefined) encrypted = (await this.listFiles()).find((f) => f.cid === cid)?.encrypted ?? false;
+    const r = await fetch(`${base}/api/v1/ipfs/cat/${encodeURIComponent(cid)}`);
+    if (!r.ok) throw new Error('Download failed: ' + r.status);
+    const buf = new Uint8Array(await r.arrayBuffer());
+    if (!encrypted) return buf;
+    return Buffer.from(await ZEN.decrypt(JSON.parse(new TextDecoder().decode(buf)), this.pair), 'base64');
   }
 
   // ─── Bookmarks (Encrypted) ──────────────────────────────────────────
