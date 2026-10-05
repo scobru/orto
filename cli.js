@@ -249,7 +249,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     process.exit(0);
   }
 
-  const os = new ZenOS({ peers, localStorage: true, radisk: true });
+  const os = new ZenOS({ peers, radisk: true });
 
   switch (cmd) {
     case 'identity': {
