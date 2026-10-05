@@ -4578,7 +4578,7 @@ print("Welcome to ZenOS!")
     // so re-importing never duplicates.
     // ═══════════════════════════════════════════════════════════════
     const bookmarks = {};
-    let bmMode = false, bmFolder = null, bmQuery = '';
+    let bmMode = false, bmFolder = null, bmQuery = [];
 
     async function bmSoul(url) {
       const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(url));
@@ -4712,7 +4712,7 @@ print("Welcome to ZenOS!")
       document.body.classList.remove('bm-mode');
       document.getElementById('nav-bookmarks').classList.remove('active');
     }
-    const bmSearch = (v) => { bmQuery = v.toLowerCase(); renderBookmarks(); };
+    const bmSearch = (v) => { bmQuery = v.toLowerCase().split(/\s+/).filter(Boolean); renderBookmarks(); };
     const bmPickFolder = (f) => { bmFolder = f; renderBookmarks(); };
 
     function renderBookmarks() {
@@ -4726,14 +4726,14 @@ print("Welcome to ZenOS!")
       document.getElementById('bm-rename').classList.toggle('hidden', !bmFolder);
       const shown = all
         .filter(b => bmFolder === null || (b.folder || '') === bmFolder || (b.folder || '').startsWith(bmFolder + '/'))
-        .filter(b => !bmQuery || (b.title + ' ' + b.url).toLowerCase().includes(bmQuery))
+        .filter(b => { const hay = [b.title, b.url, b.folder, ...(b.tags || [])].join(' ').toLowerCase(); return bmQuery.every(w => hay.includes(w)); })
         .sort((a, b) => b.addedAt - a.addedAt);
       document.getElementById('bm-items').innerHTML = shown.length ? shown.map(b => {
         let host = ''; try { host = new URL(b.url).hostname; } catch (_) { }
         return `<div class="bm-item"><a href="${escapeHtml(b.url)}" target="_blank" rel="noopener noreferrer"><b>${escapeHtml(b.title)}</b><small>${escapeHtml(host)}${b.folder ? ' · ' + escapeHtml(b.folder) : ''}${(b.tags || []).length ? ' · #' + (b.tags || []).map(escapeHtml).join(' #') : ''}</small></a>
           <button class="bm-del" title="Edit" onclick="bmEdit('${b.soul}')"><i class="ti ti-pencil"></i></button>
           <button class="bm-del" title="Delete" onclick="bmDelete('${b.soul}')"><i class="ti ti-trash"></i></button></div>`;
-      }).join('') : '<div class="blog-empty">No bookmarks yet.<br>Use Import to load a Brave/Chrome/Firefox export (Bookmarks → Export), or Add.</div>';
+      }).join('') : bmQuery.length ? '<div class="blog-empty">No bookmarks match.</div>' : '<div class="blog-empty">No bookmarks yet.<br>Use Import to load a Brave/Chrome/Firefox export (Bookmarks → Export), or Add.</div>';
     }
 
     // resolve on ack, or after 10s so an offline relay can't hang an import
