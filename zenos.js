@@ -903,11 +903,12 @@ export class ZenOS {
   }
 
   /**
-   * Read and decrypt all bookmarks, optionally filtered by folder prefix or text query.
+   * Read and decrypt all bookmarks, optionally filtered by folder prefix or text query
+   * (space-separated keywords, all must match title/url/folder/tags).
    */
   async readBookmarks({ folder = null, query = null, timeoutMs = 5000 } = {}) {
     if (!this.pair) throw new Error('Not authenticated.');
-    const q = query ? query.toLowerCase() : null;
+    const words = query ? query.toLowerCase().split(/\s+/).filter(Boolean) : [];
     const marks = new Map();
     const prefix = '~' + this.pair.pub + '/bookmarks/';
     const parentSoul = '~' + this.pair.pub + '/bookmarks';
@@ -920,7 +921,9 @@ export class ZenOS {
         const bm = await ZEN.decrypt(rawData, this.pair);
         if (!bm || !bm.url) return;
         if (folder && !(bm.folder === folder || bm.folder.startsWith(folder + '/'))) return;
-        if (q && !(bm.title + ' ' + bm.url).toLowerCase().includes(q)) return;
+        // every keyword must appear in title, url, folder or tags
+        const hay = [bm.title, bm.url, bm.folder, ...(bm.tags || [])].join(' ').toLowerCase();
+        if (!words.every(w => hay.includes(w))) return;
         marks.set(soul, { soul, ...bm });
       } catch (_) {}
     };
