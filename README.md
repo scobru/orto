@@ -14,6 +14,7 @@ All applications within ZenOS are anchored under the user's sovereign cryptograp
 - 📋 **Tasks & Kanban (`~{pub}/tasks`)**: End-to-end encrypted Kanban board with drag-and-drop columns (To Do, In Progress, Blocked, Done), priority badges, due dates, tags, and bidirectional linking to Vault notes.
 - 📅 **Calendar (`~{pub}/calendar`)**: Sovereign decentralized calendar with event scheduling, agenda views, and bidirectional linking to Vault notes.
 - 🔖 **Bookmarks (`~{pub}/bookmarks`)**: Private encrypted bookmark manager with browser Netscape HTML import and export.
+- 📁 **Files (`~{pub}/files`)**: Encrypted file storage on IPFS through a [Delay](https://github.com/scobru/delay) relay. The app checks that a configured relay is a Delay relay (plain ZEN relays have no IPFS); the relay token is kept in `localStorage` encrypted with your key.
 - 🪶 **Blog / smollog (`~{pub}/posts`)**: Public, cryptographically signed microblog and article publisher.
 - 🤖 **Agent Ready**: Fully interoperable with autonomous AI agents orchestrating via the [ZenOS Core SDK & CLI](https://github.com/scobru/zenos).
 
@@ -23,7 +24,7 @@ All applications within ZenOS are anchored under the user's sovereign cryptograp
 
 - 🌐 **100% Serverless**: No backend, no SQL database, no configuration. Served strictly as static HTML, CSS, and JS.
 - ⚡ **Real-Time P2P Sync**: Automatically updates and syncs encrypted records across peers in real-time via ZEN relays.
-- 🔐 **End-to-End Encryption**: All private data (notes, events, bookmarks) is encrypted locally in-browser using standard Web Crypto API before touching the network.
+- 🔐 **End-to-End Encryption**: All private data (notes, events, bookmarks, files) is encrypted locally in-browser using standard Web Crypto API before touching the network.
 - 🎨 **Crafted Bear Aesthetics**: Curated light/dark themes, Outfit & IBM Plex Mono typography, responsive three-column grid, and fluid micro-animations.
 - 📦 **Zero Dependencies**: Zero build tools, zero npm packages. Loads everything instantly via CDN (Unpkg & Tabler Icons).
 

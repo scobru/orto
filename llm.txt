@@ -268,7 +268,16 @@ zen.get('~' + pair.pub).get('vault').get(noteId).put(null, (ack) => {
 
 ---
 
-## 7. Troubleshooting & Best Practices for Agents
+## 8. File Storage (Delay relay + IPFS)
+
+The web app has a **Files** view. Files are uploaded to IPFS through a **Delay** relay (https://github.com/scobru/delay), not through plain ZEN relays. Agents should use the ZenOS SDK/CLI (`file-upload`, `file-list`, `file-download`, `os.uploadFile`, see https://github.com/scobru/zenos/blob/main/llm.txt section 9):
+- Detect Delay: `GET <relay origin>/api/v1/system/health` returns `{ "success": true, "message": "Delay is running" }`.
+- Upload: `POST /api/v1/ipfs/upload` with `Authorization: Bearer <admin token or delay-api-* key>`; ask the user for the token.
+- Encrypted index per file at `~{pub}/files/<cid>` (`ZEN.encrypt({cid,name,size,encrypted,addedAt}, pair)`).
+
+---
+
+## 9. Troubleshooting & Best Practices for Agents
 
 1. **Wait for P2P propagation**: GunDB/ZEN propagates asynchronously over WebSockets. Always wrap `.put()` in a Promise and allow 500-1500ms before disconnecting process.
 2. **Deterministic pairs**: Username and password are both case-sensitive. Data written under the earlier schemes (smollog PBKDF2, plain `username + password`) is copied to the FID identity by the web app at login.
