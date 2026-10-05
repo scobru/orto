@@ -8,6 +8,8 @@ ZenOS reimagines personal computing in the decentralized AI era. Instead of silo
 - 🔒 **Private Knowledge Base**: End-to-end AES-GCM encrypted notes (Vault: `~{pub}/vault`)
 - 📅 **Calendar**: E2EE event scheduling, agenda, and bidirectional note linking (`~{pub}/calendar`)
 - 🔖 **Bookmarks**: Private encrypted web library with browser Netscape HTML import/export (`~{pub}/bookmarks`)
+- 👥 **Contacts**: Encrypted address book with vCard import/export (`~{pub}/contacts`)
+- 🔑 **Secrets**: Encrypted passwords, API keys and secure notes with a password generator (`~{pub}/secrets`)
 - 📁 **File Storage**: Encrypted files on IPFS through a Delay relay (`~{pub}/files` index)
 - 🪶 **Public Publishing**: Verifiable, signed decentralized blog ([smollog](https://github.com/scobru/smollog): `~{pub}/posts`)
 - 🤖 **Autonomous AI Agent Ready**: Autonomous LLMs and agents can read, write, and orchestrate across your apps with zero configuration
@@ -82,9 +84,18 @@ ZenOS reimagines personal computing in the decentralized AI era. Instead of silo
 - **Security**: File bytes AES-GCM encrypted client-side by default; encrypted index entry per CID.
 - **Data Model**: `{ cid, name, size, encrypted, addedAt }`; content lives on IPFS behind the Delay relay.
 
-### 7. Future Nodes
+### 7. Contacts (`~{pub}/contacts`)
+- **Status**: Live
+- **Security**: Whole record AES-GCM encrypted client-side; relays see only that a record exists.
+- **Data Model**: `{ name, emails[], phones[], org, notes, tags[], pub, addedAt }` (`pub` = optional ZEN key of a ZenOS user); vCard 3.0 import/export.
+
+### 8. Secrets (`~{pub}/secrets`)
+- **Status**: Live
+- **Security**: Name, username, value, URL and notes are all inside the ciphertext. Values are masked by default in the CLI (`--reveal` or `secret-get` to show) and in the web app (Show / Copy per entry).
+- **Data Model**: `{ name, kind: password|api|note, username, secret, url, notes, tags[], createdAt }`. Anyone with the username + password (or an agent holding them) can read every secret, so give agents only what they need.
+
+### 9. Future Nodes
 - 📬 **P2P Inbox (`~{pub}/inbox`)**: Direct asymmetric encrypted agent-to-agent messaging.
-- 🔑 **Secrets & Keyring (`~{pub}/secrets`)**: E2EE API keys, passwords and credentials vault.
 - 🤖 **Agents Registry (`~{pub}/agents`)**: Delegation of scoped PEN certificates and permissions.
 
 ---

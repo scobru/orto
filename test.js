@@ -6,7 +6,7 @@ import path from 'path';
 
 process.env.ZENOS_CACHE_FILE = path.join(osmod.tmpdir(), `zenos-test-cache-${Date.now()}.json`);
 
-const { ZenOS, parseBookmarksHtml, bookmarksToHtml, legacySmollogPair } = await import('./zenos.js');
+const { ZenOS, parseBookmarksHtml, bookmarksToHtml, legacySmollogPair, parseVcf, contactsToVcf, generatePassword } = await import('./zenos.js');
 const { deriveMasterPair } = await import('./identity.js');
 
 // local in-process relay so the test needs no network
@@ -197,6 +197,42 @@ assert.equal(await os.getTask(taskSoul), null);
 const afterDel = await os.readTasks({ timeoutMs: 500 });
 assert.ok(!afterDel.some(t => t.soul === taskSoul));
 console.log('7. Tasks & Kanban tests passed!');
+
+// Contacts: encrypted at rest, search, vCard roundtrip, delete
+const ct = await os.writeContact({ name: 'Ada Lovelace', emails: 'ada@example.com', phones: ['+39 333 1234567'], org: 'Analytical', notes: 'met at ETHRome', tags: '#friends, math' });
+const craw = await new Promise((r) => os.userRoot.get('contacts').get(ct.soul).once(r));
+assert(!JSON.stringify(craw).includes('Ada') && !JSON.stringify(craw).includes('example.com'), 'contact leaked');
+await os.writeContact({ name: 'Bob', emails: ['bob@example.org'] });
+const cts = await os.readContacts({ timeoutMs: 500 });
+assert.deepEqual(cts.map(c => c.name), ['Ada Lovelace', 'Bob']);
+assert.deepEqual(cts[0].tags, ['friends', 'math']);
+assert.equal((await os.readContacts({ query: 'ethrome', timeoutMs: 0 })).length, 1);
+assert.equal((await os.readContacts({ tag: '#math', timeoutMs: 0 })).length, 1);
+const vcf = contactsToVcf([{ name: 'Smith, J; Jr', emails: ['j@x.io'], phones: ['1'], org: 'Org', notes: 'a\nb', tags: ['t1', 't2'] }]);
+const vback = parseVcf(vcf)[0];
+assert.equal(vback.name, 'Smith, J; Jr'); assert.equal(vback.notes, 'a\nb'); assert.deepEqual(vback.tags, ['t1', 't2']);
+assert.equal((await os.importContactsVcf(vcf)).imported, 1);
+await os.deleteContact(ct.soul);
+assert.equal(await os.getContact(ct.soul), null);
+assert.ok(!(await os.readContacts({ timeoutMs: 500 })).some(c => c.soul === ct.soul));
+console.log('8. Contacts tests passed!');
+
+// Secrets: everything encrypted at rest, search never matches the value, kind filter, update keeps soul, delete
+const sc = await os.writeSecret({ name: 'GitHub', username: 'ada', secret: 'hunter2-XYZ', url: 'https://github.com', tags: 'dev' });
+const sraw = await new Promise((r) => os.userRoot.get('secrets').get(sc.soul).once(r));
+assert(!/GitHub|ada|hunter2/.test(JSON.stringify(sraw)), 'secret leaked');
+await os.writeSecret({ name: 'Stripe key', kind: 'api', secret: 'sk_live_abc' });
+assert.equal((await os.readSecrets({ timeoutMs: 500 })).length, 2);
+assert.equal((await os.readSecrets({ kind: 'api', timeoutMs: 0 }))[0].name, 'Stripe key');
+assert.equal((await os.readSecrets({ query: 'hunter2', timeoutMs: 0 })).length, 0);
+await os.writeSecret({ soul: sc.soul, name: 'GitHub', username: 'ada', secret: 'new-pass', url: 'https://github.com' });
+assert.equal((await os.getSecret(sc.soul)).secret, 'new-pass');
+await assert.rejects(() => os.writeSecret({ name: 'x', secret: '' }));
+await os.deleteSecret(sc.soul);
+assert.equal(await os.getSecret(sc.soul), null);
+const pw = generatePassword(24); assert.equal(pw.length, 24); assert.notEqual(pw, generatePassword(24));
+assert.match(generatePassword(40, { symbols: false }), /^[A-Za-z0-9]+$/);
+console.log('9. Secrets tests passed!');
 
 console.log('ok - all CRUD tests passed');
 process.exit(0);
