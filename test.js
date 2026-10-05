@@ -51,6 +51,8 @@ const bms = await os.readBookmarks({ timeoutMs: 500 });
 assert.equal(bms.length, 2);
 assert.equal((await os.readBookmarks({ folder: 'Bookmarks bar/Dev', timeoutMs: 500 })).length, 1);
 assert.equal((await os.readBookmarks({ query: 'example & a', timeoutMs: 500 })).length, 1);
+assert.equal((await os.readBookmarks({ query: 'EXAMPLE.com bar', timeoutMs: 500 })).length, 1); // multi-keyword, url + folder
+assert.equal((await os.readBookmarks({ query: 'example nope', timeoutMs: 500 })).length, 0);
 const braw = await new Promise((r) => os.userRoot.get('bookmarks').get(bms[0].soul).once(r));
 assert(!/example|Dev/.test(JSON.stringify(braw)), 'bookmark plaintext leaked');
 // agent-style reorganisation: move by soul, keep url/addedAt, report unknown souls
