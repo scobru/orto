@@ -1,106 +1,288 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ZenOS — Sovereign Personal Workspace</title>
-<meta name="description" content="ZenOS: zero-backend, end-to-end encrypted notes, calendar, bookmarks, tasks and blog on the ZEN P2P graph. One login, no server, agent-ready.">
-<link rel="icon" type="image/svg+xml" href="favicon.svg">
-<style>
-:root{--bg:#fff;--fg:#1c1f24;--mut:#575c66;--line:#e5e7eb;--card:#f7f8fa;--acc:#e04b4b;--code:#16171c;--codefg:#e6e8ec}
-@media(prefers-color-scheme:dark){:root{--bg:#16171c;--fg:#f2f4f7;--mut:#9da3af;--line:#2a2d36;--card:#1d1f25;--code:#0e0f13}}
-*{box-sizing:border-box;margin:0}
-body{background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
-main{max-width:760px;margin:0 auto;padding:0 16px 64px}
-header{display:flex;justify-content:space-between;align-items:center;padding:20px 0}
-header a{color:var(--mut);text-decoration:none;margin-left:20px;font-size:14px}
-header a:first-child{margin:0;color:var(--fg);font-weight:700;display:flex;align-items:center;gap:8px}
-header img{width:24px}
-h1{font-size:clamp(32px,7vw,52px);line-height:1.1;margin:48px 0 16px;letter-spacing:-.02em}
-h2{font-size:22px;margin:56px 0 16px}
-p{color:var(--mut)}
-.lead{font-size:19px;max-width:600px}
-.cta{margin:28px 0;display:flex;gap:12px;flex-wrap:wrap}
-.btn{padding:10px 20px;border-radius:8px;border:1px solid var(--line);color:var(--fg);text-decoration:none;font-weight:600}
-.btn.p{background:var(--acc);border-color:var(--acc);color:#fff}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
-.card b{display:block;color:var(--fg);margin-bottom:4px}
-.card code{font-size:12px;color:var(--acc)}
-.card p{font-size:14px}
-pre{background:var(--code);color:var(--codefg);border-radius:10px;padding:16px;overflow-x:auto;font:13px/1.6 ui-monospace,Menlo,Consolas,monospace;margin:12px 0}
-code{font-family:ui-monospace,Menlo,Consolas,monospace}
-ol{padding-left:20px;color:var(--mut)}li{margin:8px 0}
-li b,ul b{color:var(--fg)}
-.note{border-left:3px solid var(--acc);padding:4px 16px;margin:16px 0}
-footer{border-top:1px solid var(--line);margin-top:64px;padding-top:20px;font-size:14px;color:var(--mut)}
-footer a{color:var(--mut);margin-right:16px}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZenOS — Sovereign Personal Workspace</title>
+  <meta name="description"
+    content="ZenOS: zero-backend, end-to-end encrypted notes, calendar, bookmarks, tasks and blog on the ZEN P2P graph. One login, no server, agent-ready.">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <style>
+    :root {
+      --bg: #fff;
+      --fg: #1c1f24;
+      --mut: #575c66;
+      --line: #e5e7eb;
+      --card: #f7f8fa;
+      --acc: #e04b4b;
+      --code: #16171c;
+      --codefg: #e6e8ec
+    }
+
+    @media(prefers-color-scheme:dark) {
+      :root {
+        --bg: #16171c;
+        --fg: #f2f4f7;
+        --mut: #9da3af;
+        --line: #2a2d36;
+        --card: #1d1f25;
+        --code: #0e0f13
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif
+    }
+
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 0 16px 64px
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 0
+    }
+
+    header a {
+      color: var(--mut);
+      text-decoration: none;
+      margin-left: 20px;
+      font-size: 14px
+    }
+
+    header a:first-child {
+      margin: 0;
+      color: var(--fg);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px
+    }
+
+    header img {
+      width: 24px
+    }
+
+    h1 {
+      font-size: clamp(32px, 7vw, 52px);
+      line-height: 1.1;
+      margin: 48px 0 16px;
+      letter-spacing: -.02em
+    }
+
+    h2 {
+      font-size: 22px;
+      margin: 56px 0 16px
+    }
+
+    p {
+      color: var(--mut)
+    }
+
+    .lead {
+      font-size: 19px;
+      max-width: 600px
+    }
+
+    .cta {
+      margin: 28px 0;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      color: var(--fg);
+      text-decoration: none;
+      font-weight: 600
+    }
+
+    .btn.p {
+      background: var(--acc);
+      border-color: var(--acc);
+      color: #fff
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px
+    }
+
+    .card b {
+      display: block;
+      color: var(--fg);
+      margin-bottom: 4px
+    }
+
+    .card code {
+      font-size: 12px;
+      color: var(--acc)
+    }
+
+    .card p {
+      font-size: 14px
+    }
+
+    pre {
+      background: var(--code);
+      color: var(--codefg);
+      border-radius: 10px;
+      padding: 16px;
+      overflow-x: auto;
+      font: 13px/1.6 ui-monospace, Menlo, Consolas, monospace;
+      margin: 12px 0
+    }
+
+    code {
+      font-family: ui-monospace, Menlo, Consolas, monospace
+    }
+
+    ol {
+      padding-left: 20px;
+      color: var(--mut)
+    }
+
+    li {
+      margin: 8px 0
+    }
+
+    li b,
+    ul b {
+      color: var(--fg)
+    }
+
+    .note {
+      border-left: 3px solid var(--acc);
+      padding: 4px 16px;
+      margin: 16px 0
+    }
+
+    footer {
+      border-top: 1px solid var(--line);
+      margin-top: 64px;
+      padding-top: 20px;
+      font-size: 14px;
+      color: var(--mut)
+    }
+
+    footer a {
+      color: var(--mut);
+      margin-right: 16px
+    }
+  </style>
 </head>
+
 <body>
-<main>
-<header>
-  <a href="#"><img src="favicon.svg" alt="">ZenOS</a>
-  <nav><a href="#what">What</a><a href="#install">Install</a><a href="#use">Use</a><a href="#relays">Relays</a><a href="https://github.com/scobru/zenos">GitHub</a></nav>
-</header>
+  <main>
+    <header>
+      <a href="#"><img src="favicon.svg" alt="">ZenOS</a>
+      <nav><a href="#what">What</a><a href="#install">Install</a><a href="#use">Use</a><a href="#relays">Relays</a><a
+          href="https://github.com/scobru/zenos">GitHub</a></nav>
+    </header>
 
-<h1>Your workspace.<br>No server. No account.</h1>
-<p class="lead">ZenOS is a decentralized personal workspace: encrypted notes, calendar, bookmarks, tasks and a public blog, all stored in the <b>ZEN</b> P2P graph under one cryptographic identity derived from your username and password.</p>
-<div class="cta">
-  <a class="btn p" href="app/">Open ZenOS Web</a>
-  <a class="btn" href="#install">Install CLI / SDK</a>
-</div>
+    <h1>Your workspace.<br>No server. No account.</h1>
+    <p class="lead">ZenOS is a decentralized personal workspace: encrypted notes, calendar, bookmarks, tasks and a
+      public blog, all stored in the <b>ZEN</b> P2P graph under one cryptographic identity derived from your username
+      and password.</p>
+    <div class="cta">
+      <a class="btn p" href="app/">Open ZenOS Web</a>
+      <a class="btn" href="#install">Install CLI / SDK</a>
+    </div>
 
-<h2 id="what">What it does</h2>
-<div class="grid">
-  <div class="card"><b>🔒 Vault</b><code>~pub/vault</code><p>Markdown notes, tags, checklists. AES-GCM-256 encrypted in your browser; relays see only ciphertext.</p></div>
-  <div class="card"><b>📋 Tasks</b><code>~pub/tasks</code><p>Encrypted Kanban board with columns, priorities, due dates, and note cross-links.</p></div>
-  <div class="card"><b>📅 Calendar</b><code>~pub/calendar</code><p>Encrypted events and agenda, linked to Vault notes.</p></div>
-  <div class="card"><b>🔖 Bookmarks</b><code>~pub/bookmarks</code><p>Private library with folders and tags. Import/export Brave, Chrome, Firefox HTML.</p></div>
-  <div class="card"><b>🪶 smollog</b><code>~pub/posts</code><p>Public Markdown blog, ECDSA-signed so readers can verify the author.</p></div>
-</div>
-<p style="margin-top:16px">Serverless: static HTML + <code>secp256k1</code> keys + ZEN relays for sync. Same login gives the same identity in ZenOS Web, CLI, smollog and FID. AI agents can read and write the same data through the SDK.</p>
+    <h2 id="what">What it does</h2>
+    <div class="grid">
+      <div class="card"><b>🔒 Vault</b><code>~pub/vault</code>
+        <p>Markdown notes, tags, checklists. AES-GCM-256 encrypted in your browser; relays see only ciphertext.</p>
+      </div>
+      <div class="card"><b>📋 Tasks</b><code>~pub/tasks</code>
+        <p>Encrypted Kanban board with columns, priorities, due dates, and note cross-links.</p>
+      </div>
+      <div class="card"><b>📅 Calendar</b><code>~pub/calendar</code>
+        <p>Encrypted events and agenda, linked to Vault notes.</p>
+      </div>
+      <div class="card"><b>🔖 Bookmarks</b><code>~pub/bookmarks</code>
+        <p>Private library with folders and tags. Import/export Brave, Chrome, Firefox HTML.</p>
+      </div>
+      <div class="card"><b>🪶 smollog</b><code>~pub/posts</code>
+        <p>Public Markdown blog, ECDSA-signed so readers can verify the author.</p>
+      </div>
+    </div>
+    <p style="margin-top:16px">Serverless: static HTML + <code>secp256k1</code> keys + ZEN relays for sync. Same login
+      gives the same identity in ZenOS Web, CLI, smollog and FID. AI agents can read and write the same data through the
+      SDK.</p>
 
-<h2 id="install">Install</h2>
-<p><b>Web:</b> nothing to install. Open <a href="app/" style="color:var(--acc)">the app</a>, log in with username + password. First login creates your identity.</p>
-<p style="margin-top:16px"><b>CLI / SDK</b> (Node 18+):</p>
-<pre>git clone https://github.com/scobru/zenos.git
+    <h2 id="install">Install</h2>
+    <p><b>Web:</b> nothing to install. Open <a href="app/" style="color:var(--acc)">the app</a>, log in with username +
+      password. First login creates your identity.</p>
+    <p style="margin-top:16px"><b>CLI / SDK</b> (Node 18+):</p>
+    <pre>git clone https://github.com/scobru/zenos.git
 cd zenos
 node cli.js identity --user "alice" --pass "secret"</pre>
-<p><b>Self-host the web app:</b> it is plain static files. Serve the folder anywhere (GitHub Pages, Vercel, Netlify):</p>
-<pre>git clone https://github.com/scobru/zenos-web.git
+    <p><b>Self-host the web app:</b> it is plain static files. Serve the folder anywhere (GitHub Pages, Vercel,
+      Netlify):</p>
+    <pre>git clone https://github.com/scobru/zenos-web.git
 npx serve zenos-web</pre>
-<div class="note"><p>Username and password are case-sensitive and are the only key. Lose them, lose the data. No recovery.</p></div>
+    <div class="note">
+      <p>Username and password are case-sensitive and are the only key. Lose them, lose the data. No recovery.</p>
+    </div>
 
-<h2 id="use">Use</h2>
-<ol>
-  <li><b>Log in</b> on the web app. Write notes, add events, import bookmarks, publish posts.</li>
-  <li><b>Script it</b> with the CLI:</li>
-</ol>
-<pre>node cli.js vault-write --user alice --pass secret \
+    <h2 id="use">Use</h2>
+    <ol>
+      <li><b>Log in</b> on the web app. Write notes, add events, import bookmarks, publish posts.</li>
+      <li><b>Script it</b> with the CLI:</li>
+    </ol>
+    <pre>node cli.js vault-write --user alice --pass secret \
   --title "Idea" --body "- [ ] ship it" --cat research
 node cli.js vault-read  --user alice --pass secret --query idea
 node cli.js bookmarks-import --user alice --pass secret --file bookmarks.html
 node cli.js blog-publish --user alice --pass secret \
   --title "Hello" --content "First post" --tags "zenos,p2p"
 node cli.js blog-read --alias alice</pre>
-<p>Or the JavaScript SDK:</p>
-<pre>import ZenOS from './zenos.js';
+    <p>Or the JavaScript SDK:</p>
+    <pre>import ZenOS from './zenos.js';
 const os = new ZenOS();
 await os.login('alice', 'secret');
 await os.writeVaultNote({ title: 'Hi', body: 'Encrypted.', cat: 'logs' });
 await os.writeCalendarEvent({ title: 'Standup', start: Date.now() + 36e5 });</pre>
-<p>Agents: see <a href="llm.txt" style="color:var(--acc)">llm.txt</a> for the integration guide.</p>
+    <p>Agents: see <a href="llm.txt" style="color:var(--acc)">llm.txt</a> for the integration guide.</p>
 
-<h2 id="relays">Relays</h2>
-<p>Data syncs through ZEN relays (WebSocket peers). Defaults: <code>wss://delay.scobrudot.dev/zen</code> (author's personal relay, best-effort, no SLA) and <code>wss://zen.akao.io:8420/zen</code> (public network). For anything serious, run your own:</p>
-<pre>node cli.js vault-read --user alice --pass secret \
+    <h2 id="relays">Relays</h2>
+    <p>Data syncs through ZEN relays (WebSocket peers). Defaults: <code>wss://delay.scobrudot.dev/zen</code> (author's
+      personal relay, best-effort, no SLA) and <code>wss://zen.akao.io:8420/zen</code> (public network). For anything
+      serious, run your own:</p>
+    <pre>node cli.js vault-read --user alice --pass secret \
   --relay "wss://relay.example.com/zen" --no-default-relays</pre>
-<p>Relay operators see public keys, timestamps, paths and IPs, never vault contents. Guide: <a href="https://github.com/scobru/zenos/blob/main/RELAYS.md" style="color:var(--acc)">RELAYS.md</a>.</p>
+    <p>Relay operators see public keys, timestamps, paths and IPs, never vault contents. Guide: <a
+        href="https://github.com/scobru/zenos/blob/main/RELAYS.md" style="color:var(--acc)">RELAYS.md</a>.</p>
 
-<footer>
-  <a href="app/">Web app</a><a href="https://github.com/scobru/zenos">zenos</a><a href="https://github.com/scobru/zenos-web">zenos-web</a><a href="llm.txt">llm.txt</a>MIT License
-</footer>
-</main>
+    <footer>
+      <a href="app/">Web app</a><a href="https://github.com/scobru/zenos">zenos</a><a
+        href="https://github.com/scobru/zenos-web">zenos-web</a><a href="llm.txt">llm.txt</a>MIT License
+    </footer>
+  </main>
 </body>
+
 </html>
