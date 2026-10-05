@@ -182,3 +182,16 @@ Full guide (custom relays + self-hosting with `zen` or `shogun-relay`): **[RELAY
 
 ## 📜 License
 MIT License.
+
+## File storage (Delay relay + IPFS)
+
+Files go to IPFS through a [Delay](https://github.com/scobru/delay) relay. Plain ZEN relays have no IPFS, so ZenOS probes each relay (`GET /api/v1/system/health`) and uses the first Delay one; it errors if none is configured. Upload needs the relay's admin token or `delay-api-*` key, passed as `--token` / `storageToken` or `ZENOS_STORAGE_TOKEN`.
+
+```bash
+export ZENOS_STORAGE_TOKEN=...
+node cli.js file-upload   --file ./photo.png          # encrypted by default (--plain to skip)
+node cli.js file-list
+node cli.js file-download --cid <cid> --out ./photo.png
+```
+
+SDK: `os.uploadFile(bytes, name, { encrypt })`, `os.listFiles()`, `os.downloadFile(cid)`. Encrypted files are base64'd before AES-GCM, so they are ~1.4x bigger on IPFS; an encrypted index lives at `~pub/files/<cid>`.

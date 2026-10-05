@@ -173,6 +173,11 @@ Usage:
   node cli.js migrate  [--user <user> --pass <pass>]   # copy vault/calendar/bookmarks from earlier identities
   node cli.js relays                                 # print effective relay list
 
+  # File storage (needs a Delay relay + token: --token or ZENOS_STORAGE_TOKEN)
+  node cli.js file-upload   [--user <user> --pass <pass>] --file <path> [--token <t>] [--plain]
+  node cli.js file-list     [--user <user> --pass <pass>]
+  node cli.js file-download [--user <user> --pass <pass>] --cid <cid> --out <path>
+
   # Vault (Encrypted Notes)
   node cli.js vault-write  [--user <user> --pass <pass>] --title <title> --body <body> [--cat <cat>] [--pinned] [--soul <soul>]
   node cli.js vault-get    [--user <user> --pass <pass>] --soul <soul>
@@ -254,7 +259,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     process.exit(0);
   }
 
-  const os = new ZenOS({ peers });
+  const os = new ZenOS({ peers, storageToken: typeof flags.token === 'string' ? flags.token : undefined });
 
   switch (cmd) {
     case 'identity': {
@@ -279,6 +284,34 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     }
 
     // ─── Vault (Notes) CRUD ───────────────────────────────────────────
+
+    case 'file-upload': {
+      if (typeof flags.file !== 'string') throw new Error('--file is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const res = await os.uploadFile(fs.readFileSync(flags.file), path.basename(flags.file), { encrypt: !flags.plain });
+      console.log(JSON.stringify(res, null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'file-list': {
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      console.log(JSON.stringify(await os.listFiles(), null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'file-download': {
+      if (typeof flags.cid !== 'string' || typeof flags.out !== 'string') throw new Error('--cid and --out are required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      fs.writeFileSync(flags.out, await os.downloadFile(flags.cid));
+      console.log(JSON.stringify({ cid: flags.cid, out: flags.out }, null, 2));
+      safeExit(0);
+      break;
+    }
 
     case 'vault-write': {
       const title = flags.title;
