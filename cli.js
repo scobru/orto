@@ -103,6 +103,11 @@ function requireCredentials() {
   return { user, pass };
 }
 
+function safeExit(code = 0, delay = 1500) {
+  flushStorage();
+  setTimeout(() => process.exit(code), delay);
+}
+
 function outputResults(items, flags) {
   if (flags.count) {
     console.log(JSON.stringify({ total: items.length }, null, 2));
@@ -269,7 +274,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       console.log(JSON.stringify({ pub: os.pub, legacyPubs: os.legacyPairs.map(p => p.pub), ...await os.migrateLegacy() }, null, 2));
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -291,8 +296,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
         soul: flags.soul
       });
       console.log(JSON.stringify(res, null, 2));
-      flushStorage();
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -338,8 +342,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       await os.login(user, pass);
       const res = await os.deleteVaultNote(flags.soul);
       console.log(JSON.stringify(res, null, 2));
-      flushStorage();
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -363,8 +366,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
         soul: flags.soul
       });
       console.log(JSON.stringify(res, null, 2));
-      flushStorage();
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -398,8 +400,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       await os.login(user, pass);
       const res = await os.deleteCalendarEvent(flags.soul);
       console.log(JSON.stringify(res, null, 2));
-      flushStorage();
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 

@@ -458,9 +458,16 @@ export class ZenOS {
       const maxTimer = setTimeout(done, timeoutMs);
       let settleTimer = setTimeout(done, notes.size > 0 ? Math.min(350, timeoutMs) : timeoutMs);
 
-      const kickSettle = () => {
+      let pending = 0;
+      const kickSettle = (ms = 350) => {
         clearTimeout(settleTimer);
-        settleTimer = setTimeout(done, Math.min(300, timeoutMs));
+        settleTimer = setTimeout(() => {
+          if (pending > 0) {
+            kickSettle(ms);
+            return;
+          }
+          done();
+        }, Math.min(ms, timeoutMs));
       };
 
       try {
@@ -476,11 +483,17 @@ export class ZenOS {
             if (nodeStorageFlush) nodeStorageFlush();
             kickSettle();
           } else {
+            pending++;
+            kickSettle(600);
             this.userRoot.get('vault').get(soul).once(async (full) => {
-              if (full && full.title) {
-                await processNode(full, soul);
-                if (nodeStorageFlush) nodeStorageFlush();
-                kickSettle();
+              try {
+                if (full && full.title) {
+                  await processNode(full, soul);
+                  if (nodeStorageFlush) nodeStorageFlush();
+                }
+              } finally {
+                pending--;
+                kickSettle(350);
               }
             });
           }
@@ -561,6 +574,57 @@ export class ZenOS {
         if (ack && ack.err) reject(new Error(ack.err));
         else resolve({ soul, status: 'deleted' });
       }, { authenticator: this.pair });
+    });
+  }
+
+  /**
+   * Subscribe to live decrypted vault note updates.
+   * Calls callback(note, soul, isDeleted).
+   */
+  onVaultNote(callback) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    const handleNode = async (node, soul) => {
+      if (!node || !soul) return;
+      const isTrash = extractCipher(node.trash) === true || node.trash === true;
+      if (isTrash) {
+        callback(null, soul, true);
+        return;
+      }
+      const titleRaw = extractCipher(node.title);
+      if (!titleRaw) return;
+      const bodyRaw = extractCipher(node.body);
+      const catRaw = extractCipher(node.cat);
+      const pinned = extractCipher(node.pinned) === true || node.pinned === true;
+      try {
+        const title = await ZEN.decrypt(titleRaw, this.pair);
+        const body = bodyRaw ? await ZEN.decrypt(bodyRaw, this.pair) : '';
+        const cat = catRaw ? await ZEN.decrypt(catRaw, this.pair) : '';
+        callback({
+          soul,
+          id: soul,
+          title: title || '',
+          body: body || '',
+          cat: cat || '',
+          pinned,
+          trash: false,
+          timestamp: Number(extractCipher(node.timestamp) || node.timestamp) || Date.now()
+        }, soul, false);
+      } catch (_) {}
+    };
+
+    return this.userRoot.get('vault').map().on(async (node, soul) => {
+      if (!soul) return;
+      if (node === null) {
+        callback(null, soul, true);
+        return;
+      }
+      if (node && node.title) {
+        await handleNode(node, soul);
+      } else {
+        this.userRoot.get('vault').get(soul).once(async (full) => {
+          if (full && full.title) await handleNode(full, soul);
+        });
+      }
     });
   }
 
@@ -716,9 +780,16 @@ export class ZenOS {
       const maxTimer = setTimeout(done, timeoutMs);
       let settleTimer = setTimeout(done, events.size > 0 ? Math.min(350, timeoutMs) : timeoutMs);
 
-      const kickSettle = () => {
+      let pending = 0;
+      const kickSettle = (ms = 350) => {
         clearTimeout(settleTimer);
-        settleTimer = setTimeout(done, Math.min(300, timeoutMs));
+        settleTimer = setTimeout(() => {
+          if (pending > 0) {
+            kickSettle(ms);
+            return;
+          }
+          done();
+        }, Math.min(ms, timeoutMs));
       };
 
       try {
@@ -734,11 +805,17 @@ export class ZenOS {
             if (nodeStorageFlush) nodeStorageFlush();
             kickSettle();
           } else {
+            pending++;
+            kickSettle(600);
             this.userRoot.get('calendar').get(soul).once(async (full) => {
-              if (full && full.data) {
-                await processNode(full, soul);
-                if (nodeStorageFlush) nodeStorageFlush();
-                kickSettle();
+              try {
+                if (full && full.data) {
+                  await processNode(full, soul);
+                  if (nodeStorageFlush) nodeStorageFlush();
+                }
+              } finally {
+                pending--;
+                kickSettle(350);
               }
             });
           }
@@ -758,6 +835,40 @@ export class ZenOS {
         if (ack && ack.err) reject(new Error(ack.err));
         else resolve({ soul, status: 'deleted' });
       }, { authenticator: this.pair });
+    });
+  }
+
+  /**
+   * Subscribe to live decrypted calendar event updates.
+   * Calls callback(event, soul, isDeleted).
+   */
+  onCalendarEvent(callback) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    const handleNode = async (node, soul) => {
+      if (!node || !soul) return;
+      const rawData = extractCipher(node.data) || (typeof node.data === 'string' ? node.data : null);
+      if (!rawData) return;
+      try {
+        const ev = await ZEN.decrypt(rawData, this.pair);
+        if (ev && typeof ev === 'object') {
+          callback({ soul, ...ev, updatedAt: node.updatedAt || Date.now() }, soul, false);
+        }
+      } catch (_) {}
+    };
+
+    return this.userRoot.get('calendar').map().on(async (node, soul) => {
+      if (!soul) return;
+      if (node === null) {
+        callback(null, soul, true);
+        return;
+      }
+      if (node && node.data) {
+        await handleNode(node, soul);
+      } else {
+        this.userRoot.get('calendar').get(soul).once(async (full) => {
+          if (full && full.data) await handleNode(full, soul);
+        });
+      }
     });
   }
 
@@ -843,9 +954,16 @@ export class ZenOS {
       const maxTimer = setTimeout(done, timeoutMs);
       let settleTimer = setTimeout(done, marks.size > 0 ? Math.min(350, timeoutMs) : timeoutMs);
 
-      const kickSettle = () => {
+      let pending = 0;
+      const kickSettle = (ms = 350) => {
         clearTimeout(settleTimer);
-        settleTimer = setTimeout(done, Math.min(300, timeoutMs));
+        settleTimer = setTimeout(() => {
+          if (pending > 0) {
+            kickSettle(ms);
+            return;
+          }
+          done();
+        }, Math.min(ms, timeoutMs));
       };
 
       try {
@@ -861,11 +979,17 @@ export class ZenOS {
             if (nodeStorageFlush) nodeStorageFlush();
             kickSettle();
           } else {
+            pending++;
+            kickSettle(600);
             this.userRoot.get('bookmarks').get(soul).once(async (full) => {
-              if (full && full.data) {
-                await processNode(full, soul);
-                if (nodeStorageFlush) nodeStorageFlush();
-                kickSettle();
+              try {
+                if (full && full.data) {
+                  await processNode(full, soul);
+                  if (nodeStorageFlush) nodeStorageFlush();
+                }
+              } finally {
+                pending--;
+                kickSettle(350);
               }
             });
           }
@@ -960,6 +1084,40 @@ export class ZenOS {
         if (ack && ack.err) reject(new Error(ack.err));
         else resolve({ soul, status: 'deleted' });
       }, { authenticator: this.pair });
+    });
+  }
+
+  /**
+   * Subscribe to live decrypted bookmark updates.
+   * Calls callback(bookmark, soul, isDeleted).
+   */
+  onBookmark(callback) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    const handleNode = async (node, soul) => {
+      if (!node || !soul) return;
+      const rawData = extractCipher(node.data) || (typeof node.data === 'string' ? node.data : null);
+      if (!rawData) return;
+      try {
+        const bm = await ZEN.decrypt(rawData, this.pair);
+        if (bm && /^https?:\/\//i.test(bm.url)) {
+          callback({ soul, ...bm, updatedAt: node.updatedAt || Date.now() }, soul, false);
+        }
+      } catch (_) {}
+    };
+
+    return this.userRoot.get('bookmarks').map().on(async (node, soul) => {
+      if (!soul) return;
+      if (node === null) {
+        callback(null, soul, true);
+        return;
+      }
+      if (node && node.data) {
+        await handleNode(node, soul);
+      } else {
+        this.userRoot.get('bookmarks').get(soul).once(async (full) => {
+          if (full && full.data) await handleNode(full, soul);
+        });
+      }
     });
   }
 
@@ -1170,9 +1328,16 @@ export class ZenOS {
       const maxTimer = setTimeout(done, timeoutMs);
       let settleTimer = setTimeout(done, tasks.size > 0 ? Math.min(350, timeoutMs) : timeoutMs);
 
-      const kickSettle = () => {
+      let pending = 0;
+      const kickSettle = (ms = 350) => {
         clearTimeout(settleTimer);
-        settleTimer = setTimeout(done, Math.min(300, timeoutMs));
+        settleTimer = setTimeout(() => {
+          if (pending > 0) {
+            kickSettle(ms);
+            return;
+          }
+          done();
+        }, Math.min(ms, timeoutMs));
       };
 
       try {
@@ -1188,11 +1353,17 @@ export class ZenOS {
             if (nodeStorageFlush) nodeStorageFlush();
             kickSettle();
           } else {
+            pending++;
+            kickSettle(600);
             this.userRoot.get('tasks').get(soul).once(async (full) => {
-              if (full && full.data) {
-                await processNode(full, soul);
-                if (nodeStorageFlush) nodeStorageFlush();
-                kickSettle();
+              try {
+                if (full && full.data) {
+                  await processNode(full, soul);
+                  if (nodeStorageFlush) nodeStorageFlush();
+                }
+              } finally {
+                pending--;
+                kickSettle(350);
               }
             });
           }
@@ -1212,6 +1383,40 @@ export class ZenOS {
         if (ack && ack.err) reject(new Error(ack.err));
         else resolve({ soul, status: 'deleted' });
       }, { authenticator: this.pair });
+    });
+  }
+
+  /**
+   * Subscribe to live decrypted task updates.
+   * Calls callback(task, soul, isDeleted).
+   */
+  onTask(callback) {
+    if (!this.pair) throw new Error('Not authenticated.');
+    const handleNode = async (node, soul) => {
+      if (!node || !soul) return;
+      const rawData = extractCipher(node.data) || (typeof node.data === 'string' ? node.data : null);
+      if (!rawData) return;
+      try {
+        const tsk = await ZEN.decrypt(rawData, this.pair);
+        if (tsk && typeof tsk === 'object') {
+          callback({ soul, ...tsk, updatedAt: node.updatedAt || Date.now() }, soul, false);
+        }
+      } catch (_) {}
+    };
+
+    return this.userRoot.get('tasks').map().on(async (node, soul) => {
+      if (!soul) return;
+      if (node === null) {
+        callback(null, soul, true);
+        return;
+      }
+      if (node && node.data) {
+        await handleNode(node, soul);
+      } else {
+        this.userRoot.get('tasks').get(soul).once(async (full) => {
+          if (full && full.data) await handleNode(full, soul);
+        });
+      }
     });
   }
 
@@ -1446,6 +1651,39 @@ export class ZenOS {
         if (ack && ack.err) reject(new Error(ack.err));
         else resolve({ id, status: 'deleted', authorPub: this.pair.pub });
       }, { authenticator: this.pair });
+    });
+  }
+
+  /**
+   * Subscribe to live public blog post updates.
+   * Calls callback(post, id, isDeleted).
+   */
+  onPost(targetPub, callback) {
+    const pub = targetPub || this.pair?.pub;
+    if (!pub) throw new Error('Public key required.');
+    return this.zen.get('~' + pub).get('posts').map().on((post, id) => {
+      if (!id) return;
+      const isDeleted = !post || extractCipher(post.deleted) === true || post.deleted === true;
+      if (isDeleted) {
+        callback(null, id, true);
+        return;
+      }
+      const title = extractCipher(post.title);
+      if (!title) return;
+      const content = extractCipher(post.content) || '';
+      const tagsRaw = extractCipher(post.tags);
+      const tags = Array.isArray(tagsRaw) ? tagsRaw : (typeof tagsRaw === 'string' && tagsRaw ? tagsRaw.split(',').map(t => t.trim()) : []);
+      const authorAlias = extractCipher(post.authorAlias) || null;
+      callback({
+        id: extractCipher(post.id) || post.id || id,
+        title,
+        content,
+        tags,
+        authorAlias,
+        authorPub: pub,
+        createdAt: Number(extractCipher(post.createdAt) || post.createdAt) || Date.now(),
+        updatedAt: Number(extractCipher(post.updatedAt) || post.updatedAt) || Date.now()
+      }, id, false);
     });
   }
 
