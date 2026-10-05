@@ -145,6 +145,10 @@ export function resolvePeers(opts = {}) {
   return peers;
 }
 
+// base64 without Buffer so file storage works in browsers too
+const toB64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000)); return btoa(s); };
+const fromB64 = (b) => Uint8Array.from(atob(b), (c) => c.charCodeAt(0));
+
 /**
  * Delay relays (https://github.com/scobru/delay) expose a REST API next to the `/zen` websocket,
  * including IPFS file storage. Plain ZEN relays do not, so file storage needs this check.
@@ -918,7 +922,7 @@ export class ZenOS {
     if (!this.storageToken) throw new Error('Storage token required (storageToken option or ZENOS_STORAGE_TOKEN).');
     const base = await this.delayRelay();
     const size = data.length;
-    const body = encrypt ? new TextEncoder().encode(JSON.stringify(await ZEN.encrypt(Buffer.from(data).toString('base64'), this.pair))) : data;
+    const body = encrypt ? new TextEncoder().encode(JSON.stringify(await ZEN.encrypt(toB64(data), this.pair))) : data;
     const form = new FormData();
     form.append('file', new Blob([body]), encrypt ? name + '.enc' : name);
     form.append('isEncrypted', String(encrypt));
@@ -966,7 +970,7 @@ export class ZenOS {
     if (!r.ok) throw new Error('Download failed: ' + r.status);
     const buf = new Uint8Array(await r.arrayBuffer());
     if (!encrypted) return buf;
-    return Buffer.from(await ZEN.decrypt(JSON.parse(new TextDecoder().decode(buf)), this.pair), 'base64');
+    return fromB64(await ZEN.decrypt(JSON.parse(new TextDecoder().decode(buf)), this.pair));
   }
 
   // ─── Bookmarks (Encrypted) ──────────────────────────────────────────
