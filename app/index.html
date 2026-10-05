@@ -4846,14 +4846,18 @@ print("Welcome to ZenOS!")
     const FILES_TOKEN_KEY = 'zenStorageToken';
     const humanSize = (n) => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
 
-    function openFiles() {
+    async function openFiles() {
       closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles();
       filesMode = true;
       document.body.classList.add('files-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
       document.getElementById('nav-files').classList.add('active');
       if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('open')) toggleSidebar();
-      try { os.storageToken = os.storageToken || localStorage.getItem(FILES_TOKEN_KEY); } catch (_) { }
+      // token is stored encrypted with the user key, so it is useless without the login
+      try {
+        const raw = localStorage.getItem(FILES_TOKEN_KEY);
+        if (!os.storageToken && raw) os.storageToken = await ZEN.decrypt(JSON.parse(raw), pair);
+      } catch (_) { }
       renderFiles();
     }
     function closeFiles() {
@@ -4861,11 +4865,14 @@ print("Welcome to ZenOS!")
       document.body.classList.remove('files-mode');
       document.getElementById('nav-files')?.classList.remove('active');
     }
-    function filesToken() {
+    async function filesToken() {
       const t = prompt('Delay relay token (admin token or delay-api-… key):', os.storageToken || '');
       if (t === null) return;
       os.storageToken = t.trim() || null;
-      try { localStorage.setItem(FILES_TOKEN_KEY, os.storageToken || ''); } catch (_) { }
+      try {
+        if (os.storageToken) localStorage.setItem(FILES_TOKEN_KEY, JSON.stringify(await ZEN.encrypt(os.storageToken, pair)));
+        else localStorage.removeItem(FILES_TOKEN_KEY);
+      } catch (_) { }
       renderFiles();
     }
     async function renderFiles() {
