@@ -2176,6 +2176,12 @@
       }
     }
 
+    /* ── Files view (IPFS via Delay relay) reuses the bookmarks layout ── */
+    body.files-mode #files-pane { display: flex; }
+    body.files-mode .note-list-pane,
+    body.files-mode .editor-pane { display: none !important; }
+    .file-item small { display: block; color: var(--text-muted); }
+
     /* ── Tasks & Kanban view (encrypted, ~pub/tasks) ── */
     .tasks-pane {
       flex: 1;
@@ -2747,6 +2753,12 @@
           <span class="nav-count" id="count-bookmarks">0</span>
         </a>
 
+        <a class="nav-item" id="nav-files" onclick="openFiles()">
+          <span class="nav-icon"><i class="ti ti-files"></i></span>
+          <span class="nav-text">Files</span>
+          <span class="nav-count" id="count-files">0</span>
+        </a>
+
         <a class="nav-item" id="nav-tasks" onclick="openTasks()">
           <span class="nav-icon"><i class="ti ti-layout-kanban"></i></span>
           <span class="nav-text">Tasks</span>
@@ -2899,6 +2911,19 @@
           <input type="file" id="bm-file" accept=".html,text/html" class="hidden" onchange="bmImport(this)">
         </div>
         <div class="bm-items" id="bm-items"></div>
+      </div>
+    </section>
+
+    <!-- Files pane: IPFS storage through a Delay relay (plain ZEN relays have none) -->
+    <section class="bm-pane" id="files-pane">
+      <div class="bm-main">
+        <div class="bm-bar">
+          <span id="files-status" style="flex:1;font-size:13px;color:var(--text-muted)"></span>
+          <button class="cal-btn" onclick="filesToken()" title="Delay admin token or API key"><i class="ti ti-key"></i> Token</button>
+          <button class="cal-btn primary" onclick="document.getElementById('files-input').click()"><i class="ti ti-upload"></i> Upload</button>
+          <input type="file" id="files-input" class="hidden" onchange="filesUpload(this)">
+        </div>
+        <div class="bm-items" id="files-items"></div>
       </div>
     </section>
 
@@ -4066,7 +4091,7 @@ print("Welcome to ZenOS!")
     function setFilter(filter) {
       closeCalendar();
       closeBlog();
-      closeBookmarks();
+      closeBookmarks(); closeFiles();
       closeTasks();
       currentFilter = filter;
       triggerRender();
@@ -4321,7 +4346,7 @@ print("Welcome to ZenOS!")
     }
 
     function openCalendar() {
-      closeBlog(); closeBookmarks(); closeTasks();
+      closeBlog(); closeBookmarks(); closeFiles(); closeTasks();
       calMode = true;
       document.body.classList.add('cal-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -4436,7 +4461,7 @@ print("Welcome to ZenOS!")
     }
     function unlinkNoteFromModal(soul) { evLinks = evLinks.filter(l => !(l.kind === 'note' && l.soul === soul)); renderEvLinks(); }
     function openLinkedNote(soul) {
-      closeEventModal(); if (typeof closeTaskModal === 'function') closeTaskModal(); closeCalendar(); closeBlog(); closeBookmarks(); if (typeof closeTasks === 'function') closeTasks(); selectNote(soul);
+      closeEventModal(); if (typeof closeTaskModal === 'function') closeTaskModal(); closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); if (typeof closeTasks === 'function') closeTasks(); selectNote(soul);
     }
     // events & tasks linked to the open note, shown under its title; click one to open it
     function renderNoteEvents() {
@@ -4542,7 +4567,7 @@ print("Welcome to ZenOS!")
       });
     }
     function openBlog() {
-      closeCalendar(); closeBookmarks(); closeTasks();
+      closeCalendar(); closeBookmarks(); closeFiles(); closeTasks();
       blogMode = true;
       document.body.classList.add('blog-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -4699,7 +4724,7 @@ print("Welcome to ZenOS!")
     function bmScheduleRender() { clearTimeout(bmTimer); bmTimer = setTimeout(renderBookmarks, 150); }
 
     function openBookmarks() {
-      closeCalendar(); closeBlog(); closeTasks();
+      closeCalendar(); closeBlog(); closeTasks(); closeFiles();
       bmMode = true;
       document.body.classList.add('bm-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -4816,6 +4841,69 @@ print("Welcome to ZenOS!")
         showToast('Delete failed: ' + err.message);
       }
     }
+    // Files — encrypted IPFS uploads through a Delay relay; index at ~pub/files (see ZenOS.uploadFile)
+    let filesMode = false;
+    const FILES_TOKEN_KEY = 'zenStorageToken';
+    const humanSize = (n) => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+
+    function openFiles() {
+      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles();
+      filesMode = true;
+      document.body.classList.add('files-mode');
+      document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
+      document.getElementById('nav-files').classList.add('active');
+      if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('open')) toggleSidebar();
+      try { os.storageToken = os.storageToken || localStorage.getItem(FILES_TOKEN_KEY); } catch (_) { }
+      renderFiles();
+    }
+    function closeFiles() {
+      filesMode = false;
+      document.body.classList.remove('files-mode');
+      document.getElementById('nav-files')?.classList.remove('active');
+    }
+    function filesToken() {
+      const t = prompt('Delay relay token (admin token or delay-api-… key):', os.storageToken || '');
+      if (t === null) return;
+      os.storageToken = t.trim() || null;
+      try { localStorage.setItem(FILES_TOKEN_KEY, os.storageToken || ''); } catch (_) { }
+      renderFiles();
+    }
+    async function renderFiles() {
+      const status = document.getElementById('files-status'), items = document.getElementById('files-items');
+      status.textContent = 'Checking relay…';
+      try { await os.delayRelay(); } catch (e) {
+        status.textContent = '';
+        items.innerHTML = '<div class="blog-empty">' + escapeHtml(e.message) + '</div>';
+        return;
+      }
+      status.textContent = os.storageToken ? 'Delay relay connected' : 'Delay relay connected — set a token to upload';
+      const files = await os.listFiles();
+      document.getElementById('count-files').textContent = files.length;
+      items.innerHTML = files.length ? files.map(f => `<div class="bm-item file-item"><div style="flex:1;min-width:0"><b>${escapeHtml(f.name)}</b><small>${humanSize(f.size)} · ${new Date(f.addedAt).toLocaleString()}${f.encrypted ? ' · encrypted' : ''}</small></div>
+          <button class="bm-del" title="Download" onclick="filesDownload('${escapeHtml(f.cid)}','${encodeURIComponent(f.name)}')"><i class="ti ti-download"></i></button></div>`).join('') : '<div class="blog-empty">No files yet. Use Upload.</div>';
+    }
+    async function filesUpload(input) {
+      const file = input.files[0]; input.value = '';
+      if (!file) return;
+      if (!os.storageToken) return showToast('Set the relay token first');
+      showToast('Encrypting & uploading…');
+      try {
+        await os.uploadFile(new Uint8Array(await file.arrayBuffer()), file.name);
+        showToast('Uploaded ' + file.name);
+      } catch (e) { return showToast(e.message); }
+      renderFiles();
+    }
+    async function filesDownload(cid, name) {
+      try {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([await os.downloadFile(cid)]));
+        a.download = decodeURIComponent(name);
+        a.click();
+        URL.revokeObjectURL(a.href);
+      } catch (e) { showToast(e.message); }
+    }
+    Object.assign(window, { openFiles, filesToken, filesUpload, filesDownload });
+
     Object.assign(window, { openBookmarks, bmSearch, bmPickFolder, bmAdd, bmImport, bmDelete, bmEdit, bmRenameFolder, bmExport });
 
     // ═══════════════════════════════════════════════════════════════
@@ -4857,7 +4945,7 @@ print("Welcome to ZenOS!")
     }
 
     function openTasks() {
-      closeCalendar(); closeBlog(); closeBookmarks();
+      closeCalendar(); closeBlog(); closeBookmarks(); closeFiles();
       tasksMode = true;
       document.body.classList.add('tasks-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
