@@ -2045,7 +2045,7 @@
       color: var(--text-primary);
     }
 
-    body.bm-mode .bm-pane {
+    body.bm-mode #bm-pane {
       display: flex;
     }
 
@@ -2905,6 +2905,7 @@
           <button data-v="week" onclick="calSetView('week')">Week</button>
           <button data-v="day" onclick="calSetView('day')">Day</button>
         </div>
+        <button class="cal-btn" onclick="loadDemo('calendar')" title="Add a few example entries (safe to click twice)"><i class="ti ti-sparkles"></i> Examples</button>
         <button class="cal-btn primary" onclick="calNewEvent()"><i class="ti ti-plus"></i> Event</button>
       </header>
       <div class="cal-body" id="cal-body"></div>
@@ -2932,6 +2933,7 @@
           <input type="search" id="bm-search" placeholder="Search bookmarks" oninput="bmSearch(this.value)">
           <button class="cal-btn hidden" id="bm-rename" onclick="bmRenameFolder()"><i class="ti ti-folder"></i> Rename
             folder</button>
+<button class="cal-btn" onclick="loadDemo('bookmarks')" title="Add a few example entries (safe to click twice)"><i class="ti ti-sparkles"></i> Examples</button>
           <button class="cal-btn" onclick="bmAdd()"><i class="ti ti-plus"></i> Add</button>
           <button class="cal-btn" id="bm-export" onclick="bmExport()"
             title="Download as a browser-importable HTML file"><i class="ti ti-download"></i> Export</button>
@@ -2948,6 +2950,7 @@
       <div class="bm-main">
         <div class="bm-bar">
           <input type="search" id="ct-search" placeholder="Search contacts" oninput="ctSearch(this.value)">
+<button class="cal-btn" onclick="loadDemo('contacts')" title="Add a few example entries (safe to click twice)"><i class="ti ti-sparkles"></i> Examples</button>
           <button class="cal-btn" onclick="ctEdit()"><i class="ti ti-plus"></i> Add</button>
           <button class="cal-btn" onclick="ctExport()" title="Download as a .vcf file"><i class="ti ti-download"></i> Export</button>
           <button class="cal-btn primary" onclick="document.getElementById('ct-file').click()"><i class="ti ti-upload"></i> Import</button>
@@ -2965,6 +2968,7 @@
           <select id="sec-kind" onchange="secKind(this.value)">
             <option value="">All</option><option value="password">Passwords</option><option value="api">API keys</option><option value="note">Notes</option>
           </select>
+<button class="cal-btn" onclick="loadDemo('secrets')" title="Add a few example entries (safe to click twice)"><i class="ti ti-sparkles"></i> Examples</button>
           <button class="cal-btn primary" onclick="secEdit()"><i class="ti ti-plus"></i> Add</button>
         </div>
         <div class="bm-items" id="sec-items"></div>
@@ -2997,6 +3001,7 @@
           <option value="medium">Medium</option>
           <option value="low">Low</option>
         </select>
+        <button class="cal-btn" onclick="loadDemo('tasks')" title="Add a few example entries (safe to click twice)"><i class="ti ti-sparkles"></i> Examples</button>
         <button class="cal-btn primary" onclick="taskNew()"><i class="ti ti-plus"></i> New Task</button>
       </div>
       <div class="tasks-board" id="tasks-board">
@@ -3945,6 +3950,58 @@
       textarea.setRangeText(replacement, start, end, 'end');
       handleBodyInput(textarea.value);
     }
+
+    // ── Example entries per category (the "Examples" buttons) ──
+    // Fixed souls, so clicking twice updates the same entries instead of duplicating them.
+    // Everything is fake: historic names with example.com addresses, obviously non-working credentials.
+    // The blog is left out on purpose: posts are public.
+    const DAY = 864e5, at = (days, h = 10) => { const d = new Date(Date.now() + days * DAY); d.setHours(h, 0, 0, 0); return d.getTime(); };
+    const DEMO = {
+      contacts: () => [
+        { soul: 'demo-ct-1', name: 'Ada Lovelace', emails: ['ada@example.com'], phones: ['+44 20 7946 0001'], org: 'Analytical Engines Ltd', tags: ['work', 'math'], notes: 'Example contact. Met at the maths meetup.' },
+        { soul: 'demo-ct-2', name: 'Grace Hopper', emails: ['grace@example.com'], phones: ['+1 202 555 0142'], org: 'Navy Compiler Lab', tags: ['work'], notes: 'Example contact. Ask about the COBOL migration.' },
+        { soul: 'demo-ct-3', name: 'Alan Turing', emails: ['alan@example.com'], org: 'Bletchley Consulting', tags: ['friends'], notes: 'Example contact. Chess on Fridays.' },
+        { soul: 'demo-ct-4', name: 'Mamma', phones: ['+39 06 555 0100'], tags: ['family'], notes: 'Example contact. Sunday lunch.' },
+        { soul: 'demo-ct-5', name: 'ACME Support', emails: ['support@example.com'], phones: ['+1 800 555 0199'], org: 'ACME Corp', tags: ['services'], notes: 'Example contact. Ticket prefix ACME-.' }
+      ].map(c => os.writeContact(c)),
+      secrets: () => [
+        { soul: 'demo-sc-1', name: 'GitHub', kind: 'password', username: 'ada@example.com', secret: 'demo-password-not-real', url: 'https://github.com/login', tags: ['dev'], notes: 'Example entry. Delete me.' },
+        { soul: 'demo-sc-2', name: 'Cloud provider API key', kind: 'api', username: 'ci-bot', secret: 'DEMO-API-KEY-not-a-real-key', url: 'https://console.example.com/keys', tags: ['dev', 'prod'], notes: 'Example entry. Rotate every 90 days.' },
+        { soul: 'demo-sc-3', name: 'Home Wi-Fi', kind: 'password', username: 'HomeNet', secret: 'demo-wifi-not-real', tags: ['home'], notes: 'Example entry. Router admin at 192.168.1.1.' },
+        { soul: 'demo-sc-4', name: 'Server SSH recovery', kind: 'note', secret: 'Example note: where the recovery codes are kept (safe, second shelf).', tags: ['infra'], notes: 'Secure notes work for any text you want encrypted.' },
+        { soul: 'demo-sc-5', name: 'Newsletter service', kind: 'password', username: 'ada', secret: 'demo-news-not-real', url: 'https://news.example.com', tags: ['personal'] }
+      ].map(x => os.writeSecret(x)),
+      bookmarks: () => [
+        { url: 'https://developer.mozilla.org/', title: 'MDN Web Docs', folder: 'Dev/Docs', tags: ['reference'] },
+        { url: 'https://github.com/scobru/zenos', title: 'ZenOS on GitHub', folder: 'Dev/Projects', tags: ['zenos'] },
+        { url: 'https://news.ycombinator.com/', title: 'Hacker News', folder: 'News', tags: ['daily'] },
+        { url: 'https://www.seriouseats.com/', title: 'Serious Eats', folder: 'Home/Recipes', tags: ['cooking'] },
+        { url: 'https://www.openstreetmap.org/', title: 'OpenStreetMap', folder: 'Travel', tags: ['maps'] },
+        { url: 'https://www.khanacademy.org/', title: 'Khan Academy', folder: 'Learning', tags: ['courses'] }
+      ].map(b => os.writeBookmark(b)),
+      tasks: () => [
+        { soul: 'demo-task-1', title: 'Plan the week', status: 'todo', priority: 'medium', dueDate: at(1), tags: ['personal'], desc: 'Example task. Pick three things that matter.' },
+        { soul: 'demo-task-2', title: 'Ship the landing page', status: 'in_progress', priority: 'high', dueDate: at(3), tags: ['work'], desc: 'Example task. Copy is done, needs screenshots.' },
+        { soul: 'demo-task-3', title: 'Renew the domain', status: 'blocked', priority: 'urgent', dueDate: at(2), tags: ['admin'], desc: 'Example task. Waiting for the invoice.' },
+        { soul: 'demo-task-4', title: 'Back up the vault', status: 'done', priority: 'low', tags: ['dev'], desc: 'Example task. Export done.' },
+        { soul: 'demo-task-5', title: 'Book the dentist', status: 'todo', priority: 'low', dueDate: at(7), tags: ['health'] }
+      ].map(t => os.writeTask(t)),
+      calendar: () => [
+        { soul: 'demo-cal-1', title: 'Team standup', start: at(1, 9), end: at(1, 9) + 15 * 60e3, notes: 'Example event.' },
+        { soul: 'demo-cal-2', title: 'Dentist', start: at(3, 15), end: at(3, 16), location: 'Via Roma 1', notes: 'Example event.' },
+        { soul: 'demo-cal-3', title: 'Lunch with Grace', start: at(5, 13), end: at(5, 14), location: 'Trattoria da Mario', notes: 'Example event.' },
+        { soul: 'demo-cal-4', title: 'Release day', start: at(10, 0), allDay: true, notes: 'Example event.' }
+      ].map(e => os.writeCalendarEvent(e))
+    };
+    async function loadDemo(kind) {
+      if (!isAuthenticated || !DEMO[kind]) return;
+      try {
+        const r = await Promise.allSettled(DEMO[kind]());
+        const failed = r.filter(x => x.status === 'rejected');
+        showToast(failed.length ? 'Some examples failed: ' + failed[0].reason.message : 'Example ' + kind + ' added');
+      } catch (e) { showToast(e.message); }
+    }
+    window.loadDemo = loadDemo;
 
     // ── Bear Demo / Sample Notes ──
     async function loadBearDemoNotes() {
