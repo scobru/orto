@@ -22,6 +22,8 @@ Out of the box ZenOS connects to:
 > - **smollog** (`~{pub}/posts`): plaintext Markdown (they are public by design).
 > - Metadata: public keys, timestamps, graph paths, IP addresses of connecting clients.
 >
+> - **Files**: only **Delay** relays offer IPFS file storage (`file-upload`, Files pane); plain ZEN relays such as `zen.akao.io` do not. Upload also needs that relay's admin token or API key (`ZENOS_STORAGE_TOKEN`), so on someone else's relay you need a key from its operator.
+>
 > For production use, sensitive workloads or full sovereignty, **run your own relay** (below) and point ZenOS to it.
 
 ---

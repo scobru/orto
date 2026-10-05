@@ -181,6 +181,19 @@ node cli.js relays --relay "wss://relay.example.com/zen"
 Env alternative: `ZENOS_RELAYS="wss://a/zen,wss://b/zen"` and `ZENOS_ONLY_CUSTOM_RELAYS=true`.
 URLs without a path get `/zen` appended. See [RELAYS.md](RELAYS.md) for self-hosting.
 
+### 9. Files — IPFS storage via a Delay relay
+Needs a [Delay](https://github.com/scobru/delay) relay (plain ZEN relays have no IPFS; ZenOS probes `GET /api/v1/system/health` and errors if none of the relays is Delay) and that relay's admin token or `delay-api-*` key (`--token` or `ZENOS_STORAGE_TOKEN`). Ask the user for the token; never guess it.
+```bash
+# Upload (encrypted client-side by default; --plain to skip)
+node cli.js file-upload --file ./photo.png --relay "wss://relay.example.com/zen" [--token <t>] [--plain]
+
+# List uploaded files (decrypted index at ~{pub}/files)
+node cli.js file-list
+
+# Download by CID (decrypts when the index says it was encrypted)
+node cli.js file-download --cid <cid> --out ./photo.png
+```
+
 ---
 
 ## 💻 Programmatic Usage via JavaScript SDK
@@ -222,7 +235,14 @@ await os.deleteBlogPost(post.id);
 await os.registerAlias("scobru");
 const pub = await os.resolveAlias("scobru");
 
-// 5. Custom relays
+// 5. Files (needs a Delay relay + token; encrypted by default)
+const stored = new ZenOS({ storageToken: process.env.ZENOS_STORAGE_TOKEN });
+await stored.login(username, password);
+const f = await stored.uploadFile(new Uint8Array(bytes), 'photo.png');   // { cid, name, size, encrypted, addedAt }
+const files = await stored.listFiles();
+const data = await stored.downloadFile(f.cid);                            // Uint8Array
+
+// 6. Custom relays
 const custom = new ZenOS({ extraPeers: ["wss://relay.example.com/zen"] });              // defaults + custom
 const onlyOwn = new ZenOS({ extraPeers: ["wss://relay.example.com/zen"], useDefaultRelays: false });
 ```

@@ -253,13 +253,43 @@ const pubKey = await os.resolveAlias(aliasName);
 
 ---
 
-## 9. CLI Universal Command Reference
+## 9. Node Specification: Files (IPFS via Delay relay)
+
+### Requirements
+- At least one configured relay must be a **Delay** relay (https://github.com/scobru/delay). Plain ZEN relays have no IPFS. `detectDelayRelay(relay)` / `os.delayRelay()` probe `GET <origin>/api/v1/system/health` (`{ success:true, message:"Delay is running" }`); `ZenOS` uses the first Delay relay and throws if none.
+- Upload needs the relay's admin token or `delay-api-*` key: `new ZenOS({ storageToken })` or env `ZENOS_STORAGE_TOKEN` (CLI `--token`). Ask the user; do not guess.
+
+### Path
+`~{pub}/files/<cid>` — encrypted index entry `{ data: ZEN.encrypt(meta, pair), updatedAt, encrypted:true }`.
+
+### Meta Schema (Encrypted Payload)
+```json
+{ "cid": "Qm...", "name": "photo.png", "size": 12345, "encrypted": true, "addedAt": 1759672800000 }
+```
+
+### Wire format
+Upload: `POST <delay>/api/v1/ipfs/upload` (multipart `file`, `Authorization: Bearer <token>`). Encrypted files are `JSON.stringify(ZEN.encrypt(base64(bytes), pair))` uploaded as `<name>.enc` (~1.4x size). Download: `GET <delay>/api/v1/ipfs/cat/<cid>` (public).
+
+### SDK Methods
+- `os.uploadFile(bytes, name, { encrypt = true })` → meta
+- `os.listFiles(timeoutMs)` → meta[] newest first
+- `os.downloadFile(cid, { encrypted })` → `Uint8Array` (decrypts using the index unless `encrypted` is given)
+- `os.delayRelay()` → HTTP base URL of the Delay relay
+
+---
+
+## 10. CLI Universal Command Reference
 
 All CLI commands support automatic `.env` loading and flags:
 
 ```bash
 # Identity & Migration
 node cli.js identity [--user <user> --pass <pass>]
+
+# Files (Delay relay + ZENOS_STORAGE_TOKEN / --token)
+node cli.js file-upload   --file <path> [--plain]
+node cli.js file-list
+node cli.js file-download --cid <cid> --out <path>
 node cli.js migrate  [--user <user> --pass <pass>]
 node cli.js relays   [--relay <url>]
 
@@ -308,7 +338,7 @@ node cli.js blog-alias   --alias <alias>
 
 ---
 
-## 10. Full Autonomous Agent Pipeline Example
+## 11. Full Autonomous Agent Pipeline Example
 
 ```javascript
 import ZenOS from './zenos.js';
@@ -353,7 +383,7 @@ async function runAutonomousWorkflow() {
 
 ---
 
-## 11. Best Practices for Agents
+## 12. Best Practices for Agents
 
 1. **Always use `{ authenticator: pair }` on `.put()`**: The P2P relay requires cryptographic proof of authority to modify any child of `~pair.pub`.
 2. **Local snapshot cache**: In Node.js, `ZenOS` automatically maintains a persistent encrypted snapshot at `~/.zenos/cache.json`, enabling warm reads in <350ms.

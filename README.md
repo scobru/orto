@@ -8,6 +8,7 @@ ZenOS reimagines personal computing in the decentralized AI era. Instead of silo
 - 🔒 **Private Knowledge Base**: End-to-end AES-GCM encrypted notes (Vault: `~{pub}/vault`)
 - 📅 **Calendar**: E2EE event scheduling, agenda, and bidirectional note linking (`~{pub}/calendar`)
 - 🔖 **Bookmarks**: Private encrypted web library with browser Netscape HTML import/export (`~{pub}/bookmarks`)
+- 📁 **File Storage**: Encrypted files on IPFS through a Delay relay (`~{pub}/files` index)
 - 🪶 **Public Publishing**: Verifiable, signed decentralized blog ([smollog](https://github.com/scobru/smollog): `~{pub}/posts`)
 - 🤖 **Autonomous AI Agent Ready**: Autonomous LLMs and agents can read, write, and orchestrate across your apps with zero configuration
 - 🌐 **100% Serverless & P2P**: No SQL, no servers, no vendor lock-in. Powered by GunDB/ZEN relays
@@ -76,7 +77,12 @@ ZenOS reimagines personal computing in the decentralized AI era. Instead of silo
 - **Security**: Client-side AES-GCM-256 encryption.
 - **Data Model**: Task title, status (`todo`, `in_progress`, `done`, `blocked`), priority (`low`, `medium`, `high`, `urgent`), markdown descriptions, due dates, tags, assignees, custom kanban columns, and bidirectional links to Vault notes, calendar events, bookmarks or other tasks.
 
-### 6. Future Nodes
+### 6. Files (`~{pub}/files`)
+- **Status**: Live (needs a Delay relay + token)
+- **Security**: File bytes AES-GCM encrypted client-side by default; encrypted index entry per CID.
+- **Data Model**: `{ cid, name, size, encrypted, addedAt }`; content lives on IPFS behind the Delay relay.
+
+### 7. Future Nodes
 - 📬 **P2P Inbox (`~{pub}/inbox`)**: Direct asymmetric encrypted agent-to-agent messaging.
 - 🔑 **Secrets & Keyring (`~{pub}/secrets`)**: E2EE API keys, passwords and credentials vault.
 - 🤖 **Agents Registry (`~{pub}/agents`)**: Delegation of scoped PEN certificates and permissions.
@@ -178,11 +184,6 @@ const own = new ZenOS({ extraPeers: ['ws://localhost:8420/zen'], useDefaultRelay
 
 Full guide (custom relays + self-hosting with `zen` or `shogun-relay`): **[RELAYS.md](file:///d:/shogun-2/zenOS/RELAYS.md)**.
 
----
-
-## 📜 License
-MIT License.
-
 ## File storage (Delay relay + IPFS)
 
 Files go to IPFS through a [Delay](https://github.com/scobru/delay) relay. Plain ZEN relays have no IPFS, so ZenOS probes each relay (`GET /api/v1/system/health`) and uses the first Delay one; it errors if none is configured. Upload needs the relay's admin token or `delay-api-*` key, passed as `--token` / `storageToken` or `ZENOS_STORAGE_TOKEN`.
@@ -195,3 +196,8 @@ node cli.js file-download --cid <cid> --out ./photo.png
 ```
 
 SDK: `os.uploadFile(bytes, name, { encrypt })`, `os.listFiles()`, `os.downloadFile(cid)`. Encrypted files are base64'd before AES-GCM, so they are ~1.4x bigger on IPFS; an encrypted index lives at `~pub/files/<cid>`.
+
+---
+
+## 📜 License
+MIT License.
