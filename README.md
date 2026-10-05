@@ -11,6 +11,7 @@ ZenOS Web runs 100% serverless inside the browser with zero build steps and zero
 All applications within ZenOS are anchored under the user's sovereign cryptographic master keypair (`~{pub}`):
 
 - 🔒 **Vault (`~{pub}/vault`)**: Zero-knowledge, Bear-style Markdown notes with client-side AES-GCM-256 encryption. Relays only see blind ciphertexts.
+- 📋 **Tasks & Kanban (`~{pub}/tasks`)**: End-to-end encrypted Kanban board with drag-and-drop columns (To Do, In Progress, Blocked, Done), priority badges, due dates, tags, and bidirectional linking to Vault notes.
 - 📅 **Calendar (`~{pub}/calendar`)**: Sovereign decentralized calendar with event scheduling, agenda views, and bidirectional linking to Vault notes.
 - 🔖 **Bookmarks (`~{pub}/bookmarks`)**: Private encrypted bookmark manager with browser Netscape HTML import and export.
 - 🪶 **Blog / smollog (`~{pub}/posts`)**: Public, cryptographically signed microblog and article publisher.
