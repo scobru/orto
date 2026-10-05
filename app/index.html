@@ -2176,6 +2176,18 @@
       }
     }
 
+    /* ── Contacts and Secrets views reuse the bookmarks layout ── */
+    body.contacts-mode #contacts-pane,
+    body.secrets-mode #secrets-pane { display: flex; }
+    body.contacts-mode .note-list-pane, body.contacts-mode .editor-pane,
+    body.secrets-mode .note-list-pane, body.secrets-mode .editor-pane { display: none !important; }
+    .cal-modal input[type=password], .cal-modal select {
+      width: 100%; box-sizing: border-box; background: var(--input-bg); color: var(--text-primary);
+      border: 1px solid var(--border-color); border-radius: 7px; padding: 8px 10px; font: inherit; font-size: 14px;
+    }
+    .bm-bar select { background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 7px; padding: 7px 10px; font: inherit; font-size: 14px; }
+    .sec-val { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--text-secondary); max-width: 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
     /* ── Files view (IPFS via Delay relay) reuses the bookmarks layout ── */
     body.files-mode #files-pane { display: flex; }
     body.files-mode .note-list-pane,
@@ -2754,6 +2766,18 @@
           <span class="nav-count" id="count-bookmarks">0</span>
         </a>
 
+        <a class="nav-item" id="nav-contacts" onclick="openContacts()">
+          <span class="nav-icon"><i class="ti ti-address-book"></i></span>
+          <span class="nav-text">Contacts</span>
+          <span class="nav-count" id="count-contacts">0</span>
+        </a>
+
+        <a class="nav-item" id="nav-secrets" onclick="openSecrets()">
+          <span class="nav-icon"><i class="ti ti-shield-lock"></i></span>
+          <span class="nav-text">Secrets</span>
+          <span class="nav-count" id="count-secrets">0</span>
+        </a>
+
         <a class="nav-item" id="nav-files" onclick="openFiles()">
           <span class="nav-icon"><i class="ti ti-files"></i></span>
           <span class="nav-text">Files</span>
@@ -2916,6 +2940,34 @@
           <input type="file" id="bm-file" accept=".html,text/html" class="hidden" onchange="bmImport(this)">
         </div>
         <div class="bm-items" id="bm-items"></div>
+      </div>
+    </section>
+
+    <!-- Contacts pane: encrypted address book at ~pub/contacts, vCard import/export -->
+    <section class="bm-pane" id="contacts-pane">
+      <div class="bm-main">
+        <div class="bm-bar">
+          <input type="search" id="ct-search" placeholder="Search contacts" oninput="ctSearch(this.value)">
+          <button class="cal-btn" onclick="ctEdit()"><i class="ti ti-plus"></i> Add</button>
+          <button class="cal-btn" onclick="ctExport()" title="Download as a .vcf file"><i class="ti ti-download"></i> Export</button>
+          <button class="cal-btn primary" onclick="document.getElementById('ct-file').click()"><i class="ti ti-upload"></i> Import</button>
+          <input type="file" id="ct-file" accept=".vcf,text/vcard,text/x-vcard" class="hidden" onchange="ctImport(this)">
+        </div>
+        <div class="bm-items" id="ct-items"></div>
+      </div>
+    </section>
+
+    <!-- Secrets pane: encrypted passwords, API keys and notes at ~pub/secrets -->
+    <section class="bm-pane" id="secrets-pane">
+      <div class="bm-main">
+        <div class="bm-bar">
+          <input type="search" id="sec-search" placeholder="Search secrets (name, user, url, tag)" oninput="secSearch(this.value)">
+          <select id="sec-kind" onchange="secKind(this.value)">
+            <option value="">All</option><option value="password">Passwords</option><option value="api">API keys</option><option value="note">Notes</option>
+          </select>
+          <button class="cal-btn primary" onclick="secEdit()"><i class="ti ti-plus"></i> Add</button>
+        </div>
+        <div class="bm-items" id="sec-items"></div>
       </div>
     </section>
 
@@ -3111,7 +3163,7 @@
 
   <!-- P2P and Encryption Module -->
   <script type="module">
-    import { ZenOS, normalizeRelay } from './zenos.js';
+    import { ZenOS, normalizeRelay, contactsToVcf, generatePassword } from './zenos.js';
     import ZEN from './zen.min.js';
     import { deriveMasterPair } from './identity.js';
 
@@ -3251,6 +3303,8 @@
         loadCalendar();
         loadBlog();
         loadBookmarks();
+        loadContacts();
+        loadSecrets();
         loadTasks();
         os.migrateLegacy().then(r => {
           if (r && r.migrated > 0) showToast('Migrated ' + r.migrated + ' items from your previous identity');
@@ -4115,7 +4169,7 @@ print("Welcome to ZenOS!")
     function setFilter(filter) {
       closeCalendar();
       closeBlog();
-      closeBookmarks(); closeFiles();
+      closeBookmarks(); closeFiles(); closeContacts(); closeSecrets();
       closeTasks();
       currentFilter = filter;
       triggerRender();
@@ -4370,7 +4424,7 @@ print("Welcome to ZenOS!")
     }
 
     function openCalendar() {
-      closeBlog(); closeBookmarks(); closeFiles(); closeTasks();
+      closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeTasks();
       calMode = true;
       document.body.classList.add('cal-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -4485,7 +4539,7 @@ print("Welcome to ZenOS!")
     }
     function unlinkNoteFromModal(soul) { evLinks = evLinks.filter(l => !(l.kind === 'note' && l.soul === soul)); renderEvLinks(); }
     function openLinkedNote(soul) {
-      closeEventModal(); if (typeof closeTaskModal === 'function') closeTaskModal(); closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); if (typeof closeTasks === 'function') closeTasks(); selectNote(soul);
+      closeEventModal(); if (typeof closeTaskModal === 'function') closeTaskModal(); closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); if (typeof closeTasks === 'function') closeTasks(); selectNote(soul);
     }
     // events & tasks linked to the open note, shown under its title; click one to open it
     function renderNoteEvents() {
@@ -4591,7 +4645,7 @@ print("Welcome to ZenOS!")
       });
     }
     function openBlog() {
-      closeCalendar(); closeBookmarks(); closeFiles(); closeTasks();
+      closeCalendar(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeTasks();
       blogMode = true;
       document.body.classList.add('blog-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -4780,7 +4834,7 @@ print("Welcome to ZenOS!")
     function bmScheduleRender() { clearTimeout(bmTimer); bmTimer = setTimeout(renderBookmarks, 150); }
 
     function openBookmarks() {
-      closeCalendar(); closeBlog(); closeTasks(); closeFiles();
+      closeCalendar(); closeBlog(); closeTasks(); closeFiles(); closeContacts(); closeSecrets();
       bmMode = true;
       document.body.classList.add('bm-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -4897,13 +4951,169 @@ print("Welcome to ZenOS!")
         showToast('Delete failed: ' + err.message);
       }
     }
+    // ═══════════════════════════════════════════════════════════════
+    // Contacts (~pub/contacts) and Secrets (~pub/secrets): whole records encrypted, see ZenOS.writeContact / writeSecret
+    // ═══════════════════════════════════════════════════════════════
+    const contacts = {}, secrets = {};
+    let contactsMode = false, secretsMode = false, ctQuery = [], secQuery = [], secKindFilter = '';
+    const secShown = new Set();   // souls whose value is revealed; cleared whenever the pane closes
+    const lines = (v) => String(v || '').split(',').map(x => x.trim()).filter(Boolean);
+    const actBtn = (act, soul, icon, title) => `<button class="bm-del" title="${title}" data-act="${act}" data-soul="${escapeHtml(soul)}"><i class="ti ti-${icon}"></i></button>`;
+    // one delegated handler per pane, so souls never get spliced into inline JS
+    const wire = (id, handlers) => document.getElementById(id).addEventListener('click', (e) => {
+      const b = e.target.closest('[data-act]'); if (b && handlers[b.dataset.act]) handlers[b.dataset.act](b.dataset.soul);
+    });
+    function openPane(mode, navId, render) {
+      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets();
+      document.body.classList.add(mode);
+      document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
+      document.getElementById(navId).classList.add('active');
+      if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('open')) toggleSidebar();
+      render();
+    }
+    function modal(html) {
+      document.getElementById('cal-modal-bg')?.remove();
+      const bg = document.createElement('div');
+      bg.className = 'cal-modal-bg'; bg.id = 'cal-modal-bg';
+      bg.onclick = (e) => { if (e.target === bg) bg.remove(); };
+      bg.innerHTML = `<div class="cal-modal">${html}</div>`;
+      document.body.appendChild(bg);
+      return bg;
+    }
+    const field = (id) => document.getElementById(id).value.trim();
+
+    function loadContacts() {
+      os.onContact((c, soul, deleted) => {
+        syncBump();
+        if (deleted) delete contacts[soul]; else contacts[soul] = c;
+        document.getElementById('count-contacts').textContent = Object.keys(contacts).length;
+        if (contactsMode) renderContacts();
+      });
+    }
+    function openContacts() { openPane('contacts-mode', 'nav-contacts', renderContacts); contactsMode = true; }
+    function closeContacts() {
+      contactsMode = false;
+      document.body.classList.remove('contacts-mode');
+      document.getElementById('nav-contacts')?.classList.remove('active');
+    }
+    const ctSearch = (v) => { ctQuery = v.toLowerCase().split(/\s+/).filter(Boolean); renderContacts(); };
+    function renderContacts() {
+      const shown = Object.values(contacts)
+        .filter(c => { const hay = [c.name, c.org, c.notes, c.pub, ...(c.emails || []), ...(c.phones || []), ...(c.tags || [])].join(' ').toLowerCase(); return ctQuery.every(w => hay.includes(w)); })
+        .sort((a, b) => a.name.localeCompare(b.name));
+      document.getElementById('ct-items').innerHTML = shown.length ? shown.map(c => `<div class="bm-item"><div style="flex:1;min-width:0"><b>${escapeHtml(c.name)}</b>
+          <small>${[(c.emails || []).map(e => `<a href="mailto:${escapeHtml(e)}">${escapeHtml(e)}</a>`).join(', '), (c.phones || []).map(escapeHtml).join(', '), escapeHtml(c.org || '')].filter(Boolean).join(' · ')}${(c.tags || []).length ? ' · #' + c.tags.map(escapeHtml).join(' #') : ''}</small></div>
+          ${actBtn('edit', c.soul, 'pencil', 'Edit')}${actBtn('del', c.soul, 'trash', 'Delete')}</div>`).join('')
+        : ctQuery.length ? '<div class="blog-empty">No contacts match.</div>' : '<div class="blog-empty">No contacts yet.<br>Use Add, or Import a .vcf export (Google, Apple, Outlook).</div>';
+    }
+    function ctEdit(soul) {
+      const c = soul ? contacts[soul] : null;
+      const v = (k, d = '') => escapeHtml(c ? (Array.isArray(c[k]) ? c[k].join(', ') : (c[k] || d)) : d);
+      const bg = modal(`<label>Name<input type="text" id="ct-e-name" value="${v('name')}"></label>
+        <label>Emails (comma separated)<input type="text" id="ct-e-emails" value="${v('emails')}"></label>
+        <label>Phones (comma separated)<input type="text" id="ct-e-phones" value="${v('phones')}"></label>
+        <label>Organization<input type="text" id="ct-e-org" value="${v('org')}"></label>
+        <label>Tags (comma separated)<input type="text" id="ct-e-tags" value="${v('tags')}"></label>
+        <label>ZEN public key (optional, if they use ZenOS)<input type="text" id="ct-e-pub" value="${v('pub')}"></label>
+        <label>Notes<textarea id="ct-e-notes" rows="4">${v('notes')}</textarea></label>
+        <div class="cal-actions"><button class="cal-btn" id="ct-e-cancel">Cancel</button><button class="cal-btn primary" id="ct-e-save">Save</button></div>`);
+      document.getElementById('ct-e-cancel').onclick = () => bg.remove();
+      document.getElementById('ct-e-save').onclick = async () => {
+        if (!field('ct-e-name')) return showToast('Name is required');
+        try {
+          await os.writeContact({ soul: soul || null, addedAt: c ? c.addedAt : Date.now(), name: field('ct-e-name'), emails: lines(field('ct-e-emails')), phones: lines(field('ct-e-phones')), org: field('ct-e-org'), tags: lines(field('ct-e-tags')), pub: field('ct-e-pub'), notes: field('ct-e-notes') });
+          bg.remove(); showToast('Contact encrypted & saved');
+        } catch (e) { showToast(e.message); }
+      };
+      document.getElementById('ct-e-name').focus();
+    }
+    async function ctImport(input) {
+      const file = input.files[0]; input.value = '';
+      if (!file) return;
+      showToast('Encrypting contacts…');
+      const r = await os.importContactsVcf(await file.text());
+      showToast('Imported ' + r.imported + ' contacts' + (r.failed ? ' (' + r.failed + ' failed)' : ''));
+    }
+    function ctExport() {
+      const list = Object.values(contacts).sort((a, b) => a.name.localeCompare(b.name));
+      if (!list.length) return showToast('No contacts to export');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([contactsToVcf(list)], { type: 'text/vcard' }));
+      a.download = 'contacts.vcf'; a.click(); URL.revokeObjectURL(a.href);
+    }
+    wire('ct-items', {
+      edit: ctEdit,
+      del: async (soul) => { if (confirm('Delete this contact?')) { try { await os.deleteContact(soul); delete contacts[soul]; renderContacts(); } catch (e) { showToast(e.message); } } }
+    });
+
+    function loadSecrets() {
+      os.onSecret((x, soul, deleted) => {
+        syncBump();
+        if (deleted) delete secrets[soul]; else secrets[soul] = x;
+        document.getElementById('count-secrets').textContent = Object.keys(secrets).length;
+        if (secretsMode) renderSecrets();
+      });
+    }
+    function openSecrets() { openPane('secrets-mode', 'nav-secrets', renderSecrets); secretsMode = true; }
+    function closeSecrets() {
+      secretsMode = false; secShown.clear();
+      document.body.classList.remove('secrets-mode');
+      document.getElementById('nav-secrets')?.classList.remove('active');
+    }
+    const secSearch = (v) => { secQuery = v.toLowerCase().split(/\s+/).filter(Boolean); renderSecrets(); };
+    const secKind = (k) => { secKindFilter = k; renderSecrets(); };
+    function renderSecrets() {
+      const shown = Object.values(secrets)
+        .filter(x => !secKindFilter || x.kind === secKindFilter)
+        .filter(x => { const hay = [x.name, x.username, x.url, x.notes, ...(x.tags || [])].join(' ').toLowerCase(); return secQuery.every(w => hay.includes(w)); })
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const icon = { password: 'key', api: 'code', note: 'note' };
+      document.getElementById('sec-items').innerHTML = shown.length ? shown.map(x => `<div class="bm-item"><i class="ti ti-${icon[x.kind] || 'key'}" title="${escapeHtml(x.kind || '')}"></i>
+          <div style="flex:1;min-width:0"><b>${escapeHtml(x.name)}</b><small>${[escapeHtml(x.username || ''), escapeHtml(x.url || '')].filter(Boolean).join(' · ')}${(x.tags || []).length ? ' · #' + x.tags.map(escapeHtml).join(' #') : ''}</small></div>
+          <span class="sec-val">${secShown.has(x.soul) ? escapeHtml(x.secret) : '••••••••'}</span>
+          ${actBtn('show', x.soul, secShown.has(x.soul) ? 'eye-off' : 'eye', 'Show / hide')}${actBtn('copy', x.soul, 'copy', 'Copy value')}${actBtn('edit', x.soul, 'pencil', 'Edit')}${actBtn('del', x.soul, 'trash', 'Delete')}</div>`).join('')
+        : secQuery.length || secKindFilter ? '<div class="blog-empty">No secrets match.</div>' : '<div class="blog-empty">No secrets yet.<br>Passwords, API keys and notes are encrypted with your key before they leave the browser.</div>';
+    }
+    function secEdit(soul) {
+      const x = soul ? secrets[soul] : null;
+      const v = (k, d = '') => escapeHtml(x ? (Array.isArray(x[k]) ? x[k].join(', ') : (x[k] || d)) : d);
+      const bg = modal(`<label>Name<input type="text" id="sec-e-name" value="${v('name')}"></label>
+        <div class="row"><label>Type<select id="sec-e-kind">${['password', 'api', 'note'].map(k => `<option value="${k}"${x && x.kind === k ? ' selected' : ''}>${{ password: 'Password', api: 'API key', note: 'Secure note' }[k]}</option>`).join('')}</select></label>
+          <label>Username / account<input type="text" id="sec-e-user" value="${v('username')}" autocomplete="off"></label></div>
+        <label>Secret value<input type="password" id="sec-e-secret" value="${v('secret')}" autocomplete="new-password"></label>
+        <div class="row"><button class="cal-btn" id="sec-e-gen" type="button"><i class="ti ti-dice"></i> Generate</button><button class="cal-btn" id="sec-e-eye" type="button"><i class="ti ti-eye"></i> Show</button></div>
+        <label>URL<input type="text" id="sec-e-url" value="${v('url')}"></label>
+        <label>Tags (comma separated)<input type="text" id="sec-e-tags" value="${v('tags')}"></label>
+        <label>Notes<textarea id="sec-e-notes" rows="3">${v('notes')}</textarea></label>
+        <div class="cal-actions"><button class="cal-btn" id="sec-e-cancel">Cancel</button><button class="cal-btn primary" id="sec-e-save">Save</button></div>`);
+      const sv = document.getElementById('sec-e-secret');
+      document.getElementById('sec-e-gen').onclick = () => { sv.value = generatePassword(24); sv.type = 'text'; };
+      document.getElementById('sec-e-eye').onclick = () => { sv.type = sv.type === 'password' ? 'text' : 'password'; };
+      document.getElementById('sec-e-cancel').onclick = () => bg.remove();
+      document.getElementById('sec-e-save').onclick = async () => {
+        if (!field('sec-e-name') || !sv.value) return showToast('Name and secret value are required');
+        try {
+          await os.writeSecret({ soul: soul || null, createdAt: x ? x.createdAt : Date.now(), name: field('sec-e-name'), kind: field('sec-e-kind'), username: field('sec-e-user'), secret: sv.value, url: field('sec-e-url'), tags: lines(field('sec-e-tags')), notes: field('sec-e-notes') });
+          bg.remove(); showToast('Secret encrypted & saved');
+        } catch (e) { showToast(e.message); }
+      };
+      document.getElementById('sec-e-name').focus();
+    }
+    wire('sec-items', {
+      edit: secEdit,
+      show: (soul) => { secShown.has(soul) ? secShown.delete(soul) : secShown.add(soul); renderSecrets(); },
+      copy: async (soul) => { try { await navigator.clipboard.writeText(secrets[soul].secret); showToast('Copied. Clear your clipboard when done'); } catch (_) { showToast('Copy not allowed here: use Show'); } },
+      del: async (soul) => { if (confirm('Delete this secret?')) { try { await os.deleteSecret(soul); delete secrets[soul]; secShown.delete(soul); renderSecrets(); } catch (e) { showToast(e.message); } } }
+    });
+    Object.assign(window, { openContacts, ctSearch, ctEdit, ctImport, ctExport, openSecrets, secSearch, secKind, secEdit });
+
     // Files — encrypted IPFS uploads through a Delay relay; index at ~pub/files (see ZenOS.uploadFile)
     let filesMode = false;
     const FILES_TOKEN_KEY = 'zenStorageToken';
     const humanSize = (n) => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
 
     async function openFiles() {
-      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles();
+      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets();
       filesMode = true;
       document.body.classList.add('files-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -5008,7 +5218,7 @@ print("Welcome to ZenOS!")
     }
 
     function openTasks() {
-      closeCalendar(); closeBlog(); closeBookmarks(); closeFiles();
+      closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets();
       tasksMode = true;
       document.body.classList.add('tasks-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));

@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ZenOS — Sovereign Personal Workspace</title>
   <meta name="description"
-    content="ZenOS: zero-backend, end-to-end encrypted notes, calendar, bookmarks, tasks, files and blog on the ZEN P2P graph. One login, no server, agent-ready.">
+    content="ZenOS: zero-backend, end-to-end encrypted notes, calendar, bookmarks, tasks, contacts, secrets, files and blog on the ZEN P2P graph. One login, no server, agent-ready.">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <style>
     :root {
@@ -204,7 +204,7 @@
     </header>
 
     <h1>Your workspace.<br>No server. No account.</h1>
-    <p class="lead">ZenOS is a decentralized personal workspace: encrypted notes, calendar, bookmarks, tasks, files and a
+    <p class="lead">ZenOS is a decentralized personal workspace: encrypted notes, calendar, bookmarks, tasks, contacts, secrets, files and a
       public blog, all stored in the <b>ZEN</b> P2P graph under one cryptographic identity derived from your username
       and password.</p>
     <div class="cta">
@@ -225,6 +225,12 @@
       </div>
       <div class="card"><b>🔖 Bookmarks</b><code>~pub/bookmarks</code>
         <p>Private library with folders and tags. Import/export Brave, Chrome, Firefox HTML.</p>
+      </div>
+      <div class="card"><b>👥 Contacts</b><code>~pub/contacts</code>
+        <p>Encrypted address book with tags and a ZEN key per contact. Import and export vCard (.vcf).</p>
+      </div>
+      <div class="card"><b>🔑 Secrets</b><code>~pub/secrets</code>
+        <p>Passwords, API keys and secure notes, encrypted before they leave your browser. Hidden by default, with a password generator.</p>
       </div>
       <div class="card"><b>📁 Files</b><code>~pub/files</code>
         <p>Encrypted file storage on IPFS. Needs a Delay relay and its token; the app checks the relay type for you.</p>
@@ -254,13 +260,15 @@ npx serve zenos-web</pre>
 
     <h2 id="use">Use</h2>
     <ol>
-      <li><b>Log in</b> on the web app. Write notes, add events, import bookmarks, upload files, publish posts.</li>
+      <li><b>Log in</b> on the web app. Write notes, add events, import bookmarks and contacts, store passwords, upload files, publish posts.</li>
       <li><b>Script it</b> with the CLI:</li>
     </ol>
     <pre>node cli.js vault-write --user alice --pass secret \
   --title "Idea" --body "- [ ] ship it" --cat research
 node cli.js vault-read  --user alice --pass secret --query idea
 node cli.js bookmarks-import --user alice --pass secret --file bookmarks.html
+node cli.js contacts-import --user alice --pass secret --file contacts.vcf
+node cli.js secret-add --user alice --pass secret --name GitHub --generate
 ZENOS_STORAGE_TOKEN=... node cli.js file-upload --user alice --pass secret --file photo.png
 node cli.js blog-publish --user alice --pass secret \
   --title "Hello" --content "First post" --tags "zenos,p2p"

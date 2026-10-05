@@ -277,6 +277,12 @@ The web app has a **Files** view. Files are uploaded to IPFS through a **Delay**
 
 ---
 
+## 8b. Contacts and Secrets
+
+The web app has **Contacts** (`~{pub}/contacts`) and **Secrets** (`~{pub}/secrets`) views. Both store the whole record as `ZEN.encrypt(record, pair)` in a `data` field. Agents should use the ZenOS SDK/CLI (`writeContact`, `writeSecret`, `contact-*`, `secret-*`; see https://github.com/scobru/zenos/blob/main/llm.txt section 9b). Never print or log secret values unless the user asked.
+
+---
+
 ## 9. Troubleshooting & Best Practices for Agents
 
 1. **Wait for P2P propagation**: GunDB/ZEN propagates asynchronously over WebSockets. Always wrap `.put()` in a Promise and allow 500-1500ms before disconnecting process.
