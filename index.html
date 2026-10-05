@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ZenOS — Sovereign Personal Workspace</title>
   <meta name="description"
-    content="ZenOS: zero-backend, end-to-end encrypted notes, calendar, bookmarks, tasks and blog on the ZEN P2P graph. One login, no server, agent-ready.">
+    content="ZenOS: zero-backend, end-to-end encrypted notes, calendar, bookmarks, tasks, files and blog on the ZEN P2P graph. One login, no server, agent-ready.">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <style>
     :root {
@@ -204,7 +204,7 @@
     </header>
 
     <h1>Your workspace.<br>No server. No account.</h1>
-    <p class="lead">ZenOS is a decentralized personal workspace: encrypted notes, calendar, bookmarks, tasks and a
+    <p class="lead">ZenOS is a decentralized personal workspace: encrypted notes, calendar, bookmarks, tasks, files and a
       public blog, all stored in the <b>ZEN</b> P2P graph under one cryptographic identity derived from your username
       and password.</p>
     <div class="cta">
@@ -225,6 +225,9 @@
       </div>
       <div class="card"><b>🔖 Bookmarks</b><code>~pub/bookmarks</code>
         <p>Private library with folders and tags. Import/export Brave, Chrome, Firefox HTML.</p>
+      </div>
+      <div class="card"><b>📁 Files</b><code>~pub/files</code>
+        <p>Encrypted file storage on IPFS. Needs a Delay relay and its token; the app checks the relay type for you.</p>
       </div>
       <div class="card"><b>🪶 smollog</b><code>~pub/posts</code>
         <p>Public Markdown blog, ECDSA-signed so readers can verify the author.</p>
@@ -251,13 +254,14 @@ npx serve zenos-web</pre>
 
     <h2 id="use">Use</h2>
     <ol>
-      <li><b>Log in</b> on the web app. Write notes, add events, import bookmarks, publish posts.</li>
+      <li><b>Log in</b> on the web app. Write notes, add events, import bookmarks, upload files, publish posts.</li>
       <li><b>Script it</b> with the CLI:</li>
     </ol>
     <pre>node cli.js vault-write --user alice --pass secret \
   --title "Idea" --body "- [ ] ship it" --cat research
 node cli.js vault-read  --user alice --pass secret --query idea
 node cli.js bookmarks-import --user alice --pass secret --file bookmarks.html
+ZENOS_STORAGE_TOKEN=... node cli.js file-upload --user alice --pass secret --file photo.png
 node cli.js blog-publish --user alice --pass secret \
   --title "Hello" --content "First post" --tags "zenos,p2p"
 node cli.js blog-read --alias alice</pre>
@@ -275,6 +279,10 @@ await os.writeCalendarEvent({ title: 'Standup', start: Date.now() + 36e5 });</pr
       serious, run your own:</p>
     <pre>node cli.js vault-read --user alice --pass secret \
   --relay "wss://relay.example.com/zen" --no-default-relays</pre>
+    <p><b>File storage</b> only works on a <a href="https://github.com/scobru/delay" style="color:var(--acc)">Delay</a>
+      relay (it adds IPFS next to the ZEN websocket). <code>zen.akao.io</code> is a plain ZEN relay and has none. Upload
+      needs the Delay relay's admin token or API key, so on a relay you do not run, ask its operator. In the web app
+      set it under Files &rarr; Token; it is stored encrypted with your key.</p>
     <p>Relay operators see public keys, timestamps, paths and IPs, never vault contents. Guide: <a
         href="https://github.com/scobru/zenos/blob/main/RELAYS.md" style="color:var(--acc)">RELAYS.md</a>.</p>
 
