@@ -7,7 +7,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import ZenOS, { DEFAULT_RELAYS, resolvePeers, getGraphSnapshot, flushStorage, bookmarkSoul } from './zenos.js';
+import ZenOS, { DEFAULT_RELAYS, resolvePeers, getGraphSnapshot, flushStorage, bookmarkSoul, generatePassword } from './zenos.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -135,6 +135,11 @@ function outputResults(items, flags) {
       console.log(`\nShowing ${displayItems.length} of ${items.length} items (Page ${page}/${totalPages}):\n`);
       console.table(displayItems.map(item => {
         const row = {};
+        if (item.name !== undefined) row.Name = item.name ? item.name.slice(0, 40) : '';
+        if (item.kind !== undefined) row.Kind = item.kind || '';
+        if (item.username) row.User = item.username.slice(0, 30);
+        if (item.emails !== undefined) row.Email = (item.emails || []).join(', ').slice(0, 40);
+        if (item.phones !== undefined) row.Phone = (item.phones || []).join(', ').slice(0, 30);
         if (item.title !== undefined) row.Title = item.title ? item.title.slice(0, 40) : '';
         if (item.status !== undefined) row.Status = item.status || '';
         if (item.priority !== undefined) row.Priority = item.priority || '';
@@ -177,6 +182,21 @@ Usage:
   node cli.js file-upload   [--user <user> --pass <pass>] --file <path> [--token <t>] [--plain]
   node cli.js file-list     [--user <user> --pass <pass>]
   node cli.js file-download [--user <user> --pass <pass>] --cid <cid> --out <path>
+
+  # Contacts (Encrypted)
+  node cli.js contact-add    [--user <user> --pass <pass>] --name <name> [--email <a,b>] [--phone <a,b>] [--org <org>] [--notes <text>] [--tags <a,b>] [--pub <zen pub>] [--soul <soul>]
+  node cli.js contact-get    [--user <user> --pass <pass>] --soul <soul>
+  node cli.js contact-read   [--user <user> --pass <pass>] [--query <q>] [--tag <tag>] [--table] [--count] [-n <limit> -p <page>] [--fast]
+  node cli.js contact-delete [--user <user> --pass <pass>] --soul <soul>
+  node cli.js contacts-import [--user <user> --pass <pass>] --file <contacts.vcf>
+  node cli.js contacts-export [--user <user> --pass <pass>] [--file <out.vcf>] [--query <q>] [--tag <tag>]
+
+  # Secrets: passwords, API keys, notes (Encrypted; values hidden unless --reveal / secret-get)
+  node cli.js secret-add      [--user <user> --pass <pass>] --name <name> (--secret <value> | --secret-stdin | --generate [--length 24] [--no-symbols]) [--kind password|api|note] [--username <u>] [--url <url>] [--notes <text>] [--tags <a,b>] [--soul <soul>]
+  node cli.js secret-get      [--user <user> --pass <pass>] --soul <soul>        # prints the secret value
+  node cli.js secret-read     [--user <user> --pass <pass>] [--query <q>] [--kind <kind>] [--tag <tag>] [--reveal] [--table] [--count] [--fast]
+  node cli.js secret-delete   [--user <user> --pass <pass>] --soul <soul>
+  node cli.js secret-generate [--length 24] [--no-symbols]                        # no login needed
 
   # Vault (Encrypted Notes)
   node cli.js vault-write  [--user <user> --pass <pass>] --title <title> --body <body> [--cat <cat>] [--pinned] [--soul <soul>]
@@ -473,6 +493,130 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       const fn = cmd === 'event-link' ? 'linkToEvent' : 'unlinkFromEvent';
       const target = flags.note ? { kind: 'note', soul: flags.note } : (flags.bookmark ? { kind: 'bookmark', soul: flags.bookmark } : { kind: 'task', soul: flags.task });
       console.log(JSON.stringify(await os[fn](flags.event, target), null, 2));
+      flushStorage();
+      setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    // ─── Contacts ─────────────────────────────────────────────────────
+    case 'contact-write':
+    case 'contact-add': {
+      if (!flags.name) throw new Error('--name is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const res = await os.writeContact({ soul: flags.soul || null, name: flags.name, emails: flags.email || '', phones: flags.phone || '', org: flags.org || '', notes: flags.notes || '', tags: flags.tags || '', pub: flags.pub || '' });
+      console.log(JSON.stringify(res, null, 2));
+      flushStorage();
+      setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    case 'contact-get': {
+      if (!flags.soul) throw new Error('--soul is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const c = await os.getContact(flags.soul);
+      if (!c) {
+        console.error(JSON.stringify({ error: 'Contact not found: ' + flags.soul }));
+        process.exit(1);
+      }
+      console.log(JSON.stringify(c, null, 2));
+      process.exit(0);
+      break;
+    }
+
+    case 'contact-read': {
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
+      outputResults(await os.readContacts({ query: flags.query, tag: flags.tag, timeoutMs }), flags);
+      process.exit(0);
+      break;
+    }
+
+    case 'contact-delete': {
+      if (!flags.soul) throw new Error('--soul is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      console.log(JSON.stringify(await os.deleteContact(flags.soul), null, 2));
+      flushStorage();
+      setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    case 'contacts-import': {
+      if (!flags.file) throw new Error('--file is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      console.log(JSON.stringify(await os.importContactsVcf(fs.readFileSync(flags.file, 'utf8')), null, 2));
+      flushStorage();
+      setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    case 'contacts-export': {
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
+      const vcf = await os.exportContactsVcf({ query: flags.query, tag: flags.tag, timeoutMs });
+      if (flags.file) fs.writeFileSync(flags.file, vcf); else process.stdout.write(vcf);
+      process.exit(0);
+      break;
+    }
+
+    // ─── Secrets ──────────────────────────────────────────────────────
+    case 'secret-generate': {
+      console.log(generatePassword(Number(flags.length) || 24, { symbols: !flags['no-symbols'] }));
+      process.exit(0);
+      break;
+    }
+
+    case 'secret-write':
+    case 'secret-add': {
+      if (!flags.name) throw new Error('--name is required.');
+      // prefer --secret-stdin or --generate: a --secret argument stays in shell history and `ps`
+      const secret = flags.generate ? generatePassword(Number(flags.length) || 24, { symbols: !flags['no-symbols'] })
+        : flags['secret-stdin'] ? fs.readFileSync(0, 'utf8').replace(/\r?\n$/, '')
+        : flags.secret;
+      if (!secret || secret === true) throw new Error('--secret, --secret-stdin or --generate is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const res = await os.writeSecret({ soul: flags.soul || null, name: flags.name, kind: flags.kind || 'password', username: flags.username || '', secret, url: flags.url || '', notes: flags.notes || '', tags: flags.tags || '' });
+      console.log(JSON.stringify(flags.generate ? { ...res, generated: secret } : res, null, 2));
+      flushStorage();
+      setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    case 'secret-get': {
+      if (!flags.soul) throw new Error('--soul is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const sc = await os.getSecret(flags.soul);
+      if (!sc) {
+        console.error(JSON.stringify({ error: 'Secret not found: ' + flags.soul }));
+        process.exit(1);
+      }
+      console.log(JSON.stringify(sc, null, 2));
+      process.exit(0);
+      break;
+    }
+
+    case 'secret-read': {
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
+      const list = await os.readSecrets({ query: flags.query, kind: flags.kind, tag: flags.tag, timeoutMs });
+      outputResults(flags.reveal ? list : list.map(({ secret, ...rest }) => ({ ...rest, secret: '••••••' })), flags);
+      process.exit(0);
+      break;
+    }
+
+    case 'secret-delete': {
+      if (!flags.soul) throw new Error('--soul is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      console.log(JSON.stringify(await os.deleteSecret(flags.soul), null, 2));
       flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;

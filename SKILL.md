@@ -194,6 +194,27 @@ node cli.js file-list
 node cli.js file-download --cid <cid> --out ./photo.png
 ```
 
+### 10. Contacts — Encrypted address book, vCard import/export
+```bash
+node cli.js contact-add --name "Ada Lovelace" --email "ada@x.io,ada@y.io" --phone "+39 333 1234567" --org "Analytical" --tags "math,friends" [--pub <zen pub>] [--soul <soul>]
+node cli.js contact-get --soul <soul>
+node cli.js contact-read [--query ada] [--tag math] [--table] [--count] [-n 20 -p 1]
+node cli.js contact-delete --soul <soul>
+node cli.js contacts-import --file contacts.vcf          # Google / Apple / Outlook export
+node cli.js contacts-export [--file out.vcf] [--tag math]
+```
+
+### 11. Secrets — Passwords, API keys, secure notes (encrypted)
+Values are hidden unless asked: `secret-read` masks them (use `--reveal`), `secret-get` prints one. Prefer `--secret-stdin` or `--generate` over `--secret <value>`, which stays in shell history and `ps`. Never print or log a secret unless the user asked for it.
+```bash
+echo -n "$TOKEN" | node cli.js secret-add --name "Stripe" --kind api --secret-stdin --url https://dashboard.stripe.com --tags prod
+node cli.js secret-add --name "GitHub" --username ada --generate --length 24 [--no-symbols]   # prints the generated value once
+node cli.js secret-read [--query github] [--kind password|api|note] [--tag prod] [--reveal] [--table]
+node cli.js secret-get --soul <soul>
+node cli.js secret-delete --soul <soul>
+node cli.js secret-generate [--length 24] [--no-symbols]      # no login needed
+```
+
 ---
 
 ## 💻 Programmatic Usage via JavaScript SDK
@@ -201,7 +222,7 @@ node cli.js file-download --cid <cid> --out ./photo.png
 Any agent script can import [`zenos.js`](zenos.js):
 
 ```javascript
-import ZenOS from './zenos.js';
+import ZenOS, { generatePassword } from './zenos.js';
 
 const os = new ZenOS();
 await os.login(username, password);
@@ -242,7 +263,16 @@ const f = await stored.uploadFile(new Uint8Array(bytes), 'photo.png');   // { ci
 const files = await stored.listFiles();
 const data = await stored.downloadFile(f.cid);                            // Uint8Array
 
-// 6. Custom relays
+// 6. Contacts and Secrets (whole records encrypted)
+const ct = await os.writeContact({ name: 'Ada', emails: ['ada@x.io'], tags: ['math'] });   // omit soul to create
+const people = await os.readContacts({ query: 'ada' });  const vcf = await os.exportContactsVcf();
+await os.importContactsVcf(vcfText);
+const sc = await os.writeSecret({ name: 'GitHub', username: 'ada', secret: generatePassword(24), url: 'https://github.com' });
+const entry = await os.getSecret(sc.soul);               // { secret, ... }
+const found = await os.readSecrets({ query: 'github', kind: 'password' });   // query never matches the secret value
+await os.deleteContact(ct.soul); await os.deleteSecret(sc.soul);
+
+// 7. Custom relays
 const custom = new ZenOS({ extraPeers: ["wss://relay.example.com/zen"] });              // defaults + custom
 const onlyOwn = new ZenOS({ extraPeers: ["wss://relay.example.com/zen"], useDefaultRelays: false });
 ```

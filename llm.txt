@@ -278,6 +278,21 @@ Upload: `POST <delay>/api/v1/ipfs/upload` (multipart `file`, `Authorization: Bea
 
 ---
 
+## 9b. Node Specification: Contacts and Secrets (Encrypted)
+
+Both are whole-record encrypted collections: `~{pub}/<collection>/<soul>` holds `{ data: ZEN.encrypt(record, pair), updatedAt, encrypted: true }`.
+
+### Contacts (`~{pub}/contacts`)
+Record: `{ name, emails[], phones[], org, notes, tags[], pub, addedAt }` (`pub` optional ZEN key). Souls `ct-<time><rand>`.
+SDK: `writeContact({soul?,...})`, `getContact(soul)`, `readContacts({query,tag,timeoutMs})`, `deleteContact(soul)`, `onContact(cb)`, `importContactsVcf(text)`, `exportContactsVcf(opts)`. Helpers `parseVcf`, `contactsToVcf`.
+
+### Secrets (`~{pub}/secrets`)
+Record: `{ name, kind: "password"|"api"|"note", username, secret, url, notes, tags[], createdAt }`. Souls `sc-<time><rand>`. Name, username and URL are encrypted too.
+SDK: `writeSecret({soul?,...})`, `getSecret(soul)`, `readSecrets({query,kind,tag,timeoutMs})` (query never matches the value), `deleteSecret(soul)`, `onSecret(cb)`; helper `generatePassword(length, {symbols})` (CSPRNG).
+Agent rules: do not print or log secret values unless the user asked; prefer `--secret-stdin` / `--generate` over `--secret <value>` (shell history); `secret-read` masks values unless `--reveal`.
+
+---
+
 ## 10. CLI Universal Command Reference
 
 All CLI commands support automatic `.env` loading and flags:
@@ -285,6 +300,15 @@ All CLI commands support automatic `.env` loading and flags:
 ```bash
 # Identity & Migration
 node cli.js identity [--user <user> --pass <pass>]
+
+# Contacts
+node cli.js contact-add --name <n> [--email a,b] [--phone a,b] [--org o] [--notes t] [--tags a,b] [--pub k] [--soul s]
+node cli.js contact-get --soul <s> | contact-read [--query q] [--tag t] | contact-delete --soul <s>
+node cli.js contacts-import --file c.vcf | contacts-export [--file out.vcf]
+
+# Secrets (masked unless --reveal / secret-get)
+node cli.js secret-add --name <n> (--secret-stdin | --generate [--length 24] [--no-symbols] | --secret <v>) [--kind password|api|note] [--username u] [--url u] [--notes t] [--tags a,b] [--soul s]
+node cli.js secret-get --soul <s> | secret-read [--query q] [--kind k] [--tag t] [--reveal] | secret-delete --soul <s> | secret-generate [--length 24]
 
 # Files (Delay relay + ZENOS_STORAGE_TOKEN / --token)
 node cli.js file-upload   --file <path> [--plain]
