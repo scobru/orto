@@ -86,8 +86,7 @@ ZEN = await initZenModule();
  * For production or full sovereignty, run your own relay (see RELAYS.md).
  */
 export const DEFAULT_RELAYS = [
-  'wss://delay.scobrudot.dev/zen',
-  'wss://zen.akao.io:8420/zen'
+  'wss://delay.scobrudot.dev/zen'
 ];
 
 const env = (globalThis.process && globalThis.process.env) || {};
