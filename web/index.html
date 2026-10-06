@@ -8,8 +8,9 @@
   <meta name="description"
     content="Orto - self-hosted personal workspace: end-to-end encrypted notes, tasks, calendar, bookmarks, contacts, secrets, files and blog.">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="manifest" href="manifest.webmanifest">
-  <meta name="theme-color" content="#e04b4b">
+  <meta name="theme-color" content="#1e3a2b">
 
   <link rel="stylesheet" href="vendor/fonts.css">
   <link rel="stylesheet" href="vendor/tabler-icons.min.css">
@@ -31,10 +32,10 @@
       --font-mono: 'IBM Plex Mono', monospace;
 
       /* Bear Red Signature Accent */
-      --bear-red: #e04b4b;
-      --bear-red-hover: #c93b3b;
-      --bear-red-light: rgba(224, 75, 75, 0.09);
-      --bear-red-glow: rgba(224, 75, 75, 0.25);
+      --bear-red: #c4532f;
+      --bear-red-hover: #a8431f;
+      --bear-red-light: rgba(196, 83, 47, 0.09);
+      --bear-red-glow: rgba(196, 83, 47, 0.25);
       --badge-zen: #00b4d8;
     }
 
@@ -67,8 +68,8 @@
       --code-bg: #f4f5f7;
       --table-border: #e3e5e8;
       --table-header-bg: #f8f9fa;
-      --tag-bg: rgba(224, 75, 75, 0.08);
-      --tag-text: #e04b4b;
+      --tag-bg: rgba(196, 83, 47, 0.08);
+      --tag-text: #c4532f;
       --input-bg: #f8f9fa;
       --active-bg: #f3f4f6;
     }
@@ -102,7 +103,7 @@
       --code-bg: #18191f;
       --table-border: #2f333e;
       --table-header-bg: #282b34;
-      --tag-bg: rgba(224, 75, 75, 0.16);
+      --tag-bg: rgba(196, 83, 47, 0.16);
       --tag-text: #ff6b6b;
       --input-bg: #181a20;
       --active-bg: #262933;
@@ -891,9 +892,10 @@
     }
 
     .editor-placeholder-icon {
-      font-size: 64px;
-      color: var(--bear-red);
-      opacity: 0.25;
+      width: 72px;
+      height: 72px;
+      border-radius: 20px;
+      opacity: 0.55;
     }
 
     /* Editor Top Action Bar */
@@ -1399,17 +1401,19 @@
     }
 
     .login-bear-logo {
-      width: 68px;
-      height: 68px;
+      width: 88px;
+      height: 88px;
       border-radius: 20px;
-      background: var(--bear-red);
-      color: #ffffff;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 32px;
+      overflow: hidden;
       margin: 0 auto;
       box-shadow: 0 8px 24px var(--bear-red-glow);
+    }
+
+    .login-bear-logo img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      transform: scale(1.12); /* the icon has paper margin: crop it so the mark reads at this size */
     }
 
     .login-title-group h1 {
@@ -2691,7 +2695,7 @@
   <div id="login-screen" class="login-screen-wrapper">
     <div class="login-card">
       <div class="login-bear-logo">
-        <i class="ti ti-paw"></i>
+        <img src="icon-192.png" alt="Orto" width="88" height="88">
       </div>
       <div class="login-title-group">
         <h1>Orto</h1>
@@ -3063,7 +3067,7 @@
     <section class="editor-pane" id="editor-pane">
       <!-- Unselected Note Placeholder -->
       <div id="editor-placeholder" class="editor-placeholder-view">
-        <i class="ti ti-paw editor-placeholder-icon"></i>
+        <img class="editor-placeholder-icon" src="icon-192.png" alt="" width="72" height="72">
         <h3>Orto</h3>
         <p style="color:var(--text-secondary);max-width:280px;font-size:14px;">Select a note from the list, or create a
           new note in your Vault.</p>
@@ -4465,7 +4469,7 @@ print("Welcome to Orto!")
     // ═══════════════════════════════════════════════════════════════
     const calEvents = {};
     let calMode = false, calView = 'month', calCursor = new Date();
-    const CAL_COLORS = ['#e04b4b', '#f4a261', '#2ec4b6', '#4895ef', '#9b5de5', '#8d99ae'];
+    const CAL_COLORS = ['#c4532f', '#f4a261', '#2ec4b6', '#4895ef', '#9b5de5', '#8d99ae'];
     const DAY_MS = 86400000;
     const sod = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
     const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };

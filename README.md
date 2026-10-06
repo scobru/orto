@@ -1,3 +1,5 @@
+<p align="center"><img src="site/logo.png" alt="orto" width="280"></p>
+
 # Orto
 
 *Formerly ZenOS.*
@@ -20,6 +22,14 @@ Encrypted notes, calendar, tasks, bookmarks, contacts, secrets, files and a publ
 git clone https://github.com/scobru/orto.git
 cd orto && npm start          # http://127.0.0.1:8787
 ```
+
+One line, no clone and no Docker (needs Node ≥ 22.5; data goes in `./data`):
+
+```bash
+npx -y -p github:scobru/orto orto-server
+```
+
+Set things with env vars in front of it, e.g. `PORT=8080 ORTO_DATA=~/orto-data ORTO_ADMIN_PASS=change-me-please npx -y -p github:scobru/orto orto-server` (PowerShell: `$env:PORT=8080; npx -y -p github:scobru/orto orto-server`). It listens on `127.0.0.1` only; put HTTPS in front of it (Caddy, nginx, a tunnel) to use it from other devices.
 
 Open the URL, type a username and password; the first time, the app offers to create the account.
 

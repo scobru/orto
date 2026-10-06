@@ -422,7 +422,8 @@ export function createServer(opts = {}) {
   return server;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// realpath: npx / npm link start us through a symlink in node_modules/.bin
+if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))) {
   if (process.argv[2] === 'backup') { // node server.js backup <folder>
     if (!process.argv[3]) { console.error('Usage: node server.js backup <folder>'); process.exit(1); }
     console.log('Backup written to ' + createServer().backup(process.argv[3]));
