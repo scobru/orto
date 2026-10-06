@@ -6,7 +6,7 @@ You do not need a browser to work with the data. The full SDK / CLI / HTTP API r
 
 ```js
 import ZenOS from './zenos.js';
-const os = new ZenOS({ server: 'http://127.0.0.1:8787' });
+const os = new ZenOS();   // default server: https://zenos.scobrudot.dev
 await os.login(username, password);            // { create: true } the first time
 await os.writeVaultNote({ title: 'Idea', body: '- [ ] ship it #todo', cat: 'research' });
 const notes = await os.readVaultNotes();       // decrypted, pinned first then newest

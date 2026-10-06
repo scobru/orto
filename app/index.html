@@ -3165,7 +3165,7 @@
 
   <!-- App logic: talks to the ZenOS server; all encryption happens here -->
   <script type="module">
-    import { ZenOS, normalizeServer, contactsToVcf, generatePassword } from './zenos.js';
+    import { ZenOS, DEFAULT_SERVER, normalizeServer, contactsToVcf, generatePassword } from './zenos.js';
 
     let os;
     let pair;
@@ -3181,11 +3181,16 @@
     let searchQuery = '';
     let autoSaveTimeout = null;
 
-    // ZenOS server: this site's own origin by default (the server also serves this app); the login-screen link can point elsewhere
+    // ZenOS server: the one chosen with the login-screen link; else this site's own origin when it runs a ZenOS server
+    // (the server also serves this app); else the default public server (e.g. when this page is hosted statically)
     let serverUrl = '';
     try { serverUrl = normalizeServer(localStorage.getItem('zenosServer') || ''); } catch (_) { }
+    if (!serverUrl) {
+      const sameOrigin = await fetch('/api/health').then(r => r.json()).then(j => j && j.name === 'zenos').catch(() => false);
+      if (!sameOrigin) serverUrl = DEFAULT_SERVER;
+    }
     function serverConfig() {
-      const t = prompt('ZenOS server URL (empty = this site).\nCurrent: ' + (serverUrl || location.origin), serverUrl);
+      const t = prompt('ZenOS server URL (empty = automatic).\nCurrent: ' + (serverUrl || location.origin), localStorage.getItem('zenosServer') || '');
       if (t === null) return;
       try {
         const u = normalizeServer(t);
