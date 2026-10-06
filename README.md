@@ -32,6 +32,9 @@ Put it behind a reverse proxy with HTTPS (Caddy, nginx) before exposing it to th
 | `ORTO_MAX_UPLOAD` | 200 MB | per file, bytes |
 | `ORTO_QUOTA` | 5 GB | per user, bytes |
 | `ORTO_DEMO` / `ORTO_DEMO_HOURS` | off / `3` | public demo account, see below |
+| `ORTO_ADMIN_PASS` | off | min 8 chars: turns on the admin panel at `/admin` (see below) |
+
+**Admin panel.** Set `ORTO_ADMIN_PASS` and open `/admin`. From the browser you can change registration, max upload and quota (saved in the database, they override the env values until you press *Back to env defaults*), see every user with their usage, sign a user out everywhere or delete them, and write a backup under `<data>/backups/`. Passwords cannot be reset (everything is end-to-end encrypted), only removed. Serve it over HTTPS.
 
 The old `ZENOS_*` variable names, a data folder holding `zenos.db` and the `zenos-data` Docker volume all keep working after the rename.
 

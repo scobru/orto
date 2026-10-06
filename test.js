@@ -308,6 +308,35 @@ await assert.rejects(guarded.demoReady, /another password/);
 const real2 = new Orto({ server: 'http://127.0.0.1:' + guarded.address().port }); await real2.login('demo', 'not-the-demo-password');
 assert.equal((await real2._readAll('vault'))[0].title, 'precious'); real2.close(); guarded.closeAllConnections(); guarded.close();
 
+console.log('Admin panel');
+{
+  const adir = path.join(dir, 'admin');
+  const off = createServer({ dataDir: path.join(adir, 'off'), webDir: dir });
+  await new Promise((r) => off.listen(0, '127.0.0.1', r));
+  assert.equal((await fetch('http://127.0.0.1:' + off.address().port + '/api/admin/settings')).status, 404, 'off without ORTO_ADMIN_PASS');
+  off.closeAllConnections(); off.close();
+  const srv = createServer({ dataDir: path.join(adir, 'on'), webDir: dir, adminPass: 'admin-secret' });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = 'http://127.0.0.1:' + srv.address().port;
+  const call = async (method, p, body, token) => { const r = await fetch(base + '/api/admin/' + p, { method, headers: { 'Content-Type': 'application/json', ...(token && { Authorization: 'Bearer ' + token }) }, body: body && JSON.stringify(body) }); return Object.assign(await r.json(), { status: r.status }); };
+  assert.equal((await call('POST', 'login', { pass: 'nope' })).status, 401);
+  assert.equal((await call('GET', 'settings')).status, 401);
+  const { token } = await call('POST', 'login', { pass: 'admin-secret' });
+  const u = new Orto({ server: base }); await u.login('alice', 'pw', { create: true });
+  assert.equal((await call('GET', 'settings', null, u.token || 'x')).status, 401, 'a user session is not an admin token');
+  assert.equal((await call('PUT', 'settings', { registration: 'closed', quota: 12345 }, token)).settings.quota, 12345);
+  assert.equal((await (await fetch(base + '/api/config')).json()).registration, 'closed', 'setting is live');
+  assert.equal((await call('PUT', 'settings', { quota: -1 }, token)).status, 400);
+  assert.equal((await call('PUT', 'settings', { registration: null, quota: null }, token)).settings.registration, 'open', 'null = env default');
+  const users = await call('GET', 'users', null, token);
+  assert.equal(users.length, 1); assert.equal(users[0].name, 'alice');
+  assert(fs.existsSync(path.join((await call('POST', 'backup', null, token)).path, 'orto.db')));
+  assert.equal((await call('DELETE', 'users/alice', null, token)).deleted, true);
+  await assert.rejects(u._json('GET', '/c/vault'), (e) => e.status === 401, 'deleted user is signed out');
+  assert.equal((await call('GET', 'users', null, token)).length, 0);
+  u.close(); srv.closeAllConnections(); srv.close();
+}
+
 console.log('ok - all tests passed');
 clients.forEach(c => c.close());
 server.closeAllConnections();
