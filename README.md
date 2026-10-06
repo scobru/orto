@@ -48,6 +48,8 @@ Put it behind a reverse proxy with HTTPS (Caddy, nginx) before exposing it to th
 | `ORTO_DEMO` / `ORTO_DEMO_HOURS` | off / `3` | public demo account, see below |
 | `ORTO_ADMIN_PASS` | off | min 8 chars: turns on the admin panel at `/admin` (see below) |
 
+**Tag suggestions (optional, off by default).** `node scripts/install-gist.mjs` installs [Gist](https://desertant.com/models/gist/) by Desert Ant Labs into `<data>/models/gist` (needs npm, once). Then each user can switch on *Settings > Tag suggestions* and use *Suggest tags* in a note's menu or the bookmark editor. The model (36 topics, 101 languages) runs in the browser, so the text is not sent anywhere; the first use downloads about 75 MB of model files from huggingface.co. Privacy details: the code runs in a sandboxed iframe that cannot read your keys or storage, its CSP only allows this server and huggingface.co, and the SDK's own usage reporting to its vendor is switched off (and blocked by that CSP). Gist is source-available, not MIT: free below 100,000 monthly active devices, credit required, see its [license](https://license.desertant.com/1.0). Nothing of it is in this repo.
+
 **Admin panel.** Set `ORTO_ADMIN_PASS` and open `/admin`. From the browser you can change registration, max upload and quota (saved in the database, they override the env values until you press *Back to env defaults*), see every user with their usage, sign a user out everywhere or delete them, and write a backup under `<data>/backups/`. Passwords cannot be reset (everything is end-to-end encrypted), only removed. Serve it over HTTPS.
 
 The old `ZENOS_*` variable names, a data folder holding `zenos.db` and the `zenos-data` Docker volume all keep working after the rename.

@@ -3153,6 +3153,9 @@
               <button class="popover-item" onclick="taskNewForNote()">
                 <span><i class="ti ti-checkbox"></i> Add to tasks</span>
               </button>
+              <button class="popover-item hidden" id="menu-suggest-tags" onclick="suggestTagsForNote()">
+                <span><i class="ti ti-tags"></i> Suggest tags</span>
+              </button>
               <button class="popover-item" onclick="copyNoteMarkdown()">
                 <span><i class="ti ti-copy"></i> Copy Markdown</span>
               </button>
@@ -4337,6 +4340,7 @@ print("Welcome to Orto!")
       infoPopover.classList.add('hidden');
       if (filterDropdown) filterDropdown.classList.add('hidden');
       popover.classList.toggle('hidden');
+      aiMod().then(ai => document.getElementById('menu-suggest-tags')?.classList.toggle('hidden', !ai.aiEnabled())); // only when switched on in Settings
     }
 
     function closePopovers() {
@@ -5012,9 +5016,12 @@ print("Welcome to Orto!")
         <label>Folder (e.g. Dev/Tools)<input type="text" id="bm-e-folder" list="bm-folder-list" value="${escapeHtml(b.folder || '')}"></label>
         <datalist id="bm-folder-list">${folders.map(f => `<option value="${escapeHtml(f)}">`).join('')}</datalist>
         <label>Tags (comma separated)<input type="text" id="bm-e-tags" value="${escapeHtml((b.tags || []).join(', '))}"></label>
+        <button class="cal-btn hidden" id="bm-e-suggest" type="button" style="align-self:flex-start"><i class="ti ti-tags"></i> Suggest tags</button>
         <div class="cal-actions"><button class="cal-btn" id="bm-e-cancel">Cancel</button><button class="cal-btn primary" id="bm-e-save">Save</button></div></div>`;
       document.body.appendChild(bg);
       document.getElementById('bm-e-cancel').onclick = () => bg.remove();
+      aiMod().then(ai => { if (ai.aiEnabled()) document.getElementById('bm-e-suggest')?.classList.remove('hidden'); });
+      document.getElementById('bm-e-suggest').onclick = () => suggestTagsForBookmark(document.getElementById('bm-e-tags'), document.getElementById('bm-e-title').value, b.url);
       document.getElementById('bm-e-save').onclick = async () => {
         const v = (id) => document.getElementById(id).value.trim();
         await bmSave({ ...b, title: v('bm-e-title') || b.url, folder: v('bm-e-folder').replace(/^\/+|\/+$/g, ''), tags: v('bm-e-tags').split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean) });
@@ -5381,6 +5388,52 @@ print("Welcome to Orto!")
       try { shareDialog(await os.shareNote(selectedNoteId)); } catch (e) { showToast(e.message); }
     }
 
+    // On-device tag suggestions (web/classifier.js, optional add-on). Off by default; the model is only fetched on first use.
+    const aiMod = () => import('./classifier.js');
+    async function aiSettings(box, status) {
+      const ai = await aiMod();
+      const installed = await ai.aiInstalled(serverUrl || '');
+      box.checked = installed && ai.aiEnabled(); box.disabled = !installed;
+      status.textContent = installed ? 'Installed on this server. Credit: Gist by Desert Ant Labs.' : 'Not installed on this server.';
+      box.onchange = () => {
+        if (box.checked && !confirm('The first suggestion downloads about 75 MB from huggingface.co (then it is cached). The text you tag never leaves this browser. Turn it on?')) { box.checked = false; return; }
+        ai.setAiEnabled(box.checked);
+      };
+    }
+    async function aiSuggest({ text, existing = [], apply, title = 'Suggest tags' }) {
+      const ai = await aiMod();
+      const bg = openModal(`<b>${escapeHtml(title)}</b><p class="hint" id="ai-body">Loading the on-device model…</p>
+        <div class="cal-actions"><button class="cal-btn" id="ai-cancel">Close</button><button class="cal-btn primary hidden" id="ai-apply">Add tags</button></div>`, 'ai-modal-bg');
+      const body = bg.querySelector('#ai-body');
+      bg.querySelector('#ai-cancel').onclick = () => closeModal('ai-modal-bg');
+      try {
+        const found = (await ai.suggestTags(text, { base: serverUrl || '', onProgress: (p) => { if (typeof p === 'number' && p > 0 && p < 1) body.textContent = 'Downloading the model… ' + Math.round(p * 100) + '%'; } })).filter(t => !existing.includes(t.tag));
+        if (!found.length) { body.textContent = 'No new tags to suggest.'; return; }
+        body.className = ''; body.removeAttribute('id');
+        body.innerHTML = found.map(t => `<label style="flex-direction:row;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" data-tag="${escapeHtml(t.tag)}" checked> <span>${t.emoji}</span> <b>${escapeHtml(t.tag)}</b> <small class="hint">${escapeHtml(t.label)} · ${Math.round(t.score * 100)}%</small></label>`).join('')
+          + '<p class="hint">Gist by Desert Ant Labs</p>';
+        const ok = bg.querySelector('#ai-apply'); ok.classList.remove('hidden');
+        ok.onclick = () => { apply([...bg.querySelectorAll('input[data-tag]:checked')].map(i => i.dataset.tag)); closeModal('ai-modal-bg'); };
+      } catch (e) { body.textContent = e.message; }
+    }
+    async function suggestTagsForNote() {
+      document.getElementById('more-menu-popover')?.classList.add('hidden');
+      const ta = document.getElementById('editor-textarea'), title = document.getElementById('editor-title').value;
+      if (!selectedNoteId || !ta) return showToast('Open a note first');
+      const existing = extractTagsFromNote({ title, body: ta.value });
+      aiSuggest({ text: title + '\n' + ta.value, existing, apply: (tags) => {
+        if (!tags.length) return;
+        const body = ta.value.replace(/\s*$/, '') + '\n\n' + tags.map(t => '#' + t).join(' ') + '\n';
+        ta.value = body; handleBodyInput(body); renderEditor(); triggerRender();
+        showToast('Added ' + tags.map(t => '#' + t).join(' '));
+      } });
+    }
+    async function suggestTagsForBookmark(input, title, url) {
+      const existing = input.value.split(',').map(t => t.trim().replace(/^#/, '').toLowerCase()).filter(Boolean);
+      let host = ''; try { host = new URL(url).hostname.replace(/^www\./, ''); } catch (_) { }
+      aiSuggest({ text: title + ' ' + host, existing, apply: (tags) => { input.value = [...existing, ...tags].join(', '); } });
+    }
+
     // Settings: backup (export/import), shared links, password
     async function openSettings() {
       const isDemo = !!demoCfg && pair.pub === demoCfg.user;
@@ -5389,6 +5442,10 @@ print("Welcome to Orto!")
         <p class="hint">Export saves everything decrypted as one file (plain text: keep it safe). Import it into any account on any server.</p>
         <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="st-files" checked> Include file contents</label>
         <div class="cal-actions" style="justify-content:flex-start"><button class="cal-btn" id="st-export">Export everything</button><button class="cal-btn" id="st-import">Import…</button><input type="file" id="st-import-file" accept=".json,application/json" class="hidden"></div>
+        <h4>Tag suggestions</h4>
+        <p class="hint">Suggests tags (with an emoji) for notes and bookmarks using <b>Gist</b> by <a href="https://desertant.com/models/gist/" target="_blank" rel="noopener">Desert Ant Labs</a>, a small model that runs in this browser: your text is not sent anywhere. The first time, the browser downloads about 75 MB from huggingface.co. The server admin installs it once (<code>scripts/install-gist.mjs</code>).</p>
+        <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="st-ai"> Suggest tags on this device</label>
+        <p class="hint" id="st-ai-status"></p>
         <h4>Shared links</h4><div id="st-shares"><p class="hint">Loading…</p></div>
         ${isDemo ? '' : `<h4>Password</h4>
         <p class="hint">Changes the encryption key: everything is re-encrypted and your other sessions are signed out. Export first; it can take a while with many files.</p>
@@ -5419,6 +5476,7 @@ print("Welcome to Orto!")
         try { await os.changePassword(p1); showToast('Password changed'); closeModal(); }
         catch (e) { showToast(e.message + ' (nothing is lost: you can retry with the same new password)'); $('st-pw').disabled = false; }
       };
+      aiSettings($('st-ai'), $('st-ai-status'));
       const box = $('st-shares');
       const drawShares = async () => {
         let list; try { list = await os.listShares(); } catch (e) { box.innerHTML = '<p class="hint">' + escapeHtml(e.message) + '</p>'; return; }
@@ -5461,7 +5519,7 @@ print("Welcome to Orto!")
       };
     }
     window.serverConfig = serverConfig;
-    Object.assign(window, { openFiles, filesUpload, filesDownload, filesDelete, filesShare, filesPick, filesNewGroup, filesRenameGroup, filesDeleteGroup, filesMove, photoOpen, shareNoteLink, openSettings });
+    Object.assign(window, { suggestTagsForNote, openFiles, filesUpload, filesDownload, filesDelete, filesShare, filesPick, filesNewGroup, filesRenameGroup, filesDeleteGroup, filesMove, photoOpen, shareNoteLink, openSettings });
 
     Object.assign(window, { openBookmarks, bmSearch, bmPickFolder, bmAdd, bmImport, bmDelete, bmEdit, bmRenameFolder, bmExport });
 
