@@ -16,6 +16,7 @@
     rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
 
   <style>
     *,
@@ -3259,8 +3260,8 @@
 
     // ── Authentication / Decrypt Master Vault ──
     async function login() {
-      const userInput = document.getElementById('user-input').value.trim() || sessionStorage.getItem('zen_user');
-      const passInput = document.getElementById('pass-input').value || sessionStorage.getItem('zen_pass');
+      const userInput = document.getElementById('user-input').value.trim();
+      const passInput = document.getElementById('pass-input').value;
       if (!userInput || !passInput) return;
 
       try {
@@ -3278,9 +3279,6 @@
         }
         isAuthenticated = true;
         window.os = os; window.pair = pair;
-
-        sessionStorage.setItem('zen_user', userInput);
-        sessionStorage.setItem('zen_pass', passInput);
 
         document.getElementById('login-screen').classList.add('hidden');
         document.getElementById('dashboard').classList.remove('hidden');
@@ -3738,7 +3736,7 @@
 
       let rawHtml = '';
       if (window.marked) {
-        rawHtml = window.marked.parse(text);
+        rawHtml = DOMPurify.sanitize(window.marked.parse(text));
       } else {
         rawHtml = escapeHtml(text).replace(/\n/g, '<br>');
       }
@@ -4322,8 +4320,6 @@ print("Welcome to ZenOS!")
     }, { passive: true });
 
     function logout() {
-      sessionStorage.removeItem('zen_user');
-      sessionStorage.removeItem('zen_pass');
       window.location.reload();
     }
 
@@ -4701,7 +4697,7 @@ print("Welcome to ZenOS!")
         </div>`).join('') : '<div class="blog-empty">No posts yet.<br>Use New post to publish one.</div>';
       const cur = blogPosts[blogSelected];
       document.getElementById('blog-reader').innerHTML = cur
-        ? `<div style="display:flex;gap:8px;justify-content:flex-end;padding:8px 16px"><button class="cal-btn" onclick="blogEdit('${escapeHtml(cur.id)}')"><i class="ti ti-pencil"></i> Edit</button><button class="cal-btn" onclick="blogDelete('${escapeHtml(cur.id)}')"><i class="ti ti-trash"></i> Delete</button></div><article><h1>${escapeHtml(cur.title)}</h1>${window.marked ? window.marked.parse(cur.content) : escapeHtml(cur.content).replace(/\n/g, '<br>')}</article>`
+        ? `<div style="display:flex;gap:8px;justify-content:flex-end;padding:8px 16px"><button class="cal-btn" onclick="blogEdit('${escapeHtml(cur.id)}')"><i class="ti ti-pencil"></i> Edit</button><button class="cal-btn" onclick="blogDelete('${escapeHtml(cur.id)}')"><i class="ti ti-trash"></i> Delete</button></div><article><h1>${escapeHtml(cur.title)}</h1>${window.marked ? DOMPurify.sanitize(window.marked.parse(cur.content)) : escapeHtml(cur.content).replace(/\n/g, '<br>')}</article>`
         : '';
     }
     function blogSelect(id) { blogSelected = id; renderBlog(); }
@@ -5593,13 +5589,6 @@ print("Welcome to ZenOS!")
       taskSearch, taskFilterPriority, taskDragStart, taskDragOver, taskDragLeave, taskDrop,
       taskToggleDone, taskDelete, linkTaskNoteFromSelect, unlinkTaskNote
     });
-
-    // Auto-login session recovery
-    const savedUser = sessionStorage.getItem('zen_user');
-    const savedPass = sessionStorage.getItem('zen_pass');
-    if (savedUser && savedPass) {
-      login();
-    }
 
     document.getElementById('user-input').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') document.getElementById('pass-input').focus();
