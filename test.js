@@ -346,7 +346,7 @@ console.log('Folders and albums');
   assert.equal(a.folder, 'Docs/2026'); assert.equal(b.album, 'Trip-Italy'); assert.equal(c.folder, undefined);
   assert(!JSON.stringify(await raw(fo, 'files', a.id)).includes('Docs'), 'folder name is encrypted at rest');
   await fo.addFileGroup('folder', 'Empty/Sub'); await fo.addFileGroup('album', 'Pets');
-  assert.deepEqual(await fo.fileGroups(), { folders: ['Empty/Sub'], albums: ['Pets'] });
+  assert.deepEqual(await fo.fileGroups(), { folders: ['Empty/Sub'], albums: ['Pets'], playlists: [] });
   assert.equal((await fo.listFiles()).length, 3, 'the groups record is not a file');
   await fo.moveFile(c.id, { folder: 'Docs' });
   assert.equal((await fo.moveFile(c.id, { album: 'Pets' })).folder, 'Docs', 'undefined keeps the other field');
@@ -364,7 +364,7 @@ console.log('Folders and albums');
   await fresh.importAll(ex);
   const got = Object.fromEntries((await fresh.listFiles()).map((f) => [f.name, f]));
   assert.equal(got['a.txt'].folder, 'Papers/2026'); assert.equal(got['b.png'].album, 'Trip-Italy');
-  assert.deepEqual(await fresh.fileGroups(), { folders: ['Empty/Sub'], albums: ['Pets'] }, 'empty folders survive export/import');
+  assert.deepEqual(await fresh.fileGroups(), { folders: ['Empty/Sub'], albums: ['Pets'], playlists: [] }, 'empty folders survive export/import');
 }
 
 console.log('Landing page and app routes');
@@ -416,6 +416,66 @@ console.log('On-device tag suggestions (add-on plumbing)');
   await new Promise((r) => as.listen(0, '127.0.0.1', r));
   assert.equal((await fetch('http://127.0.0.1:' + as.address().port + '/models/gist/manifest.json')).status, 200);
   as.closeAllConnections(); as.close();
+}
+
+console.log('Chunked files (big files, streaming)');
+{
+  const cu = await client('chunky', 'pw');
+  const bytes = new Uint8Array(300000); for (let o = 0; o < bytes.length; o += 60000) crypto.getRandomValues(bytes.subarray(o, o + 60000));
+  const prog = [];
+  const m = await cu.uploadFileChunked(new Blob([bytes]), 'big.bin', { chunkSize: 100000, type: 'application/x-test', playlist: 'Mix', onProgress: (p) => prog.push(p) });
+  assert.equal(m.size, 300000); assert.deepEqual(m.chunked.n, 3); assert.equal(m.playlist, 'Mix'); assert.deepEqual(prog.length, 3);
+  const stored = fs.readdirSync(path.join(dir, 'files')).map((u) => path.join(dir, 'files', u, m.id)).find((p) => fs.existsSync(p));
+  assert.equal(fs.statSync(stored).size, 300000 + 3 * 28, 'chunk overhead only, no base64');
+  assert(!Buffer.from(fs.readFileSync(stored)).includes(Buffer.from(bytes.subarray(1000, 1032))), 'ciphertext at rest');
+  assert.deepEqual(await cu.downloadFile(m.id), bytes, 'whole file');
+  for (const [a, b] of [[0, 1], [99999, 100001], [100000, 200000], [250000, 300000], [5, 299999], [299999, 300000], [0, 300000]]) {
+    assert.deepEqual(await cu.readFileRange(m.id, a, b), bytes.subarray(a, b), `range ${a}-${b}`);
+  }
+  assert.equal((await cu.readFileRange(m.id, 300000, 400000)).length, 0);
+  // the server answers Range itself (the browser's media element and the service worker rely on it)
+  const rget = (range) => fetch(url + '/api/files/' + m.id, { headers: { Authorization: 'Bearer ' + cu.token, ...(range && { Range: range }) } });
+  let r = await rget('bytes=10-19'); assert.equal(r.status, 206); assert.equal(r.headers.get('content-range'), 'bytes 10-19/300084'); assert.equal((await r.arrayBuffer()).byteLength, 10);
+  r = await rget('bytes=-5'); assert.equal(r.status, 206); assert.equal((await r.arrayBuffer()).byteLength, 5);
+  r = await rget('bytes=300000-'); assert.equal(r.status, 206);
+  r = await rget('bytes=999999-'); assert.equal(r.status, 416);
+  r = await rget(); assert.equal(r.status, 200); assert.equal(r.headers.get('accept-ranges'), 'bytes');
+  // tampering: swap two chunks, or cut the file short
+  const good = fs.readFileSync(stored), P = 100000 + 28;
+  fs.writeFileSync(stored, Buffer.concat([good.subarray(P, 2 * P), good.subarray(0, P), good.subarray(2 * P)]));
+  await assert.rejects(cu.downloadFile(m.id), 'swapped chunks are detected');
+  fs.writeFileSync(stored, good.subarray(0, 2 * P));
+  await assert.rejects(cu.readFileRange(m.id, 0, 300000), 'a truncated file is detected');
+  fs.writeFileSync(stored, good);
+  // empty file, and a file that is not a multiple of the chunk size
+  const e = await cu.uploadFileChunked(new Uint8Array(0), 'empty.bin');
+  assert.equal((await cu.downloadFile(e.id)).length, 0);
+  // password change re-encrypts chunked files chunk by chunk, in place
+  await cu.changePassword('pw-new');
+  assert.deepEqual(await cu.downloadFile(m.id), bytes, 'readable after the password change');
+  const again = await client('chunky', 'pw-new', false);
+  assert.deepEqual(await again.readFileRange(m.id, 150000, 160000), bytes.subarray(150000, 160000));
+  await assert.rejects(client('chunky', 'pw', false), (er) => er.status === 401);
+  // export / import (import re-uploads in the plain format) and public share keep working
+  const ex2 = await again.exportAll();
+  const copy = await client('chunky-copy', 'pw');
+  await copy.importAll(ex2);
+  const imp = (await copy.listFiles()).find((f) => f.name === 'big.bin');
+  assert.deepEqual(await copy.downloadFile(imp.id), bytes); assert.equal(imp.playlist, 'Mix');
+  const sh = await again.shareFile(m.id);
+  assert.deepEqual((await readShare(sh.url)).data, bytes, 'a public link of a chunked file');
+  // upload rules: offsets must line up, limits apply per append and a failed append can be retried
+  const tiny = createServer({ dataDir: path.join(dir, 'tiny'), webDir: dir, maxUpload: 150 });
+  await new Promise((rs) => tiny.listen(0, '127.0.0.1', rs));
+  const tu = new Orto({ server: 'http://127.0.0.1:' + tiny.address().port }); await tu.login('tiny', 'pw', { create: true });
+  const { id: tmp } = await tu._json('POST', '/files/begin');
+  await tu._fetch('PUT', `/files/${tmp}/append`, new Uint8Array(100), undefined, { 'X-Offset': '0' });
+  await assert.rejects(tu._fetch('PUT', `/files/${tmp}/append`, new Uint8Array(10), undefined, { 'X-Offset': '5' }), (er) => er.status === 409, 'wrong offset');
+  await assert.rejects(tu._fetch('PUT', `/files/${tmp}/append`, new Uint8Array(100), undefined, { 'X-Offset': '100' }), (er) => er.status === 413, 'over the limit');
+  assert.equal((await (await tu._fetch('PUT', `/files/${tmp}/append`, new Uint8Array(20), undefined, { 'X-Offset': '100' })).json()).size, 120, 'the failed append left the file at its last good size');
+  await assert.rejects(tu._json('POST', '/files/aaaaaaaaaaaaaaaaaaaaaaaa/finish'), (er) => er.status === 404);
+  assert.equal((await tu._json('POST', `/files/${tmp}/finish`)).size, 120);
+  tu.close(); tiny.closeAllConnections(); tiny.close();
 }
 
 console.log('ok - all tests passed');

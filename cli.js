@@ -382,7 +382,11 @@ Server (all commands):
       if (typeof flags.file !== 'string') throw new Error('--file is required.');
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const res = await os.uploadFile(fs.readFileSync(flags.file), path.basename(flags.file), { encrypt: !flags.plain, folder: grp(flags.folder), album: grp(flags.album) });
+      const opts = { folder: grp(flags.folder), album: grp(flags.album) };
+      // big files go up in encrypted chunks read from disk piece by piece (and can be played while they download); --plain keeps the old single blob
+      const res = !flags.plain && fs.statSync(flags.file).size > 4 * 1024 * 1024
+        ? await os.uploadFileChunked(await fs.openAsBlob(flags.file), path.basename(flags.file), opts)
+        : await os.uploadFile(fs.readFileSync(flags.file), path.basename(flags.file), { encrypt: !flags.plain, ...opts });
       console.log(JSON.stringify(res, null, 2));
       safeExit(0);
       break;
