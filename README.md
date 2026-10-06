@@ -79,7 +79,7 @@ All JSON. `Authorization: Bearer <token>` from `POST /api/login` or `/api/regist
 | `GET /api/events` | server-sent events for your collections |
 | `POST /api/files` (raw body), `GET/DELETE /api/files/:id` | blobs |
 | `GET /api/u/:name`, `GET /api/u/:name/posts` | public profile and blog, no auth |
-| `GET /blog/:name` | public blog page |
+| `GET /blog/:name` | public blog page (e.g. https://zenos.scobrudot.dev/blog/scobru) |
 
 ## Tests
 
