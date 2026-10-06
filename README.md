@@ -84,7 +84,8 @@ export ORTO_SERVER=http://127.0.0.1:8787     # or --server; default https://orto
 node cli.js register --user alice --pass 'long passphrase'
 node cli.js vault-write --user alice --pass '…' --title "Hello" --body "First note"
 node cli.js vault-read  --user alice --pass '…'
-node cli.js file-upload --user alice --pass '…' --file photo.png
+node cli.js file-upload --user alice --pass '…' --file photo.png --folder Docs/2026 --album Trip
+node cli.js file-list --folder Docs --table      # file-move --id <id> --album Pets to reorganize
 node cli.js blog-publish --user alice --pass '…' --title Hi --content "Public post"
 node cli.js blog-read --alias alice            # public, no login
 node cli.js --help                             # every command
@@ -107,7 +108,7 @@ const bytes = await os.downloadFile(up.id);
 os.onTask((task, soul, deleted) => console.log(task, deleted));             // live updates (SSE)
 ```
 
-Collections: `Vault`, `CalendarEvent`, `Task`, `Bookmark`, `Contact`, `Secret` each have `write*`, `get*`, `read*`, `delete*`, `on*`; plus `uploadFile/listFiles/downloadFile/deleteFile`, `shareNote/shareFile/listShares/unshare` (+ `readShare(link)`), `exportAll/importAll/changePassword` and `publishBlogPost/readBlogPosts/getBlogPost/deleteBlogPost/onPost`. See [llm.txt](llm.txt).
+Collections: `Vault`, `CalendarEvent`, `Task`, `Bookmark`, `Contact`, `Secret` each have `write*`, `get*`, `read*`, `delete*`, `on*`; plus `uploadFile/listFiles/downloadFile/deleteFile` (and `moveFile`, `fileGroups`, `addFileGroup`, `renameFileGroup` for folders and albums), `shareNote/shareFile/listShares/unshare` (+ `readShare(link)`), `exportAll/importAll/changePassword` and `publishBlogPost/readBlogPosts/getBlogPost/deleteBlogPost/onPost`. See [llm.txt](llm.txt).
 
 ## HTTP API
 

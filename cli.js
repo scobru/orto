@@ -105,6 +105,9 @@ function requireCredentials() {
   return { user, pass };
 }
 
+// a bare `--folder` (or --folder '') arrives as `true`: it means "no folder"
+const grp = (v) => (v === true ? '' : v);
+
 function safeExit(code = 0) {
   process.exit(code);
 }
@@ -155,6 +158,7 @@ function outputResults(items, flags) {
         if (item.dueDate !== undefined) row.Due = item.dueDate ? new Date(item.dueDate).toISOString().slice(0, 10) : '';
         if (item.assignee !== undefined && item.assignee) row.Assignee = item.assignee;
         if (item.folder !== undefined) row.Folder = item.folder || '';
+        if (item.album !== undefined) row.Album = item.album || '';
         if (item.url !== undefined) row.URL = item.url ? item.url.slice(0, 50) : '';
         if (item.start !== undefined) row.Start = new Date(item.start).toISOString();
         if (item.cat !== undefined) row.Cat = item.cat;
@@ -202,8 +206,9 @@ Usage:
   node cli.js share-read   --url <link> [--out <path>]                                # no login needed
 
   # File storage (encrypted client-side unless --plain)
-  node cli.js file-upload   [--user <user> --pass <pass>] --file <path> [--plain]
-  node cli.js file-list     [--user <user> --pass <pass>] [--table] [--count] [-n <limit> -p <page>]
+  node cli.js file-upload   [--user <user> --pass <pass>] --file <path> [--plain] [--folder <a/b>] [--album <name>]
+  node cli.js file-list     [--user <user> --pass <pass>] [--folder <a/b>] [--album <name>] [--table] [--count] [-n <limit> -p <page>]
+  node cli.js file-move     [--user <user> --pass <pass>] --id <id> [--folder <a/b>] [--album <name>]   # '' clears
   node cli.js file-download [--user <user> --pass <pass>] --id <id> --out <path>
   node cli.js file-delete   [--user <user> --pass <pass>] --id <id>
 
@@ -377,7 +382,7 @@ Server (all commands):
       if (typeof flags.file !== 'string') throw new Error('--file is required.');
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const res = await os.uploadFile(fs.readFileSync(flags.file), path.basename(flags.file), { encrypt: !flags.plain });
+      const res = await os.uploadFile(fs.readFileSync(flags.file), path.basename(flags.file), { encrypt: !flags.plain, folder: grp(flags.folder), album: grp(flags.album) });
       console.log(JSON.stringify(res, null, 2));
       safeExit(0);
       break;
@@ -387,8 +392,20 @@ Server (all commands):
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       // thumbs are huge base64 blobs: drop them from the listing
-      const files = (await os.listFiles()).map(({ thumb, ...f }) => f);
+      const files = (await os.listFiles()).map(({ thumb, ...f }) => f)
+        .filter((f) => (grp(flags.folder) === undefined || (f.folder || '') === grp(flags.folder) || (f.folder || '').startsWith(grp(flags.folder) + '/'))
+          && (grp(flags.album) === undefined || (f.album || '') === grp(flags.album)));
       outputResults(files, flags);
+      safeExit(0);
+      break;
+    }
+
+    case 'file-move': { // --folder / --album set it, '' clears it, leaving a flag out keeps it
+      if (typeof flags.id !== 'string') throw new Error('--id is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const { thumb, ...meta } = await os.moveFile(flags.id, { folder: grp(flags.folder), album: grp(flags.album) });
+      console.log(JSON.stringify(meta, null, 2));
       safeExit(0);
       break;
     }

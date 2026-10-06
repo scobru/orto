@@ -3044,10 +3044,14 @@
 
     <!-- Files pane: uploads stored on the Orto server, encrypted in the browser -->
     <section class="bm-pane" id="files-pane">
+      <div class="bm-folders" id="files-folders"></div>
       <div class="bm-main">
         <div class="bm-bar">
           <button class="mobile-menu-btn" onclick="toggleSidebar()" title="Menu" aria-label="Menu"><i class="ti ti-menu-2"></i></button>
           <span id="files-status" style="flex:1;font-size:13px;color:var(--text-muted)"></span>
+          <button class="cal-btn" onclick="filesNewGroup()"><i class="ti ti-folder-plus"></i> <span id="files-newgroup">New folder</span></button>
+          <button class="cal-btn hidden" id="files-rengroup" onclick="filesRenameGroup()" title="Rename" aria-label="Rename"><i class="ti ti-pencil"></i></button>
+          <button class="cal-btn hidden" id="files-delgroup" onclick="filesDeleteGroup()" title="Delete (the files stay)" aria-label="Delete"><i class="ti ti-folder-x"></i></button>
           <button class="cal-btn primary" onclick="document.getElementById('files-input').click()"><i class="ti ti-upload"></i> Upload</button>
           <input type="file" id="files-input" class="hidden" multiple onchange="filesUpload(this)">
         </div>
@@ -5196,7 +5200,7 @@ print("Welcome to Orto!")
 
     // Files and Photos — encrypted uploads stored on the Orto server; index in the `files` collection (see Orto.uploadFile).
     // Photos is the same data as a thumbnail grid of the image files (thumbnails are made in the browser and kept in the encrypted index).
-    let filesMode = false, filesView = 'list', filesCache = [];
+    let filesMode = false, filesView = 'list', filesCache = [], filesGroups = { folders: [], albums: [] }, filesFolder = null, filesAlbum = null; // null = all, '' = not in any folder/album
     const humanSize = (n) => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
     const isPhoto = (f) => /^image\//.test(f.type || '') || /\.(jpe?g|png|gif|webp|avif|bmp|svg)$/i.test(f.name || '');
     const download = (blob, name) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
@@ -5228,11 +5232,31 @@ print("Welcome to Orto!")
       document.getElementById('nav-files')?.classList.remove('active');
       document.getElementById('nav-photos')?.classList.remove('active');
     }
+    const groupKind = () => filesView === 'photos' ? 'album' : 'folder';
+    const filesPick = (v) => { if (filesView === 'photos') filesAlbum = v; else filesFolder = v; renderFiles(); };
+    // names in use plus the empty ones remembered in the index, for the pickers
+    const groupNames = (kind) => [...new Set([...filesGroups[kind + 's'], ...filesCache.map(f => f[kind]).filter(Boolean)])].sort();
+    function renderFileGroups(pool, kind) {
+      const counts = Object.create(null); let loose = 0;
+      const climb = (name, add) => { const parts = kind === 'folder' ? name.split('/') : [name]; parts.forEach((_, i) => { const p = parts.slice(0, i + 1).join('/'); counts[p] = (counts[p] || 0) + add; }); };
+      filesGroups[kind + 's'].forEach(n => climb(n, 0));
+      pool.forEach(f => f[kind] ? climb(f[kind], 1) : loose++); // like bookmarks: a folder counts everything below it
+      let sel = kind === 'folder' ? filesFolder : filesAlbum;
+      if (sel && !(sel in counts)) { sel = null; if (kind === 'folder') filesFolder = null; else filesAlbum = null; }
+      const names = Object.keys(counts).sort(), photos = kind === 'album';
+      const row = (name, label, n, depth = 0) => `<div class="bm-folder ${sel === name ? 'active' : ''}" style="padding-left:${10 + depth * 14}px" onclick="filesPick(${name === null ? 'null' : `decodeURIComponent('${encodeURIComponent(name)}')`})"><span>${escapeHtml(label)}</span><span>${n}</span></div>`;
+      document.getElementById('files-folders').innerHTML = row(null, photos ? 'All photos' : 'All files', pool.length)
+        + names.map(n => row(n, n.split('/').pop(), counts[n], photos ? 0 : n.split('/').length - 1)).join('')
+        + (names.length && loose ? row('', photos ? 'No album' : 'Unfiled', loose) : '');
+      document.getElementById('files-newgroup').textContent = photos ? 'New album' : 'New folder';
+      for (const id of ['files-rengroup', 'files-delgroup']) document.getElementById(id).classList.toggle('hidden', !sel);
+      return sel;
+    }
     async function renderFiles() {
       const status = document.getElementById('files-status'), items = document.getElementById('files-items');
       status.textContent = 'Loading…';
       let files;
-      try { files = await os.listFiles(); } catch (e) {
+      try { [files, filesGroups] = await Promise.all([os.listFiles(), os.fileGroups()]); } catch (e) {
         status.textContent = '';
         items.innerHTML = '<div class="blog-empty">' + escapeHtml(e.message) + '</div>';
         return;
@@ -5242,15 +5266,58 @@ print("Welcome to Orto!")
       document.getElementById('count-files').textContent = files.length;
       document.getElementById('count-photos').textContent = files.filter(isPhoto).length;
       items.classList.toggle('photo-grid', filesView === 'photos');
+      const kind = groupKind(), pool = kind === 'album' ? files.filter(isPhoto) : files;
+      const sel = renderFileGroups(pool, kind);
+      const shown = pool.filter(f => sel === null || (f[kind] || '') === sel || (kind === 'folder' && sel !== '' && (f.folder || '').startsWith(sel + '/')));
       if (filesView === 'photos') {
-        const photos = files.filter(isPhoto);
-        items.innerHTML = photos.length ? photos.map(f => `<div class="photo-tile" title="${escapeHtml(f.name)}" onclick="photoOpen('${escapeHtml(f.id)}')">${typeof f.thumb === 'string' && f.thumb.startsWith('data:image/') ? `<img src="${escapeHtml(f.thumb)}" alt="">` : '<i class="ti ti-photo"></i>'}</div>`).join('') : '<div class="blog-empty">No photos yet. Use Upload.</div>';
+        items.innerHTML = shown.length ? shown.map(f => `<div class="photo-tile" title="${escapeHtml(f.name)}" onclick="photoOpen('${escapeHtml(f.id)}')">${typeof f.thumb === 'string' && f.thumb.startsWith('data:image/') ? `<img src="${escapeHtml(f.thumb)}" alt="">` : '<i class="ti ti-photo"></i>'}</div>`).join('') : '<div class="blog-empty">' + (sel === null ? 'No photos yet. Use Upload.' : 'No photos here. Use Upload, or add one to this album from its menu.') + '</div>';
         return;
       }
-      items.innerHTML = files.length ? files.map(f => `<div class="bm-item file-item"><div style="flex:1;min-width:0"><b>${escapeHtml(f.name)}</b><small>${humanSize(f.size)} · ${new Date(f.addedAt).toLocaleString()}${f.encrypted ? ' · encrypted' : ''}</small></div>
+      items.innerHTML = shown.length ? shown.map(f => `<div class="bm-item file-item"><div style="flex:1;min-width:0"><b>${escapeHtml(f.name)}</b><small>${humanSize(f.size)} · ${new Date(f.addedAt).toLocaleString()}${f.folder ? ' · ' + escapeHtml(f.folder) : ''}${f.encrypted ? ' · encrypted' : ''}</small></div>
+          <button class="bm-del" title="Move to folder" onclick="filesMove('${escapeHtml(f.id)}','folder')"><i class="ti ti-folder"></i></button>
           <button class="bm-del" title="Public link" onclick="filesShare('${escapeHtml(f.id)}')"><i class="ti ti-link"></i></button>
           <button class="bm-del" title="Download" onclick="filesDownload('${escapeHtml(f.id)}','${encodeURIComponent(f.name)}')"><i class="ti ti-download"></i></button>
-          <button class="bm-del" title="Delete" onclick="filesDelete('${escapeHtml(f.id)}')"><i class="ti ti-trash"></i></button></div>`).join('') : '<div class="blog-empty">No files yet. Use Upload.</div>';
+          <button class="bm-del" title="Delete" onclick="filesDelete('${escapeHtml(f.id)}')"><i class="ti ti-trash"></i></button></div>`).join('') : '<div class="blog-empty">' + (sel === null ? 'No files yet. Use Upload.' : 'Nothing in this folder. Use Upload, or move files here with the folder button.') + '</div>';
+    }
+    async function filesNewGroup() {
+      const kind = groupKind();
+      const name = (prompt(kind === 'folder' ? 'New folder name (use / for sub-folders)' : 'New album name', kind === 'folder' && filesFolder ? filesFolder + '/' : '') || '').trim();
+      if (!name) return;
+      try { const n = await os.addFileGroup(kind, name); if (kind === 'folder') filesFolder = n; else filesAlbum = n; } catch (e) { return showToast(e.message); }
+      renderFiles();
+    }
+    async function filesRenameGroup() {
+      const kind = groupKind(), from = kind === 'folder' ? filesFolder : filesAlbum; if (!from) return;
+      const to = prompt('New name for "' + from + '" (empty = remove it, its files stay)', from);
+      if (to === null || to.trim() === from) return;
+      try {
+        const r = await os.renameFileGroup(kind, from, to);
+        if (kind === 'folder') filesFolder = r.name || null; else filesAlbum = r.name || null;
+        showToast(r.name ? 'Renamed, ' + r.moved + ' file' + (r.moved === 1 ? '' : 's') + ' updated' : 'Removed');
+      } catch (e) { showToast(e.message); }
+      renderFiles();
+    }
+    async function filesDeleteGroup() {
+      const kind = groupKind(), from = kind === 'folder' ? filesFolder : filesAlbum; if (!from) return;
+      if (!confirm('Delete the ' + kind + ' "' + from + '"' + (kind === 'folder' ? ' and its sub-folders' : '') + '? The files are not deleted, they just lose the ' + kind + '.')) return;
+      try { await os.renameFileGroup(kind, from, ''); } catch (e) { return showToast(e.message); }
+      if (kind === 'folder') filesFolder = null; else filesAlbum = null;
+      renderFiles();
+    }
+    function filesMove(id, kind) {
+      const f = filesCache.find(x => x.id === id); if (!f) return;
+      const bg = openModal(`<b>${kind === 'folder' ? 'Move to folder' : 'Add to album'}</b><p class="hint">${escapeHtml(f.name)}</p>
+        <input type="text" id="mv-name" list="mv-list" placeholder="${kind === 'folder' ? 'e.g. Docs/2026 (empty = no folder)' : 'Album name (empty = no album)'}" value="${escapeHtml(f[kind] || '')}">
+        <datalist id="mv-list">${groupNames(kind).map(n => `<option value="${escapeHtml(n)}">`).join('')}</datalist>
+        <div class="cal-actions"><button class="cal-btn" id="mv-cancel">Cancel</button><button class="cal-btn primary" id="mv-ok">Save</button></div>`, 'move-modal-bg');
+      const input = bg.querySelector('#mv-name'); input.focus(); input.select();
+      const save = async () => {
+        try { await os.moveFile(id, { [kind]: input.value }); } catch (e) { return showToast(e.message); }
+        closeModal('move-modal-bg'); renderFiles();
+      };
+      bg.querySelector('#mv-cancel').onclick = () => closeModal('move-modal-bg');
+      bg.querySelector('#mv-ok').onclick = save;
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
     }
     async function makeThumb(file) { // 256px JPEG data URL, or undefined (not an image / format the browser cannot decode)
       if (!/^image\//.test(file.type)) return;
@@ -5265,7 +5332,7 @@ print("Welcome to Orto!")
       const list = [...input.files]; input.value = '';
       for (const [i, file] of list.entries()) {
         showToast(`Encrypting & uploading ${file.name}${list.length > 1 ? ` (${i + 1}/${list.length})` : ''}…`);
-        try { await os.uploadFile(new Uint8Array(await file.arrayBuffer()), file.name, { type: file.type || undefined, thumb: await makeThumb(file) }); }
+        try { await os.uploadFile(new Uint8Array(await file.arrayBuffer()), file.name, { type: file.type || undefined, thumb: await makeThumb(file), folder: filesView === 'photos' ? undefined : filesFolder || undefined, album: filesView === 'photos' ? filesAlbum || undefined : undefined }); }
         catch (e) { showToast(file.name + ': ' + e.message); break; }
       }
       if (list.length) showToast(list.length > 1 ? 'Uploaded ' + list.length + ' files' : 'Uploaded ' + list[0].name);
@@ -5286,12 +5353,13 @@ print("Welcome to Orto!")
     async function photoOpen(id) {
       const f = filesCache.find(x => x.id === id); if (!f) return;
       const bg = openModal(`<b>${escapeHtml(f.name)}</b><div style="text-align:center;min-height:80px"><img id="photo-full" alt="" style="max-width:100%;max-height:68vh"></div>
-        <div class="cal-actions"><button class="cal-btn" id="ph-del" style="margin-right:auto">Delete</button><button class="cal-btn" id="ph-share">Link</button><button class="cal-btn" id="ph-dl">Download</button><button class="cal-btn primary" id="ph-close">Close</button></div>`, 'photo-modal-bg');
+        <div class="cal-actions"><button class="cal-btn" id="ph-del" style="margin-right:auto">Delete</button><button class="cal-btn" id="ph-album">Album</button><button class="cal-btn" id="ph-share">Link</button><button class="cal-btn" id="ph-dl">Download</button><button class="cal-btn primary" id="ph-close">Close</button></div>`, 'photo-modal-bg');
       bg.firstChild.style.maxWidth = 'min(94vw, 900px)';
       const $ = (x) => bg.querySelector('#' + x);
       let url, bytes;
       $('ph-close').onclick = () => { closeModal('photo-modal-bg'); if (url) URL.revokeObjectURL(url); };
       $('ph-del').onclick = () => filesDelete(id);
+      $('ph-album').onclick = () => { $('ph-close').onclick(); filesMove(id, 'album'); };
       $('ph-share').onclick = () => filesShare(id);
       $('ph-dl').onclick = () => bytes && download(new Blob([bytes]), f.name);
       try { bytes = await os.downloadFile(id); url = URL.createObjectURL(new Blob([bytes], { type: /^image\/(png|jpe?g|gif|webp|avif|bmp)$/.test(f.type || '') ? f.type : '' })); $('photo-full').src = url; }
@@ -5393,7 +5461,7 @@ print("Welcome to Orto!")
       };
     }
     window.serverConfig = serverConfig;
-    Object.assign(window, { openFiles, filesUpload, filesDownload, filesDelete, filesShare, photoOpen, shareNoteLink, openSettings });
+    Object.assign(window, { openFiles, filesUpload, filesDownload, filesDelete, filesShare, filesPick, filesNewGroup, filesRenameGroup, filesDeleteGroup, filesMove, photoOpen, shareNoteLink, openSettings });
 
     Object.assign(window, { openBookmarks, bmSearch, bmPickFolder, bmAdd, bmImport, bmDelete, bmEdit, bmRenameFolder, bmExport });
 
