@@ -67,6 +67,10 @@ export function createServer(opts = {}) {
   const modelsDir = path.resolve(opts.modelsDir || env.ORTO_MODELS || path.join(dataDir, 'models')); // optional add-ons, served at /models/*
   const filesDir = path.join(dataDir, 'files');
   fs.mkdirSync(filesDir, { recursive: true });
+  // unfinished chunked uploads (see /files/begin) older than a day
+  for (const d of fs.readdirSync(filesDir)) {
+    try { for (const f of fs.readdirSync(path.join(filesDir, d))) { const p = path.join(filesDir, d, f); if (f.endsWith('.part') && Date.now() - fs.statSync(p).mtimeMs > 864e5) fs.rmSync(p); } } catch (_) { }
+  }
 
   // zenos.db is the file name from before the rename: keep using it if that is what is on disk
   const dbFile = ['orto.db', 'zenos.db'].map(f => path.join(dataDir, f)).find(f => fs.existsSync(f)) || path.join(dataDir, 'orto.db');
@@ -339,13 +343,60 @@ export function createServer(opts = {}) {
       }
     }
 
+    // Chunked upload, for big files and playback: begin -> append (X-Offset must equal the bytes stored so far) ... -> finish.
+    // The client cuts the file in encrypted chunks (see orto.js uploadFileChunked), so memory stays small on both sides.
+    // finish?replace=<id> swaps the new content into an existing file (used to re-encrypt after a password change).
+    if (a === 'files' && b === 'begin' && req.method === 'POST') {
+      const id = crypto.randomBytes(12).toString('hex');
+      fs.mkdirSync(path.join(filesDir, String(u.user_id)), { recursive: true });
+      fs.writeFileSync(path.join(filesDir, String(u.user_id), id + '.part'), '');
+      return json(200, { id });
+    }
+    if (a === 'files' && /^[a-f0-9]{24}$/.test(b || '') && (c === 'append' || c === 'finish') && ((c === 'append' && req.method === 'PUT') || (c === 'finish' && req.method === 'POST'))) {
+      const part = path.join(filesDir, String(u.user_id), b + '.part');
+      if (!fs.existsSync(part)) throw new HttpError(404, 'Not found');
+      const have = fs.statSync(part).size;
+      if (c === 'append') {
+        if (Number(req.headers['x-offset']) !== have) throw new HttpError(409, 'Offset mismatch: ' + have);
+        const limit = demoOn && u.name === DEMO.user ? DEMO.quota : cfg.quota;
+        const used = q.used.get(u.user_id).n;
+        const out = fs.createWriteStream(part, { flags: 'a' });
+        let size = have;
+        try {
+          for await (const chunk of req) {
+            size += chunk.length;
+            if (size > cfg.maxUpload || used + size > limit) throw new HttpError(413, size > cfg.maxUpload ? 'File too large' : 'Storage quota exceeded');
+            if (!out.write(chunk)) await once(out, 'drain');
+          }
+          out.end(); await once(out, 'finish');
+        } catch (e) { out.destroy(); fs.truncateSync(part, have); throw e; } // back to the last good size: the client can retry the chunk
+        return json(200, { size });
+      }
+      const size = fs.statSync(part).size, replace = url.searchParams.get('replace');
+      if (replace) {
+        if (!/^[a-f0-9]{24}$/.test(replace) || !q.file.get(u.user_id, replace)) throw new HttpError(404, 'Not found');
+        fs.renameSync(part, path.join(filesDir, String(u.user_id), replace)); q.setFileSize.run(size, u.user_id, replace);
+        return json(200, { id: replace, size });
+      }
+      fs.renameSync(part, path.join(filesDir, String(u.user_id), b)); q.addFile.run(u.user_id, b, size);
+      return json(200, { id: b, size });
+    }
+
     if (a === 'files') {
       if (req.method === 'POST' && !b) return json(200, await saveUpload(u, req));
       const f = b && q.file.get(u.user_id, b);
       if (!f) throw new HttpError(404, 'Not found');
-      if (req.method === 'GET') {
-        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': f.size });
-        return void fs.createReadStream(path.join(filesDir, String(u.user_id), b)).pipe(res);
+      if (req.method === 'GET') { // supports one Range: the browser asks for pieces of media, and encrypted chunks are fetched one by one
+        const file = path.join(filesDir, String(u.user_id), b), rg = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+        if (rg && (rg[1] || rg[2])) {
+          const start = rg[1] === '' ? Math.max(0, f.size - Number(rg[2])) : Number(rg[1]);
+          const end = rg[1] === '' || rg[2] === '' ? f.size - 1 : Math.min(Number(rg[2]), f.size - 1);
+          if (!(start <= end && start < f.size)) { res.writeHead(416, { 'Content-Range': 'bytes */' + f.size }); return res.end(); }
+          res.writeHead(206, { 'Content-Type': 'application/octet-stream', 'Content-Length': end - start + 1, 'Content-Range': `bytes ${start}-${end}/${f.size}`, 'Accept-Ranges': 'bytes' });
+          return void fs.createReadStream(file, { start, end }).pipe(res);
+        }
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': f.size, 'Accept-Ranges': 'bytes' });
+        return void fs.createReadStream(file).pipe(res);
       }
       if (req.method === 'PUT') return json(200, await saveUpload(u, req, b));
       if (req.method === 'DELETE') {
@@ -380,7 +431,8 @@ export function createServer(opts = {}) {
 
   const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*'); // bearer tokens, no cookies: safe to open
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Range, X-Offset');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
     try {

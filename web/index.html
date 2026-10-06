@@ -2234,6 +2234,29 @@
     body.files-mode .editor-pane { display: none !important; }
     .file-item small { display: block; color: var(--text-muted); }
 
+    /* ── Media view and the mini player ── */
+    body.media-mode #media-pane { display: flex; }
+    body.media-mode .note-list-pane,
+    body.media-mode .editor-pane { display: none !important; }
+    .media-tabs { display: inline-flex; gap: 4px; }
+    .media-tabs .cal-btn.active { background: var(--bear-red-light); color: var(--bear-red); border-color: var(--bear-red); }
+    .media-row { cursor: pointer; }
+    .media-row.playing b { color: var(--bear-red); }
+    .media-row .media-ico { font-size: 20px; color: var(--text-muted); flex: none; }
+    .media-row.playing .media-ico { color: var(--bear-red); }
+    .mini-player { position: fixed; z-index: 900; left: 50%; transform: translateX(-50%); bottom: 14px; width: min(560px, calc(100vw - 24px));
+      display: flex; align-items: center; gap: 4px; padding: 8px 10px; background: var(--bg-list); color: var(--text-primary);
+      border: 1px solid var(--border-color); border-radius: 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, .25); }
+    .mini-player.hidden { display: none; }
+    body.has-player .bm-items { padding-bottom: 76px; }
+    .mp-btn { background: transparent; border: 0; color: var(--text-primary); width: 34px; height: 34px; border-radius: 8px; font-size: 18px; cursor: pointer; flex: none; display: inline-flex; align-items: center; justify-content: center; }
+    .mp-btn:hover { background: var(--bg-card-selected); }
+    .mp-mid { flex: 1; min-width: 0; padding: 0 6px; }
+    .mp-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mp-row { display: flex; align-items: center; gap: 8px; }
+    .mp-row input[type=range] { flex: 1; min-width: 0; accent-color: var(--bear-red); }
+    #mp-time { font: 11px var(--font-mono); color: var(--text-muted); flex: none; }
+
     /* ── Tasks & Kanban view (encrypted, tasks collection) ── */
     .tasks-pane {
       flex: 1;
@@ -2747,6 +2770,15 @@
     <!-- Mobile Backdrop -->
     <div id="sidebar-overlay" class="sidebar-overlay hidden" onclick="toggleSidebar()"></div>
 
+    <audio id="media-audio" preload="metadata"></audio>
+    <div id="mini-player" class="mini-player hidden" role="region" aria-label="Player">
+      <button class="mp-btn" id="mp-prev" title="Previous" aria-label="Previous"><i class="ti ti-player-skip-back"></i></button>
+      <button class="mp-btn" id="mp-play" title="Play / pause" aria-label="Play / pause"><i class="ti ti-player-play"></i></button>
+      <button class="mp-btn" id="mp-next" title="Next" aria-label="Next"><i class="ti ti-player-skip-forward"></i></button>
+      <div class="mp-mid"><div id="mp-title" class="mp-title"></div><div class="mp-row"><input type="range" id="mp-seek" min="0" max="1000" value="0" aria-label="Seek"><span id="mp-time">0:00</span></div></div>
+      <button class="mp-btn" id="mp-close" title="Close" aria-label="Close"><i class="ti ti-x"></i></button>
+    </div>
+
     <!-- ════════════════════════════════════════════════════════════
          COLUMN 1: Sidebar (Bear Dark Graphite)
     ════════════════════════════════════════════════════════════ -->
@@ -2844,6 +2876,12 @@
           <span class="nav-icon"><i class="ti ti-photo"></i></span>
           <span class="nav-text">Photos</span>
           <span class="nav-count" id="count-photos">0</span>
+        </a>
+
+        <a class="nav-item" id="nav-media" onclick="openMedia()">
+          <span class="nav-icon"><i class="ti ti-player-play"></i></span>
+          <span class="nav-text">Media</span>
+          <span class="nav-count" id="count-media">0</span>
         </a>
 
         <a class="nav-item" id="nav-tasks" onclick="openTasks()">
@@ -3057,6 +3095,24 @@
           <input type="file" id="files-input" class="hidden" multiple onchange="filesUpload(this)">
         </div>
         <div class="bm-items" id="files-items"></div>
+      </div>
+    </section>
+
+    <!-- Media pane: music and video from your files, played while they download (encrypted in chunks, decrypted by the service worker) -->
+    <section class="bm-pane" id="media-pane">
+      <div class="bm-folders" id="media-groups"></div>
+      <div class="bm-main">
+        <div class="bm-bar">
+          <button class="mobile-menu-btn" onclick="toggleSidebar()" title="Menu" aria-label="Menu"><i class="ti ti-menu-2"></i></button>
+          <span class="media-tabs"><button class="cal-btn active" id="media-tab-music" onclick="mediaTabSet('music')"><i class="ti ti-music"></i> Music</button><button class="cal-btn" id="media-tab-video" onclick="mediaTabSet('video')"><i class="ti ti-movie"></i> Video</button></span>
+          <input type="search" id="media-search" placeholder="Search" oninput="mediaQuery = this.value; renderMedia()" style="flex:1;min-width:90px">
+          <button class="cal-btn" onclick="filesNewGroup()"><i class="ti ti-playlist-add"></i> <span id="media-newgroup">New playlist</span></button>
+          <button class="cal-btn hidden" id="media-rengroup" onclick="filesRenameGroup()" title="Rename" aria-label="Rename"><i class="ti ti-pencil"></i></button>
+          <button class="cal-btn hidden" id="media-delgroup" onclick="filesDeleteGroup()" title="Delete (the files stay)" aria-label="Delete"><i class="ti ti-folder-x"></i></button>
+          <button class="cal-btn primary" onclick="document.getElementById('media-input').click()"><i class="ti ti-upload"></i> Upload</button>
+          <input type="file" id="media-input" class="hidden" accept="audio/*,video/*,.mp3,.m4a,.flac,.opus,.ogg,.wav,.mp4,.webm,.mov,.mkv" multiple onchange="filesUpload(this)">
+        </div>
+        <div class="bm-items" id="media-items"></div>
       </div>
     </section>
 
@@ -4274,7 +4330,7 @@ print("Welcome to Orto!")
     function setFilter(filter) {
       closeCalendar();
       closeBlog();
-      closeBookmarks(); closeFiles(); closeContacts(); closeSecrets();
+      closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeMedia();
       closeTasks();
       currentFilter = filter;
       triggerRender();
@@ -4395,6 +4451,8 @@ print("Welcome to Orto!")
     }, { passive: true });
 
     function logout() {
+      stopMedia();
+      try { navigator.serviceWorker?.controller?.postMessage({ type: 'orto-media-clear' }); } catch (_) { } // the worker must not keep the key
       window.location.reload();
     }
 
@@ -4528,7 +4586,7 @@ print("Welcome to Orto!")
     }
 
     function openCalendar() {
-      closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeTasks();
+      closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeMedia(); closeTasks();
       calMode = true;
       document.body.classList.add('cal-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -4643,7 +4701,7 @@ print("Welcome to Orto!")
     }
     function unlinkNoteFromModal(soul) { evLinks = evLinks.filter(l => !(l.kind === 'note' && l.soul === soul)); renderEvLinks(); }
     function openLinkedNote(soul) {
-      closeEventModal(); if (typeof closeTaskModal === 'function') closeTaskModal(); closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); if (typeof closeTasks === 'function') closeTasks(); selectNote(soul);
+      closeEventModal(); if (typeof closeTaskModal === 'function') closeTaskModal(); closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeMedia(); if (typeof closeTasks === 'function') closeTasks(); selectNote(soul);
     }
     // events & tasks linked to the open note, shown under its title; click one to open it
     function renderNoteEvents() {
@@ -4749,7 +4807,7 @@ print("Welcome to Orto!")
       });
     }
     function openBlog() {
-      closeCalendar(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeTasks();
+      closeCalendar(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeMedia(); closeTasks();
       blogMode = true;
       document.body.classList.add('blog-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -4933,7 +4991,7 @@ print("Welcome to Orto!")
     function bmScheduleRender() { clearTimeout(bmTimer); bmTimer = setTimeout(renderBookmarks, 150); }
 
     function openBookmarks() {
-      closeCalendar(); closeBlog(); closeTasks(); closeFiles(); closeContacts(); closeSecrets();
+      closeCalendar(); closeBlog(); closeTasks(); closeFiles(); closeContacts(); closeSecrets(); closeMedia();
       bmMode = true;
       document.body.classList.add('bm-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -5063,7 +5121,7 @@ print("Welcome to Orto!")
       const b = e.target.closest('[data-act]'); if (b && handlers[b.dataset.act]) handlers[b.dataset.act](b.dataset.soul);
     });
     function openPane(mode, navId, render) {
-      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets();
+      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeMedia();
       document.body.classList.add(mode);
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
       document.getElementById(navId).classList.add('active');
@@ -5208,7 +5266,7 @@ print("Welcome to Orto!")
 
     // Files and Photos — encrypted uploads stored on the Orto server; index in the `files` collection (see Orto.uploadFile).
     // Photos is the same data as a thumbnail grid of the image files (thumbnails are made in the browser and kept in the encrypted index).
-    let filesMode = false, filesView = 'list', filesCache = [], filesGroups = { folders: [], albums: [] }, filesFolder = null, filesAlbum = null; // null = all, '' = not in any folder/album
+    let filesMode = false, filesView = 'list', filesCache = [], filesGroups = { folders: [], albums: [], playlists: [] }, filesFolder = null, filesAlbum = null, mediaMode = false, mediaPlaylist = null; // null = all, '' = not in any folder/album/playlist
     const humanSize = (n) => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
     const isPhoto = (f) => /^image\//.test(f.type || '') || /\.(jpe?g|png|gif|webp|avif|bmp|svg)$/i.test(f.name || '');
     const download = (blob, name) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
@@ -5224,7 +5282,7 @@ print("Welcome to Orto!")
     const closeModal = (id = 'zmodal-bg') => document.getElementById(id)?.remove();
 
     async function openFiles(view) {
-      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets();
+      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeMedia();
       filesMode = true;
       filesView = view === 'photos' ? 'photos' : 'list';
       document.body.classList.add('files-mode');
@@ -5240,8 +5298,16 @@ print("Welcome to Orto!")
       document.getElementById('nav-files')?.classList.remove('active');
       document.getElementById('nav-photos')?.classList.remove('active');
     }
-    const groupKind = () => filesView === 'photos' ? 'album' : 'folder';
-    const filesPick = (v) => { if (filesView === 'photos') filesAlbum = v; else filesFolder = v; renderFiles(); };
+    const groupKind = () => mediaMode ? 'playlist' : filesView === 'photos' ? 'album' : 'folder';
+    const selGet = (k) => k === 'folder' ? filesFolder : k === 'album' ? filesAlbum : mediaPlaylist;
+    const selSet = (k, v) => { if (k === 'folder') filesFolder = v; else if (k === 'album') filesAlbum = v; else mediaPlaylist = v; };
+    const refreshFiles = () => mediaMode ? renderMedia() : renderFiles();
+    const filesPick = (v) => { selSet(groupKind(), v); refreshFiles(); };
+    const GROUP_UI = { // where each kind is drawn, and how it is called
+      folder: { box: 'files-folders', btn: 'files-newgroup', ren: 'files-rengroup', del: 'files-delgroup', all: 'All files', none: 'Unfiled', add: 'New folder' },
+      album: { box: 'files-folders', btn: 'files-newgroup', ren: 'files-rengroup', del: 'files-delgroup', all: 'All photos', none: 'No album', add: 'New album' },
+      playlist: { box: 'media-groups', btn: 'media-newgroup', ren: 'media-rengroup', del: 'media-delgroup', all: 'All', none: 'No playlist', add: 'New playlist' },
+    };
     // names in use plus the empty ones remembered in the index, for the pickers
     const groupNames = (kind) => [...new Set([...filesGroups[kind + 's'], ...filesCache.map(f => f[kind]).filter(Boolean)])].sort();
     function renderFileGroups(pool, kind) {
@@ -5249,15 +5315,15 @@ print("Welcome to Orto!")
       const climb = (name, add) => { const parts = kind === 'folder' ? name.split('/') : [name]; parts.forEach((_, i) => { const p = parts.slice(0, i + 1).join('/'); counts[p] = (counts[p] || 0) + add; }); };
       filesGroups[kind + 's'].forEach(n => climb(n, 0));
       pool.forEach(f => f[kind] ? climb(f[kind], 1) : loose++); // like bookmarks: a folder counts everything below it
-      let sel = kind === 'folder' ? filesFolder : filesAlbum;
-      if (sel && !(sel in counts)) { sel = null; if (kind === 'folder') filesFolder = null; else filesAlbum = null; }
-      const names = Object.keys(counts).sort(), photos = kind === 'album';
+      let sel = selGet(kind);
+      if (sel && !(sel in counts)) { sel = null; selSet(kind, null); }
+      const names = Object.keys(counts).sort(), ui = GROUP_UI[kind];
       const row = (name, label, n, depth = 0) => `<div class="bm-folder ${sel === name ? 'active' : ''}" style="padding-left:${10 + depth * 14}px" onclick="filesPick(${name === null ? 'null' : `decodeURIComponent('${encodeURIComponent(name)}')`})"><span>${escapeHtml(label)}</span><span>${n}</span></div>`;
-      document.getElementById('files-folders').innerHTML = row(null, photos ? 'All photos' : 'All files', pool.length)
-        + names.map(n => row(n, n.split('/').pop(), counts[n], photos ? 0 : n.split('/').length - 1)).join('')
-        + (names.length && loose ? row('', photos ? 'No album' : 'Unfiled', loose) : '');
-      document.getElementById('files-newgroup').textContent = photos ? 'New album' : 'New folder';
-      for (const id of ['files-rengroup', 'files-delgroup']) document.getElementById(id).classList.toggle('hidden', !sel);
+      document.getElementById(ui.box).innerHTML = row(null, ui.all, pool.length)
+        + names.map(n => row(n, n.split('/').pop(), counts[n], kind === 'folder' ? n.split('/').length - 1 : 0)).join('')
+        + (names.length && loose ? row('', ui.none, loose) : '');
+      document.getElementById(ui.btn).textContent = ui.add;
+      for (const id of [ui.ren, ui.del]) document.getElementById(id).classList.toggle('hidden', !sel);
       return sel;
     }
     async function renderFiles() {
@@ -5289,39 +5355,39 @@ print("Welcome to Orto!")
     }
     async function filesNewGroup() {
       const kind = groupKind();
-      const name = (prompt(kind === 'folder' ? 'New folder name (use / for sub-folders)' : 'New album name', kind === 'folder' && filesFolder ? filesFolder + '/' : '') || '').trim();
+      const name = (prompt(kind === 'folder' ? 'New folder name (use / for sub-folders)' : 'New ' + kind + ' name', kind === 'folder' && filesFolder ? filesFolder + '/' : '') || '').trim();
       if (!name) return;
-      try { const n = await os.addFileGroup(kind, name); if (kind === 'folder') filesFolder = n; else filesAlbum = n; } catch (e) { return showToast(e.message); }
-      renderFiles();
+      try { selSet(kind, await os.addFileGroup(kind, name)); } catch (e) { return showToast(e.message); }
+      refreshFiles();
     }
     async function filesRenameGroup() {
-      const kind = groupKind(), from = kind === 'folder' ? filesFolder : filesAlbum; if (!from) return;
+      const kind = groupKind(), from = selGet(kind); if (!from) return;
       const to = prompt('New name for "' + from + '" (empty = remove it, its files stay)', from);
       if (to === null || to.trim() === from) return;
       try {
         const r = await os.renameFileGroup(kind, from, to);
-        if (kind === 'folder') filesFolder = r.name || null; else filesAlbum = r.name || null;
+        selSet(kind, r.name || null);
         showToast(r.name ? 'Renamed, ' + r.moved + ' file' + (r.moved === 1 ? '' : 's') + ' updated' : 'Removed');
       } catch (e) { showToast(e.message); }
-      renderFiles();
+      refreshFiles();
     }
     async function filesDeleteGroup() {
-      const kind = groupKind(), from = kind === 'folder' ? filesFolder : filesAlbum; if (!from) return;
+      const kind = groupKind(), from = selGet(kind); if (!from) return;
       if (!confirm('Delete the ' + kind + ' "' + from + '"' + (kind === 'folder' ? ' and its sub-folders' : '') + '? The files are not deleted, they just lose the ' + kind + '.')) return;
       try { await os.renameFileGroup(kind, from, ''); } catch (e) { return showToast(e.message); }
-      if (kind === 'folder') filesFolder = null; else filesAlbum = null;
-      renderFiles();
+      selSet(kind, null);
+      refreshFiles();
     }
     function filesMove(id, kind) {
       const f = filesCache.find(x => x.id === id); if (!f) return;
-      const bg = openModal(`<b>${kind === 'folder' ? 'Move to folder' : 'Add to album'}</b><p class="hint">${escapeHtml(f.name)}</p>
-        <input type="text" id="mv-name" list="mv-list" placeholder="${kind === 'folder' ? 'e.g. Docs/2026 (empty = no folder)' : 'Album name (empty = no album)'}" value="${escapeHtml(f[kind] || '')}">
+      const bg = openModal(`<b>${kind === 'folder' ? 'Move to folder' : kind === 'playlist' ? 'Add to playlist' : 'Add to album'}</b><p class="hint">${escapeHtml(f.name)}</p>
+        <input type="text" id="mv-name" list="mv-list" placeholder="${kind === 'folder' ? 'e.g. Docs/2026 (empty = no folder)' : kind === 'playlist' ? 'Playlist name (empty = no playlist)' : 'Album name (empty = no album)'}" value="${escapeHtml(f[kind] || '')}">
         <datalist id="mv-list">${groupNames(kind).map(n => `<option value="${escapeHtml(n)}">`).join('')}</datalist>
         <div class="cal-actions"><button class="cal-btn" id="mv-cancel">Cancel</button><button class="cal-btn primary" id="mv-ok">Save</button></div>`, 'move-modal-bg');
       const input = bg.querySelector('#mv-name'); input.focus(); input.select();
       const save = async () => {
         try { await os.moveFile(id, { [kind]: input.value }); } catch (e) { return showToast(e.message); }
-        closeModal('move-modal-bg'); renderFiles();
+        closeModal('move-modal-bg'); refreshFiles();
       };
       bg.querySelector('#mv-cancel').onclick = () => closeModal('move-modal-bg');
       bg.querySelector('#mv-ok').onclick = save;
@@ -5338,21 +5404,24 @@ print("Welcome to Orto!")
     }
     async function filesUpload(input) {
       const list = [...input.files]; input.value = '';
+      const kind = groupKind(), to = { [kind]: selGet(kind) || undefined }; // into the folder / album / playlist that is open
       for (const [i, file] of list.entries()) {
-        showToast(`Encrypting & uploading ${file.name}${list.length > 1 ? ` (${i + 1}/${list.length})` : ''}…`);
-        try { await os.uploadFile(new Uint8Array(await file.arrayBuffer()), file.name, { type: file.type || undefined, thumb: await makeThumb(file), folder: filesView === 'photos' ? undefined : filesFolder || undefined, album: filesView === 'photos' ? filesAlbum || undefined : undefined }); }
+        const label = file.name + (list.length > 1 ? ` (${i + 1}/${list.length})` : '');
+        showToast(`Encrypting & uploading ${label}…`);
+        try { await os.uploadFileChunked(file, file.name, { type: file.type || undefined, thumb: await makeThumb(file), ...to, onProgress: (p) => { if (file.size > 4e6) showToast(`Uploading ${label} ${Math.round(p * 100)}%`); } }); }
         catch (e) { showToast(file.name + ': ' + e.message); break; }
       }
       if (list.length) showToast(list.length > 1 ? 'Uploaded ' + list.length + ' files' : 'Uploaded ' + list[0].name);
-      renderFiles();
+      refreshFiles();
     }
     async function filesDownload(id, name) {
-      try { download(new Blob([await os.downloadFile(id)]), decodeURIComponent(name)); } catch (e) { showToast(e.message); }
+      try { download(new Blob([await os.downloadFile(id, { meta: filesCache.find(f => f.id === id) })]), decodeURIComponent(name)); } catch (e) { showToast(e.message); }
     }
     async function filesDelete(id) {
       if (!confirm('Delete this file?')) return;
       try { await os.deleteFile(id); } catch (e) { return showToast(e.message); }
-      closeModal('photo-modal-bg'); renderFiles();
+      if (mediaQueue[mediaIdx]?.id === id) stopMedia();
+      closeModal('photo-modal-bg'); refreshFiles();
     }
     async function filesShare(id) {
       showToast('Creating link…');
@@ -5370,8 +5439,130 @@ print("Welcome to Orto!")
       $('ph-album').onclick = () => { $('ph-close').onclick(); filesMove(id, 'album'); };
       $('ph-share').onclick = () => filesShare(id);
       $('ph-dl').onclick = () => bytes && download(new Blob([bytes]), f.name);
-      try { bytes = await os.downloadFile(id); url = URL.createObjectURL(new Blob([bytes], { type: /^image\/(png|jpe?g|gif|webp|avif|bmp)$/.test(f.type || '') ? f.type : '' })); $('photo-full').src = url; }
+      try { bytes = await os.downloadFile(id, { meta: f }); url = URL.createObjectURL(new Blob([bytes], { type: /^image\/(png|jpe?g|gif|webp|avif|bmp)$/.test(f.type || '') ? f.type : '' })); $('photo-full').src = url; }
       catch (e) { showToast(e.message); }
+    }
+
+    // ── Media: music and video from the files collection, played while they download ──
+    // Files uploaded from here are encrypted in chunks (Orto.uploadFileChunked). The player points at <scope>__media/<id>; web/sw.js answers the
+    // browser's Range requests by fetching and decrypting only the chunks needed, so playback starts at once and seeking works.
+    // Older single-blob files, and browsers without a service worker, fall back to downloading the whole file first.
+    const isAudio = (f) => /^audio\//.test(f.type || '') || /\.(mp3|m4a|aac|ogg|oga|opus|flac|wav|weba)$/i.test(f.name || '');
+    const isVideo = (f) => /^video\//.test(f.type || '') || /\.(mp4|m4v|webm|mov|ogv|mkv)$/i.test(f.name || '');
+    const MEDIA_MIME = { mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', flac: 'audio/flac', wav: 'audio/wav', weba: 'audio/webm', mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', ogv: 'video/ogg', mkv: 'video/x-matroska' };
+    const mediaType = (f) => /^(audio|video)\//.test(f.type || '') ? f.type : MEDIA_MIME[(f.name.split('.').pop() || '').toLowerCase()] || 'application/octet-stream';
+    const mediaTitle = (f) => f.name.replace(/\.[^.]+$/, '').replace(/_+/g, ' ');
+    const mediaClock = (t) => isFinite(t) ? Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0') : '0:00';
+    let mediaTab = 'music', mediaQuery = '', mediaQueue = [], mediaIdx = -1, mediaBlobUrl = null;
+    const mediaParams = new Map(); // file id -> what the service worker needs; re-sent if the worker was stopped
+    if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', (e) => { if (e.data?.type === 'orto-media-need') e.ports[0]?.postMessage(mediaParams.get(e.data.id) || null); });
+
+    async function mediaUrl(f) {
+      if (f.chunked && 'serviceWorker' in navigator) {
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          const p = { type: 'orto-media', id: f.id, meta: { id: f.id, size: f.size, chunked: f.chunked, type: mediaType(f) }, key: os.key, token: os.token, base: serverUrl || location.origin };
+          mediaParams.set(f.id, p);
+          reg.active.postMessage(p);
+          for (let i = 0; i < 30 && !navigator.serviceWorker.controller; i++) await new Promise(r => setTimeout(r, 100)); // the first visit is controlled a moment after activation
+          if (navigator.serviceWorker.controller) return new URL('__media/' + f.id, reg.scope).href;
+        } catch (_) { }
+      }
+      showToast('Loading ' + mediaTitle(f) + '…');
+      const bytes = await os.downloadFile(f.id, { meta: f });
+      return mediaBlobUrl = URL.createObjectURL(new Blob([bytes], { type: mediaType(f) }));
+    }
+    function mediaFree() { if (mediaBlobUrl) { URL.revokeObjectURL(mediaBlobUrl); mediaBlobUrl = null; } }
+
+    async function openMedia() {
+      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeMedia();
+      mediaMode = true;
+      document.body.classList.add('media-mode');
+      document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
+      document.getElementById('nav-media').classList.add('active');
+      if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('open')) toggleSidebar();
+      renderMedia();
+    }
+    function closeMedia() {
+      mediaMode = false;
+      document.body.classList.remove('media-mode');
+      document.getElementById('nav-media')?.classList.remove('active');
+    }
+    const mediaTabSet = (t) => { mediaTab = t; mediaPlaylist = null; renderMedia(); };
+    async function renderMedia() {
+      const items = document.getElementById('media-items');
+      let files;
+      try { [files, filesGroups] = await Promise.all([os.listFiles(), os.fileGroups()]); } catch (e) { items.innerHTML = '<div class="blog-empty">' + escapeHtml(e.message) + '</div>'; return; }
+      filesCache = files;
+      document.getElementById('count-media').textContent = files.filter(f => isAudio(f) || isVideo(f)).length;
+      document.getElementById('count-files').textContent = files.length;
+      document.getElementById('count-photos').textContent = files.filter(isPhoto).length;
+      for (const t of ['music', 'video']) document.getElementById('media-tab-' + t).classList.toggle('active', mediaTab === t);
+      const music = mediaTab === 'music', pool = files.filter(music ? isAudio : isVideo);
+      const sel = renderFileGroups(pool, 'playlist'), q = mediaQuery.trim().toLowerCase();
+      const shown = pool.filter(f => (sel === null || (f.playlist || '') === sel) && (!q || mediaTitle(f).toLowerCase().includes(q)));
+      if (music) shown.sort((a, b) => sel ? a.name.localeCompare(b.name, undefined, { numeric: true }) : 0);
+      window.mediaShown = shown;
+      const playing = mediaQueue[mediaIdx]?.id;
+      items.innerHTML = shown.length ? shown.map(f => `<div class="bm-item file-item media-row ${f.id === playing ? 'playing' : ''}" onclick="mediaPlay('${escapeHtml(f.id)}')">
+          <i class="ti ti-${music ? (f.id === playing ? 'volume' : 'music') : 'movie'} media-ico"></i>
+          <div style="flex:1;min-width:0"><b>${escapeHtml(mediaTitle(f))}</b><small>${humanSize(f.size)}${f.playlist ? ' · ' + escapeHtml(f.playlist) : ''}${f.chunked ? '' : ' · plays after download'}</small></div>
+          <button class="bm-del" title="Add to playlist" onclick="event.stopPropagation();filesMove('${escapeHtml(f.id)}','playlist')"><i class="ti ti-playlist-add"></i></button>
+          <button class="bm-del" title="Download" onclick="event.stopPropagation();filesDownload('${escapeHtml(f.id)}','${encodeURIComponent(f.name)}')"><i class="ti ti-download"></i></button>
+          <button class="bm-del" title="Delete" onclick="event.stopPropagation();filesDelete('${escapeHtml(f.id)}')"><i class="ti ti-trash"></i></button></div>`).join('')
+        : '<div class="blog-empty">' + (sel === null && !q ? (music ? 'No music yet. Use Upload (mp3, m4a, ogg, flac, wav...).' : 'No video yet. Use Upload (mp4, webm...).') : 'Nothing here.') + '</div>';
+    }
+
+    // music: one <audio> that keeps playing while you move around the app; the mini player is its remote
+    const $a = () => document.getElementById('media-audio');
+    async function mediaPlay(id) {
+      const f = filesCache.find(x => x.id === id); if (!f) return;
+      if (isVideo(f)) return videoOpen(f);
+      mediaQueue = (window.mediaShown || []).filter(isAudio); mediaIdx = Math.max(0, mediaQueue.findIndex(x => x.id === id));
+      mediaStart();
+    }
+    async function mediaStart() {
+      const f = mediaQueue[mediaIdx]; if (!f) return;
+      const a = $a();
+      document.getElementById('mini-player').classList.remove('hidden'); document.body.classList.add('has-player');
+      document.getElementById('mp-title').textContent = mediaTitle(f);
+      a.pause(); mediaFree();
+      try { a.src = await mediaUrl(f); await a.play(); } catch (e) { if (e.name !== 'AbortError') showToast('Cannot play ' + mediaTitle(f) + ': ' + e.message); }
+      if ('mediaSession' in navigator) { try { navigator.mediaSession.metadata = new MediaMetadata({ title: mediaTitle(f), artist: 'Orto' }); } catch (_) { } }
+      if (mediaMode) renderMedia();
+    }
+    function stopMedia() {
+      const a = $a(); a.pause(); a.removeAttribute('src'); a.load(); mediaFree();
+      mediaQueue = []; mediaIdx = -1;
+      document.getElementById('mini-player').classList.add('hidden'); document.body.classList.remove('has-player');
+    }
+    function initMediaPlayer() {
+      const a = $a(), $ = (x) => document.getElementById(x); let drag = false;
+      $('mp-play').onclick = () => a.src ? (a.paused ? a.play() : a.pause()) : null;
+      $('mp-next').onclick = () => { if (mediaIdx < mediaQueue.length - 1) { mediaIdx++; mediaStart(); } };
+      $('mp-prev').onclick = () => { if (a.currentTime > 3 || mediaIdx === 0) a.currentTime = 0; else { mediaIdx--; mediaStart(); } };
+      $('mp-close').onclick = stopMedia;
+      $('mp-seek').oninput = () => { drag = true; };
+      $('mp-seek').onchange = () => { if (isFinite(a.duration)) a.currentTime = $('mp-seek').value / 1000 * a.duration; drag = false; };
+      a.addEventListener('timeupdate', () => { if (!drag && isFinite(a.duration)) $('mp-seek').value = Math.round(a.currentTime / a.duration * 1000); $('mp-time').textContent = mediaClock(a.currentTime) + ' / ' + mediaClock(a.duration); });
+      a.addEventListener('play', () => { $('mp-play').innerHTML = '<i class="ti ti-player-pause"></i>'; });
+      a.addEventListener('pause', () => { $('mp-play').innerHTML = '<i class="ti ti-player-play"></i>'; });
+      a.addEventListener('ended', () => { if (mediaIdx < mediaQueue.length - 1) { mediaIdx++; mediaStart(); } });
+      a.addEventListener('error', () => { if (a.getAttribute('src')) showToast('The player could not read this file'); });
+      if ('mediaSession' in navigator) for (const [act, fn] of [['play', () => a.play()], ['pause', () => a.pause()], ['nexttrack', () => $('mp-next').onclick()], ['previoustrack', () => $('mp-prev').onclick()]]) { try { navigator.mediaSession.setActionHandler(act, fn); } catch (_) { } }
+    }
+    initMediaPlayer();
+
+    // video: a modal with the native controls
+    async function videoOpen(f) {
+      $a().pause();
+      const bg = openModal(`<b>${escapeHtml(mediaTitle(f))}</b><div style="text-align:center;margin-top:8px"><video id="vid" controls autoplay playsinline style="max-width:100%;max-height:68vh;background:#000;border-radius:8px"></video></div>
+        <div class="cal-actions"><button class="cal-btn primary" id="vid-close">Close</button></div>`, 'video-modal-bg');
+      bg.firstChild.style.maxWidth = 'min(94vw, 900px)';
+      const v = bg.querySelector('#vid'), done = () => { v.pause(); v.removeAttribute('src'); v.load(); mediaFree(); closeModal('video-modal-bg'); };
+      bg.querySelector('#vid-close').onclick = done;
+      bg.addEventListener('mousedown', (e) => { if (e.target === bg) done(); });
+      try { v.src = await mediaUrl(f); } catch (e) { showToast(e.message); }
     }
 
     // Public share links: the item is encrypted with a fresh key that only lives in the link's #fragment
@@ -5520,7 +5711,7 @@ print("Welcome to Orto!")
       };
     }
     window.serverConfig = serverConfig;
-    Object.assign(window, { suggestTagsForNote, openFiles, filesUpload, filesDownload, filesDelete, filesShare, filesPick, filesNewGroup, filesRenameGroup, filesDeleteGroup, filesMove, photoOpen, shareNoteLink, openSettings });
+    Object.assign(window, { openMedia, mediaTabSet, mediaPlay, suggestTagsForNote, openFiles, filesUpload, filesDownload, filesDelete, filesShare, filesPick, filesNewGroup, filesRenameGroup, filesDeleteGroup, filesMove, photoOpen, shareNoteLink, openSettings });
 
     Object.assign(window, { openBookmarks, bmSearch, bmPickFolder, bmAdd, bmImport, bmDelete, bmEdit, bmRenameFolder, bmExport });
 
@@ -5563,7 +5754,7 @@ print("Welcome to Orto!")
     }
 
     function openTasks() {
-      closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets();
+      closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeMedia();
       tasksMode = true;
       document.body.classList.add('tasks-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));

@@ -164,8 +164,24 @@ const unseal = async (key, cipher) => {
   const raw = fromB64(cipher.slice(3));
   return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.subarray(0, 12) }, key, raw.subarray(12))));
 };
-// folder: "a/b" nests; album: flat. Trimmed, no empty parts, at most 100 chars.
-const groupName = (kind, s) => { const parts = String(s ?? '').split('/').map((x) => x.trim()).filter(Boolean); return (kind === 'album' ? parts.join('-') : parts.join('/')).slice(0, 100); };
+// folder: "a/b" nests; album and playlist: flat. Trimmed, no empty parts, at most 100 chars.
+const groupName = (kind, s) => { const parts = String(s ?? '').split('/').map((x) => x.trim()).filter(Boolean); return (kind === 'folder' ? parts.join('/') : parts.join('-')).slice(0, 100); };
+
+// Chunked files (big files, media you can play while it downloads): the blob is chunk 0, chunk 1, ... back to back, each
+// `iv(12) | AES-GCM(chunk) | tag(16)`, so chunk i sits at byte i * (size + 28) and can be fetched on its own with a Range request.
+// The authenticated data binds a chunk to its place: file nonce, index and chunk count, so chunks cannot be swapped, dropped
+// or taken from another file. {size, n, nonce} live in the encrypted index entry. web/sw.js has the same decryption: keep in sync.
+export const CHUNK = 1 << 20;
+const GCM = 28;
+const chunkAad = (nonce, i, n) => { const a = new Uint8Array(nonce.length + 8); a.set(nonce); const v = new DataView(a.buffer); v.setUint32(nonce.length, i); v.setUint32(nonce.length + 4, n); return a; };
+async function sealChunk(key, plain, nonce, i, n) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: chunkAad(nonce, i, n) }, key, plain));
+  const out = new Uint8Array(12 + ct.length); out.set(iv); out.set(ct, 12);
+  return out;
+}
+const openChunk = async (key, bytes, nonce, i, n) => new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes.subarray(0, 12), additionalData: chunkAad(nonce, i, n) }, key, bytes.subarray(12)));
+const chunkLen = (m, i) => (i < m.chunked.n - 1 ? m.chunked.size : m.size - (m.chunked.n - 1) * m.chunked.size) + GCM; // stored length of chunk i
 const chunked = async (items, fn, n = 20) => { for (let i = 0; i < items.length; i += n) await Promise.all(items.slice(i, i + n).map(fn)); };
 
 /**
@@ -215,11 +231,11 @@ export class Orto {
 
   // ─── transport ──────────────────────────────────────────────────────
 
-  async _fetch(method, path, body, signal) {
+  async _fetch(method, path, body, signal, headers) {
     const isBytes = body instanceof Uint8Array;
     const r = await fetch(this.server + '/api' + path, {
       method, signal,
-      headers: { ...(this.token && { Authorization: 'Bearer ' + this.token }), ...(body !== undefined && !isBytes && { 'Content-Type': 'application/json' }) },
+      headers: { ...(this.token && { Authorization: 'Bearer ' + this.token }), ...(body !== undefined && !isBytes && { 'Content-Type': 'application/json' }), ...headers },
       body: body === undefined ? undefined : isBytes ? body : JSON.stringify(body)
     });
     if (!r.ok) {
@@ -401,12 +417,12 @@ export class Orto {
    * `type` (MIME) and `thumb` (small data: URL) are stored in the encrypted index entry; the web app's Photos view uses them.
    * @returns {Promise<{id:string, name:string, size:number, encrypted:boolean, addedAt:number}>}
    */
-  async uploadFile(data, name, { encrypt = true, type, thumb, addedAt, folder, album } = {}) {
+  async uploadFile(data, name, { encrypt = true, type, thumb, addedAt, folder, album, playlist } = {}) {
     this._needKey();
     const body = encrypt ? new TextEncoder().encode(await this.encrypt(toB64(data))) : data;
     const { id } = await (await this._fetch('POST', '/files', body)).json();
     const meta = { id, name, size: data.length, encrypted: encrypt, addedAt: addedAt ?? Date.now(), ...(type && { type }), ...(thumb && { thumb }),
-      ...(groupName('folder', folder) && { folder: groupName('folder', folder) }), ...(groupName('album', album) && { album: groupName('album', album) }) };
+      ...(groupName('folder', folder) && { folder: groupName('folder', folder) }), ...(groupName('album', album) && { album: groupName('album', album) }), ...(groupName('playlist', playlist) && { playlist: groupName('playlist', playlist) }) };
     await this.put('files', id, meta);
     return meta;
   }
@@ -421,10 +437,10 @@ export class Orto {
 
   async fileGroups() {
     const r = await this._get('files', '_groups');
-    return { folders: r?.folders || [], albums: r?.albums || [] };
+    return { folders: r?.folders || [], albums: r?.albums || [], playlists: r?.playlists || [] };
   }
 
-  /** @param {'folder'|'album'} kind @returns {Promise<string>} the normalized name */
+  /** @param {'folder'|'album'|'playlist'} kind @returns {Promise<string>} the normalized name */
   async addFileGroup(kind, name) {
     this._needKey();
     name = groupName(kind, name);
@@ -452,12 +468,12 @@ export class Orto {
   }
 
   /** Set (or, with '', clear) a file's folder and/or album. Leave a field undefined to keep it. */
-  async moveFile(id, { folder, album } = {}) {
+  async moveFile(id, { folder, album, playlist } = {}) {
     this._needKey();
     const m = await this._get('files', id);
     if (!m?.id) throw new Error('No such file');
     const { soul, updatedAt, ...meta } = m;
-    for (const [k, v] of [['folder', folder], ['album', album]]) {
+    for (const [k, v] of [['folder', folder], ['album', album], ['playlist', playlist]]) {
       if (v === undefined) continue;
       const name = groupName(k, v);
       if (name) meta[k] = name; else delete meta[k];
@@ -466,10 +482,77 @@ export class Orto {
     return meta;
   }
 
-  /** @returns {Promise<Uint8Array>} the file, decrypted if it was uploaded encrypted. */
-  async downloadFile(id, { encrypted } = {}) {
+  /**
+   * Upload a Blob/File/Uint8Array in encrypted chunks (see CHUNK above): memory stays at a couple of chunks whatever the size,
+   * and the file can be played or read piece by piece with readFileRange(). `onProgress(0..1)`.
+   * @returns {Promise<object>} the index entry: {id, name, size, encrypted, chunked: {size, n, nonce}, addedAt, ...}
+   */
+  async uploadFileChunked(data, name, { type, thumb, addedAt, folder, album, playlist, chunkSize = CHUNK, onProgress } = {}) {
     this._needKey();
-    if (encrypted === undefined) encrypted = (await this._get('files', id))?.encrypted ?? false;
+    const blob = data instanceof Blob ? data : new Blob([data]);
+    const size = blob.size, n = Math.max(1, Math.ceil(size / chunkSize)), nonce = crypto.getRandomValues(new Uint8Array(16));
+    const { id: tmp } = await this._json('POST', '/files/begin');
+    let sent = 0;
+    for (let i = 0; i < n; i++) {
+      const plain = new Uint8Array(await blob.slice(i * chunkSize, (i + 1) * chunkSize).arrayBuffer());
+      const body = await sealChunk(this.key, plain, nonce, i, n);
+      await this._fetch('PUT', `/files/${tmp}/append`, body, undefined, { 'X-Offset': String(sent) });
+      sent += body.length;
+      onProgress?.((i + 1) / n);
+    }
+    const { id } = await this._json('POST', `/files/${tmp}/finish`);
+    const g = { folder: groupName('folder', folder), album: groupName('album', album), playlist: groupName('playlist', playlist) };
+    const meta = { id, name, size, encrypted: true, chunked: { size: chunkSize, n, nonce: toB64(nonce) }, addedAt: addedAt ?? Date.now(), ...(type && { type }), ...(thumb && { thumb }),
+      ...Object.fromEntries(Object.entries(g).filter(([, v]) => v)) };
+    await this.put('files', id, meta);
+    return meta;
+  }
+
+  /** Plaintext bytes [start, end) of a chunked file, fetching only the chunks that cover them (what playback and seeking use). */
+  async readFileRange(id, start, end, meta) {
+    this._needKey();
+    meta ??= await this._get('files', id);
+    if (!meta?.chunked) return (await this.downloadFile(id, { meta })).subarray(start, end);
+    const { size: P, n, nonce } = meta.chunked, nonceBytes = fromB64(nonce);
+    end = Math.min(end, meta.size);
+    if (start >= end) return new Uint8Array(0);
+    const first = Math.floor(start / P), last = Math.floor((end - 1) / P);
+    const from = first * (P + GCM), to = last * (P + GCM) + chunkLen(meta, last);
+    const whole = first === 0 && last === n - 1;
+    const bytes = new Uint8Array(await (await this._fetch('GET', '/files/' + encodeURIComponent(id), undefined, undefined, whole ? undefined : { Range: `bytes=${from}-${to - 1}` })).arrayBuffer());
+    const out = new Uint8Array(end - start);
+    let at = 0;
+    for (let i = first; i <= last; i++) {
+      const plain = await openChunk(this.key, bytes.subarray(at, at + chunkLen(meta, i)), nonceBytes, i, n);
+      at += chunkLen(meta, i);
+      const a = Math.max(start, i * P), b = Math.min(end, i * P + plain.length);
+      out.set(plain.subarray(a - i * P, b - i * P), a - start);
+    }
+    return out;
+  }
+
+  // Re-encrypt a chunked file with `newKey`, chunk by chunk, and swap it in place. Safe to run twice: a file already on the new key is left alone.
+  async _rekeyChunked(id, meta, newKey) {
+    const { n, nonce } = meta.chunked, nonceBytes = fromB64(nonce), P = meta.chunked.size;
+    const get = async (i) => new Uint8Array(await (await this._fetch('GET', '/files/' + encodeURIComponent(id), undefined, undefined, { Range: `bytes=${i * (P + GCM)}-${i * (P + GCM) + chunkLen(meta, i) - 1}` })).arrayBuffer());
+    try { await openChunk(newKey, await get(0), nonceBytes, 0, n); return false; } catch (_) { } // already done
+    const { id: tmp } = await this._json('POST', '/files/begin');
+    let sent = 0;
+    for (let i = 0; i < n; i++) {
+      const body = await sealChunk(newKey, await openChunk(this.key, await get(i), nonceBytes, i, n), nonceBytes, i, n);
+      await this._fetch('PUT', `/files/${tmp}/append`, body, undefined, { 'X-Offset': String(sent) });
+      sent += body.length;
+    }
+    await this._json('POST', `/files/${tmp}/finish?replace=${encodeURIComponent(id)}`);
+    return true;
+  }
+
+  /** @returns {Promise<Uint8Array>} the file, decrypted if it was uploaded encrypted. Pass the index entry as `meta` to save a lookup. */
+  async downloadFile(id, { encrypted, meta } = {}) {
+    this._needKey();
+    if (meta === undefined && encrypted === undefined) meta = await this._get('files', id);
+    if (meta?.chunked) return this.readFileRange(id, 0, meta.size, meta);
+    encrypted ??= meta?.encrypted ?? false;
     const buf = new Uint8Array(await (await this._fetch('GET', '/files/' + encodeURIComponent(id))).arrayBuffer());
     return encrypted ? fromB64(await this.decrypt(new TextDecoder().decode(buf))) : buf;
   }
@@ -541,6 +624,7 @@ export class Orto {
     await chunked(await recs('files'), async (r) => { // file contents first
       const meta = await open(r.data);
       if (!meta?.v.encrypted) return;
+      if (meta.v.chunked) { await this._rekeyChunked(r.soul, meta.v, next.key); return; }
       const blob = await open(new TextDecoder().decode(new Uint8Array(await (await this._fetch('GET', '/files/' + encodeURIComponent(r.soul))).arrayBuffer())));
       if (blob && !blob.fresh) await this._fetch('PUT', '/files/' + encodeURIComponent(r.soul), new TextEncoder().encode(await seal(next.key, blob.v)));
     }, 5);
@@ -563,7 +647,7 @@ export class Orto {
     this._needKey();
     const out = { format: 'orto-export', version: 1, user: this.username, exportedAt: Date.now(), collections: {}, files: {}, posts: await this._json('GET', '/c/posts') };
     for (const coll of COLLECTIONS.filter(c => c !== 'shares')) out.collections[coll] = await this._readAll(coll);
-    if (files) await chunked(out.collections.files.filter(f => f.id), async (f) => { try { out.files[f.id] = toB64(await this.downloadFile(f.id, { encrypted: f.encrypted })); } catch (_) {} }, 5);
+    if (files) await chunked(out.collections.files.filter(f => f.id), async (f) => { try { out.files[f.id] = toB64(await this.downloadFile(f.id, { meta: f })); } catch (_) {} }, 5);
     return out; // ponytail: files go in memory as base64, stream to a ZIP if exports get huge
   }
 
@@ -580,13 +664,13 @@ export class Orto {
     const have = new Set((await this.listFiles()).map(sig));
     for (const f of data.collections?.files || []) {
       if (!f.id || have.has(sig(f)) || !data.files?.[f.id]) continue;
-      await this.uploadFile(fromB64(data.files[f.id]), f.name, { encrypt: f.encrypted !== false, type: f.type, thumb: f.thumb, addedAt: f.addedAt, folder: f.folder, album: f.album });
+      await this.uploadFile(fromB64(data.files[f.id]), f.name, { encrypt: f.encrypted !== false, type: f.type, thumb: f.thumb, addedAt: f.addedAt, folder: f.folder, album: f.album, playlist: f.playlist });
       done.files++;
     }
     const groups = (data.collections?.files || []).find((r) => r.soul === '_groups'); // empty folders and albums
     if (groups) {
       const cur = await this.fileGroups();
-      await this.put('files', '_groups', { folders: [...new Set([...cur.folders, ...(groups.folders || [])])].sort(), albums: [...new Set([...cur.albums, ...(groups.albums || [])])].sort() });
+      await this.put('files', '_groups', Object.fromEntries(['folders', 'albums', 'playlists'].map((k) => [k, [...new Set([...cur[k], ...(groups[k] || [])])].sort()])));
     }
     return done;
   }
