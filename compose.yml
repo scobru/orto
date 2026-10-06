@@ -1,0 +1,8 @@
+services:
+  zenos:
+    build: .
+    ports: ["8787:8787"]
+    volumes: ["zenos-data:/data"]
+    restart: unless-stopped
+volumes:
+  zenos-data:
