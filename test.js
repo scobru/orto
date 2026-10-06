@@ -1,6 +1,7 @@
 // End-to-end: in-process server on a temp SQLite DB + SDK. Checks round trips, encryption at rest, isolation, files, live events.
 import assert from 'assert';
 import fs from 'fs';
+import http from 'http';
 import os_ from 'os';
 import path from 'path';
 import { createServer } from './server.js';
@@ -416,6 +417,63 @@ console.log('On-device tag suggestions (add-on plumbing)');
   await new Promise((r) => as.listen(0, '127.0.0.1', r));
   assert.equal((await fetch('http://127.0.0.1:' + as.address().port + '/models/gist/manifest.json')).status, 200);
   as.closeAllConnections(); as.close();
+}
+
+console.log('Feeds (reader + blog RSS)');
+{
+  const { parseFeed, parseOpml, feedsToOpml } = await import('./orto.js');
+  const fs_ = createServer({ dataDir: path.join(dir, 'feeds'), webDir: dir, feedsPrivate: true, publicUrl: 'https://blog.example' });
+  await new Promise((r) => fs_.listen(0, '127.0.0.1', r));
+  const furl = 'http://127.0.0.1:' + fs_.address().port;
+  const a = new Orto({ server: furl }); await a.login('writer', 'pw-feed', { create: true });
+  await a.publishBlogPost({ title: 'First & <best>', content: 'Hello\n\nworld ]]> end' });
+  const xml = await (await fetch(furl + '/blog/writer/feed.xml')).text();
+  assert((await fetch(furl + '/blog/writer/feed.xml')).headers.get('content-type').includes('rss'));
+  assert(xml.includes('<link>https://blog.example/blog/writer</link>') && xml.includes('First &amp; &lt;best&gt;'), 'rss shape');
+  const parsed = parseFeed(xml);
+  assert.equal(parsed.title, 'writer'); assert.equal(parsed.items.length, 1);
+  assert.equal(parsed.items[0].title, 'First & <best>'); assert(parsed.items[0].content.includes('<p>world ]]&gt; end</p>') || parsed.items[0].content.includes('world ]]'), 'content kept');
+  assert.equal((await fetch(furl + '/blog/nobody/feed.xml')).status, 404);
+  // follow it from another account: relayed through the server, list stored encrypted
+  const b = new Orto({ server: furl }); await b.login('reader', 'pw-read', { create: true });
+  const found = await b.findFeed(furl + '/blog/writer/feed.xml');
+  assert.equal(found.feed.items.length, 1);
+  const rec = await b.addFeed(found.url, { title: found.feed.title, folder: 'Friends' });
+  await b.addFeed(found.url); // same URL, same subscription
+  const list = await b.readFeeds();
+  assert.equal(list.length, 1); assert.equal(list[0].folder, 'Friends'); assert.equal(list[0].title, 'writer');
+  assert(!JSON.stringify(await b._json('GET', '/c/feeds')).includes('writer/feed'), 'feed list leaked');
+  await b.markFeedRead(list[0].soul, 123); assert.equal((await b.readFeeds())[0].readAt, 123);
+  const opml = await b.exportFeedsOpml();
+  assert.deepEqual(parseOpml(opml), [{ url: found.url, title: 'writer', folder: 'Friends' }]);
+  const b2 = new Orto({ server: furl }); await b2.login('reader2', 'pw-read2', { create: true });
+  assert.deepEqual(await b2.importFeedsOpml(opml), { imported: 1, failed: 0 });
+  // a page that points at its feed
+  const page = http.createServer((q, s) => { s.setHeader('content-type', 'text/html'); s.end(`<html><head><link rel="alternate" type="application/rss+xml" href="${furl}/blog/writer/feed.xml"></head></html>`); });
+  await new Promise((r) => page.listen(0, '127.0.0.1', r));
+  assert.equal((await b.findFeed('http://127.0.0.1:' + page.address().port + '/')).url, furl + '/blog/writer/feed.xml');
+  await assert.rejects(b.findFeed(furl + '/about'), /No RSS|Not|404|502/);
+  page.close();
+  assert.throws(() => parseFeed('<html></html>'), /Not an RSS/);
+  assert.equal(feedsToOpml([]).includes('<opml'), true);
+  await assert.rejects(new Orto({ server: furl })._json('GET', '/feed?url=' + encodeURIComponent(furl)), (e) => e.status === 401);
+  b.close(); b2.close(); a.close(); fs_.close();
+  // by default private addresses are refused (SSRF), literal and resolved
+  const ps = createServer({ dataDir: path.join(dir, 'feeds2'), webDir: dir });
+  await new Promise((r) => ps.listen(0, '127.0.0.1', r));
+  const c = new Orto({ server: 'http://127.0.0.1:' + ps.address().port }); await c.login('x1', 'pw-x1', { create: true });
+  for (const u of ['http://127.0.0.1/', 'http://localhost:1/', 'http://[::1]/', 'http://169.254.169.254/', 'http://10.0.0.1/', 'http://[::ffff:127.0.0.1]/', 'file:///etc/passwd', 'ftp://x/'])
+    await assert.rejects(c.fetchFeed(u), (e) => e.status === 400 || e.status === 502, u);
+  c.close(); ps.close();
+}
+
+console.log('Docs in step with the CLI');
+{
+  const { execFileSync } = await import('node:child_process');
+  const help = execFileSync(process.execPath, ['cli.js', '--help'], { encoding: 'utf8' });
+  const skill = fs.readFileSync('SKILL.md', 'utf8');
+  const missing = [...new Set([...help.matchAll(/node cli\.js ([a-z][\w-]*)/g)].map((m) => m[1]))].filter((c) => !new RegExp('(?<![\\w-])' + c + '(?![\\w-])').test(skill));
+  assert.deepEqual(missing, [], 'CLI commands missing from SKILL.md: ' + missing);
 }
 
 console.log('Chunked files (big files, streaming)');

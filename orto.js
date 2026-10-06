@@ -121,6 +121,51 @@ export function generatePassword(length = 20, { symbols = true } = {}) {
 // what an event or task can point at; the link lives inside the encrypted record, so there is one source of truth
 const LINK_KINDS = ['note', 'bookmark', 'event', 'task'];
 
+// ─── Feeds (RSS 2.0, RSS 1.0 and Atom) ─────────────────────────────────────────────────────────
+// A small tolerant reader, no XML library: fine for the regular shape of feeds. Text fields can hold HTML: sanitize before showing.
+const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+const unEnt = (t) => t.replace(/&(?:#(\d+)|#x([0-9a-f]+)|(\w+));/gi, (m, d, h, n) => d ? String.fromCodePoint(+d) : h ? String.fromCodePoint(parseInt(h, 16)) : (ENT[n.toLowerCase()] ?? m));
+const xmlText = (t) => /<!\[CDATA\[/.test(t) ? t.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (_, x) => x) : unEnt(t);
+const tagText = (b, tag) => { const m = new RegExp('<' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)</' + tag + '>', 'i').exec(b); return m ? xmlText(m[1]).trim() : ''; };
+const attrs = (tag) => Object.fromEntries([...tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)].map((m) => [m[1].toLowerCase(), unEnt(m[2] ?? m[3])]));
+const atomLink = (b) => { const l = [...b.matchAll(/<link\b[^>]*>/gi)].map((m) => attrs(m[0])).find((a) => a.href && (!a.rel || a.rel === 'alternate')); return l ? l.href : ''; };
+const httpUrl = (u) => (/^https?:\/\//i.test(u) ? u : '');
+
+/** feed XML -> { title, link, items: [{ id, title, link, date (ms or null), summary, content }] }, newest first, at most 100 items. */
+export function parseFeed(xml) {
+  xml = String(xml || '');
+  if (!/<(rss|feed|rdf:RDF)[\s>]/i.test(xml)) throw new Error('Not an RSS or Atom feed');
+  const blocks = [...xml.matchAll(/<(item|entry)(?:\s[^>]*)?>([\s\S]*?)<\/\1>/gi)].map((m) => m[2]);
+  const head = xml.replace(/<(item|entry)(?:\s[^>]*)?>[\s\S]*?<\/\1>/gi, '');
+  const items = blocks.map((b) => {
+    const link = httpUrl(atomLink(b) || tagText(b, 'link') || tagText(b, 'guid'));
+    const t = Date.parse(tagText(b, 'pubDate') || tagText(b, 'published') || tagText(b, 'updated') || tagText(b, 'dc:date'));
+    return { id: tagText(b, 'guid') || tagText(b, 'id') || link, title: tagText(b, 'title') || link || '(untitled)', link, date: Number.isNaN(t) ? null : t,
+      summary: tagText(b, 'description') || tagText(b, 'summary'), content: tagText(b, 'content:encoded') || tagText(b, 'content') };
+  }).filter((i) => i.id);
+  return { title: tagText(head, 'title'), link: httpUrl(atomLink(head) || tagText(head, 'link')), items: items.sort((a, b) => (b.date || 0) - (a.date || 0)).slice(0, 100) };
+}
+
+/** OPML (the standard list of subscriptions) -> [{ url, title, folder }]; outline groups become folders. */
+export function parseOpml(xml) {
+  const out = [], stack = [];
+  for (const m of String(xml || '').matchAll(/<outline\b[^>]*?(\/?)>|<\/outline>/gi)) {
+    if (m[0][1] === '/') { stack.pop(); continue; }
+    const a = attrs(m[0]), url = httpUrl(a.xmlurl || '');
+    if (url) out.push({ url, title: a.title || a.text || '', folder: stack.filter(Boolean).join('/') });
+    if (!m[1]) stack.push(url ? '' : (a.title || a.text || '').replace(/\//g, '-'));
+  }
+  return out;
+}
+
+const escXml = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+export function feedsToOpml(feeds) {
+  const line = (f) => `<outline type="rss" text="${escXml(f.title || f.url)}" title="${escXml(f.title || f.url)}" xmlUrl="${escXml(f.url)}"/>`;
+  const folders = [...new Set(feeds.map((f) => f.folder || ''))].sort();
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<opml version="2.0"><head><title>Orto feeds</title></head><body>\n`
+    + folders.map((d) => { const l = feeds.filter((f) => (f.folder || '') === d).map(line).join('\n'); return d ? `<outline text="${escXml(d)}">\n${l}\n</outline>` : l; }).join('\n') + `\n</body></opml>\n`;
+}
+
 export async function bookmarkSoul(url) {
   const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(url));
   return 'bm-' + [...new Uint8Array(h)].slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -149,7 +194,7 @@ const checkLinks = (links) => {
   }
 };
 
-const COLLECTIONS = ['vault', 'calendar', 'tasks', 'bookmarks', 'contacts', 'secrets', 'files', 'shares']; // encrypted ones; `posts` is public
+const COLLECTIONS = ['vault', 'calendar', 'tasks', 'bookmarks', 'contacts', 'secrets', 'feeds', 'files', 'shares']; // encrypted ones; `posts` is public
 const toB64u = (u8) => toB64(u8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const fromB64u = (b) => fromB64(b.replace(/-/g, '+').replace(/_/g, '/'));
 const aesKey = (raw) => crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
@@ -779,6 +824,36 @@ export class Orto {
   }
 
   deleteSecret(soul) { return this._del('secrets', soul); }
+
+  // ─── Feeds: RSS/Atom subscriptions (the list is encrypted; articles are fetched live) ─────────────
+
+  /** Subscribe to a feed URL. The same URL twice is one subscription. Does not fetch: use fetchFeed() for the title. */
+  async addFeed(url, { title = '', folder = '' } = {}) {
+    if (!httpUrl(url)) throw new Error('A feed needs an http(s) URL.');
+    const soul = (await bookmarkSoul(url)).replace('bm-', 'fd-'), old = await this._get('feeds', soul);
+    return this.put('feeds', soul, { url, title: title || old?.title || '', folder: folder || old?.folder || '', addedAt: old?.addedAt || Date.now(), readAt: old?.readAt || 0 });
+  }
+  async readFeeds() { return (await this._readAll('feeds')).filter((f) => f.url).sort((a, b) => (a.folder || '').localeCompare(b.folder || '') || (a.title || a.url).localeCompare(b.title || b.url)); }
+  /** Everything up to `readAt` (default now) counts as read in the unread badge. */
+  async markFeedRead(soul, readAt = Date.now()) { const f = await this._get('feeds', soul); if (!f) throw new Error('Unknown feed.'); return this.put('feeds', soul, { ...f, readAt }); }
+  deleteFeed(soul) { return this._del('feeds', soul); }
+  onFeed(callback) { return this._on('feeds', callback, (f) => f.url); }
+  /** Fetch and parse any feed through the server (browsers cannot, CORS). See parseFeed for the shape. */
+  async fetchFeed(url) { return parseFeed(await (await this._fetch('GET', '/feed?url=' + encodeURIComponent(url))).text()); }
+  /** Like fetchFeed, but also accepts a web page that advertises its feed (<link rel="alternate" type="application/rss+xml">). -> { url, feed } */
+  async findFeed(url) {
+    const text = await (await this._fetch('GET', '/feed?url=' + encodeURIComponent(url))).text();
+    try { return { url, feed: parseFeed(text) }; } catch (_) { /* not a feed: look for the one the page points at */ }
+    const link = [...text.matchAll(/<link\b[^>]*>/gi)].map((m) => attrs(m[0])).find((a) => /alternate/i.test(a.rel || '') && /rss|atom/i.test(a.type || '') && a.href);
+    if (!link) throw new Error('No RSS or Atom feed found at that address');
+    const found = new URL(link.href, url).href;
+    return { url: found, feed: await this.fetchFeed(found) };
+  }
+  async importFeedsOpml(xml) {
+    const r = await Promise.allSettled(parseOpml(xml).map((f) => this.addFeed(f.url, f)));
+    return { imported: r.filter((x) => x.status === 'fulfilled').length, failed: r.filter((x) => x.status === 'rejected').length };
+  }
+  async exportFeedsOpml() { return feedsToOpml(await this.readFeeds()); }
   onSecret(callback) { return this._on('secrets', callback); }
 
   // ─── Tasks & Kanban ─────────────────────────────────────────────────

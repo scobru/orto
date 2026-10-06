@@ -19,6 +19,9 @@
  *      (the old ZENOS_* names still work)
  */
 import http from 'node:http';
+import https from 'node:https';
+import dns from 'node:dns';
+import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -50,6 +53,46 @@ async function readJson(req, limit = 8e6) {
 // settings come from ORTO_*; the old ZENOS_* names still work
 const settings = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('ZENOS_')).map(([k, v]) => ['ORTO_' + k.slice(6), v])), ...process.env };
 
+// ── Feeds ──────────────────────────────────────────────────────────────────────────────────────────────────
+// Reader: browsers cannot fetch other sites' feeds (CORS), so a logged-in user asks the server to fetch one (GET /api/feed?url=).
+// The server only relays the XML; it is parsed in the browser. Private/loopback addresses are refused (SSRF), checked at connect time.
+const isPrivateIp = (ip) => {
+  const m = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip); if (m) ip = m[1];
+  if (net.isIPv6(ip)) return /^(::1?$|f[cd][0-9a-f]{2}:|fe[89ab][0-9a-f]:)/i.test(ip);
+  return /^(0\.|10\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|2(2[4-9]|[3-5]\d)\.)/.test(ip);
+};
+function fetchFeed(target, { allowPrivate = false, hops = 3, maxBytes = 2e6, timeout = 10000 } = {}) {
+  return new Promise((resolve, reject) => {
+    let u;
+    try { u = new URL(target); } catch (_) { return reject(new HttpError(400, 'Bad feed URL')); }
+    if (!/^https?:$/.test(u.protocol)) return reject(new HttpError(400, 'Only http(s) feeds'));
+    const host = u.hostname.replace(/^\[|\]$/g, '');
+    if (!allowPrivate && net.isIP(host) && isPrivateIp(host)) return reject(new HttpError(400, 'Private addresses are not allowed'));
+    const lookup = (h, o, cb) => dns.lookup(h, o, (err, addr, fam) => {
+      if (err) return cb(err);
+      const list = Array.isArray(addr) ? addr : [{ address: addr, family: fam }];
+      if (!allowPrivate && list.some((x) => isPrivateIp(x.address))) return cb(new Error('Private addresses are not allowed'));
+      cb(null, addr, fam);
+    });
+    const req = (u.protocol === 'https:' ? https : http).get(u, { lookup, timeout, headers: { 'User-Agent': 'Orto feed reader', Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.5' } }, (r) => {
+      if (r.statusCode >= 300 && r.statusCode < 400 && r.headers.location) {
+        r.resume();
+        if (!hops) return reject(new HttpError(502, 'Too many redirects'));
+        return fetchFeed(new URL(r.headers.location, u).href, { allowPrivate, hops: hops - 1, maxBytes, timeout }).then(resolve, reject);
+      }
+      if (r.statusCode !== 200) { r.resume(); return reject(new HttpError(502, 'Feed answered ' + r.statusCode)); }
+      const chunks = []; let n = 0;
+      r.on('data', (d) => { n += d.length; if (n > maxBytes) { req.destroy(); reject(new HttpError(502, 'Feed is too big')); } else chunks.push(d); });
+      r.on('end', () => resolve(Buffer.concat(chunks)));
+      r.on('error', () => reject(new HttpError(502, 'Could not read the feed')));
+    });
+    req.on('timeout', () => { req.destroy(); reject(new HttpError(504, 'The feed took too long')); });
+    req.on('error', (e) => reject(e instanceof HttpError ? e : new HttpError(502, /private/i.test(e.message) ? 'Private addresses are not allowed' : 'Could not reach the feed')));
+  });
+}
+const xmlEsc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
+const cdata = (t) => '<![CDATA[' + String(t).replace(/\]\]>/g, ']]]]><![CDATA[>') + ']]>';
+
 export function createServer(opts = {}) {
   const env = settings;
   const dataDir = path.resolve(opts.dataDir || env.ORTO_DATA || path.join(process.cwd(), 'data'));
@@ -65,6 +108,8 @@ export function createServer(opts = {}) {
   const demoHours = Number(opts.demoHours || env.ORTO_DEMO_HOURS || 3);
   const DEMO = { user: 'demo', pass: 'demo', quota: 10 * 1024 ** 2, maxRecords: 1000, maxFiles: 40 };
   const modelsDir = path.resolve(opts.modelsDir || env.ORTO_MODELS || path.join(dataDir, 'models')); // optional add-ons, served at /models/*
+  const feedsPrivate = opts.feedsPrivate ?? ['1', 'true'].includes(env.ORTO_FEEDS_PRIVATE); // let the feed reader reach private addresses (LAN feeds)
+  const publicUrl = opts.publicUrl || env.ORTO_PUBLIC_URL || ''; // base of the links in the blog's RSS feed; default: the Host of the request
   const filesDir = path.join(dataDir, 'files');
   fs.mkdirSync(filesDir, { recursive: true });
   // unfinished chunked uploads (see /files/begin) older than a day
@@ -267,10 +312,16 @@ export function createServer(opts = {}) {
     const u = authed(req);
 
     if (demoOn && u.name === DEMO.user) { // the demo account is public: no sharing, no public posts, no password change, bounded size
-      const off = (a === 'password') || (a === 's' && req.method !== 'GET') || (a === 'c' && b === 'posts' && req.method !== 'GET');
+      const off = (a === 'password') || (a === 'feed') || (a === 's' && req.method !== 'GET') || (a === 'c' && b === 'posts' && req.method !== 'GET');
       const full = (a === 'c' && req.method === 'PUT' && db.prepare('SELECT COUNT(*) AS n FROM records WHERE user_id = ?').get(u.user_id).n >= DEMO.maxRecords)
         || (a === 'files' && req.method === 'POST' && db.prepare('SELECT COUNT(*) AS n FROM files WHERE user_id = ?').get(u.user_id).n >= DEMO.maxFiles);
       if (off || full) throw new HttpError(403, 'Not available in the demo');
+    }
+
+    if (a === 'feed' && req.method === 'GET') { // relay one feed's XML for the reader
+      const body = await fetchFeed(url.searchParams.get('url') || '', { allowPrivate: feedsPrivate });
+      res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8', 'Content-Length': body.length, 'Cache-Control': 'no-store' });
+      return void res.end(body);
     }
 
     if (a === 'events') { // live updates of the user's own collections (SSE)
@@ -407,6 +458,33 @@ export function createServer(opts = {}) {
     throw new HttpError(404, 'Not found');
   }
 
+  // /blog/<name>/feed.xml: RSS 2.0 of the public posts (newest 50). Links point at this server (ORTO_PUBLIC_URL, or the Host the request came with).
+  function blogFeed(req, res, name) {
+    const user = q.userByName.get(name.toLowerCase());
+    if (!user) throw new HttpError(404, 'Unknown user');
+    const base = (publicUrl || `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers['x-forwarded-host'] || req.headers.host || 'localhost'}`).replace(/\/+$/, '');
+    const posts = q.list.all(user.id, 'posts').map(toRecord).filter((p) => !p.deleted && p.title).sort((a, b) => b.createdAt - a.createdAt).slice(0, 50);
+    const home = `${base}/blog/${encodeURIComponent(user.name)}`;
+    const para = (t) => String(t || '').split(/\n{2,}/).map((x) => '<p>' + xmlEsc(x.trim()).replace(/\n/g, '<br>') + '</p>').join('');
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel>
+<title>${xmlEsc(user.name)}</title>
+<link>${xmlEsc(home)}</link>
+<description>${xmlEsc('Posts by ' + user.name)}</description>
+<atom:link href="${xmlEsc(home + '/feed.xml')}" rel="self" type="application/rss+xml"/>
+${posts.length ? `<lastBuildDate>${new Date(posts[0].createdAt).toUTCString()}</lastBuildDate>` : ''}
+${posts.map((p) => {
+      const link = `${home}?post=${encodeURIComponent(p.id || p.soul)}`;
+      return `<item><title>${xmlEsc(p.title)}</title><link>${xmlEsc(link)}</link><guid isPermaLink="true">${xmlEsc(link)}</guid><pubDate>${new Date(p.createdAt).toUTCString()}</pubDate><description>${xmlEsc(String(p.content || '').replace(/\s+/g, ' ').slice(0, 300))}</description><content:encoded>${cdata(para(p.content))}</content:encoded></item>`;
+    }).join('\n')}
+</channel>
+</rss>
+`;
+    res.writeHead(200, { 'Content-Type': 'application/rss+xml; charset=utf-8', 'Cache-Control': 'public, max-age=300' });
+    res.end(xml);
+  }
+
   function serveStatic(req, res, url) {
     let rel = decodeURIComponent(url.pathname);
     if (rel.startsWith('/blog/')) rel = '/blog.html';
@@ -437,7 +515,9 @@ export function createServer(opts = {}) {
     if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
     try {
       const url = new URL(req.url, 'http://x');
+      const feed = /^\/blog\/([^/]+)\/feed\.xml$/.exec(url.pathname);
       if (url.pathname.startsWith('/api/')) await api(req, res, url);
+      else if (feed && req.method === 'GET') blogFeed(req, res, decodeURIComponent(feed[1]));
       else serveStatic(req, res, url);
     } catch (e) {
       if (!(e instanceof HttpError)) console.error(e);

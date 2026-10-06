@@ -33,9 +33,9 @@ Usage:
   node cli.js identity [--user <user> --pass <pass>]   # check login, print username + server
 
   # File storage (encrypted client-side unless --plain)
-  node cli.js file-upload   [--user <user> --pass <pass>] --file <path> [--plain] [--folder <a/b>] [--album <name>]
-  node cli.js file-list     [--user <user> --pass <pass>] [--folder <a/b>] [--album <name>]
-  node cli.js file-move     [--user <user> --pass <pass>] --id <id> [--folder <a/b>] [--album <name>]   # '' clears
+  node cli.js file-upload   [--user <user> --pass <pass>] --file <path> [--plain] [--folder <a/b>] [--album <name>] [--playlist <name>]   # above 4 MB: encrypted chunks, playable while streaming
+  node cli.js file-list     [--user <user> --pass <pass>] [--folder <a/b>] [--album <name>] [--playlist <name>] [--table]
+  node cli.js file-move     [--user <user> --pass <pass>] --id <id> [--folder <a/b>] [--album <name>] [--playlist <name>]   # '' clears
   node cli.js file-download [--user <user> --pass <pass>] --id <id> --out <path>
   node cli.js file-delete   [--user <user> --pass <pass>] --id <id>
 
@@ -89,6 +89,14 @@ Usage:
   node cli.js bookmarks-export [--user <user> --pass <pass>] [--folder <path>] [--file <out.html>]
   node cli.js bookmarks-update [--user <user> --pass <pass>] --file <changes.json>  # [{soul, title?, folder?, tags?}]
 
+  # Feeds: follow RSS/Atom (list encrypted; articles fetched live through the server, never stored)
+  node cli.js feed-add    [--user <user> --pass <pass>] --url <feed or site url> [--title <t>] [--folder <path>] [--no-check]   # a site address finds its feed
+  node cli.js feed-list   [--user <user> --pass <pass>] [--table] [--count]
+  node cli.js feed-read   [--user <user> --pass <pass>] (--soul <soul> | --url <feed url>) [-n <limit> -p <page>] [--table]   # --url works without following
+  node cli.js feed-delete [--user <user> --pass <pass>] (--soul <soul> | --url <feed url>)
+  node cli.js feed-import [--user <user> --pass <pass>] --file <subscriptions.opml>
+  node cli.js feed-export [--user <user> --pass <pass>] [--file <out.opml>]
+
   # Account, backup, sharing
   node cli.js password-change [--user <user> --pass <pass>] --new <new password>   # re-encrypts everything; export first
   node cli.js export [--user <user> --pass <pass>] --out <backup.json> [--no-files]   # plaintext of everything: store safely
@@ -125,10 +133,13 @@ const os = new Orto({ server });
 await os.login(user, pass);                       // { create: true } registers
 await os.writeVaultNote({ title, body, cat });
 await os.readTasks({ status: 'todo' });
-await os.uploadFile(bytes, 'name.ext');           // encrypted client-side
+await os.uploadFile(bytes, 'name.ext');           // encrypted client-side, small files
+await os.uploadFileChunked(blobOrBytes, 'movie.mp4', { folder: 'Videos' });  // big files: encrypted 1 MiB chunks, constant memory, playable while streaming
+await os.readFileRange(id, 0, 65536);             // only the chunks that cover these bytes
+await os.moveFile(id, { playlist: 'Road trip' }); // folder (a/b), album (photos) or playlist (media); '' clears
 await os.publishBlogPost({ title, content, tags });
 ```
-Sharing, export/import and `changePassword` are in `llm.txt` too; server backup is `node server.js backup <folder>`. Full method list: `llm.txt`. Live updates: `os.onVaultNote/onTask/...(cb)` (server-sent events); call `os.close()` to end the stream before exiting.
+Files can be organised with a `folder` (nests with `/`), an `album` (Photos view) or a `playlist` (Media view): names kept inside the encrypted index entry, so the server learns nothing; `fileGroups()`, `addFileGroup(kind, name)`, `renameFileGroup(kind, from, to)` manage empty ones. The web app's *Media* section plays music and video from files uploaded in chunks. Sharing, export/import and `changePassword` are in `llm.txt` too; server backup is `node server.js backup <folder>`. Full method list: `llm.txt`. Live updates: `os.onVaultNote/onTask/...(cb)` (server-sent events); call `os.close()` to end the stream before exiting.
 
 ## Public blog
 
