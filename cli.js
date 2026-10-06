@@ -247,6 +247,7 @@ Pagination & formatting options (read commands):
   --count, -c             return total count only (e.g. {"total": 1704})
   --table, -t             format results as an easy-to-read console table
   --fast, -F              read immediately from local cache (timeout 0ms)
+  --wait                  read commands wait the full --timeout instead of stopping at the first quiet gap (use with --timeout on big collections)
 
 Credentials:
   Flags:     --user <user> --pass <pass> (or -u <user>)
@@ -279,7 +280,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     process.exit(0);
   }
 
-  const os = new ZenOS({ peers, storageToken: typeof flags.token === 'string' ? flags.token : undefined });
+  const os = new ZenOS({ peers, fullWait: !!flags.wait, storageToken: typeof flags.token === 'string' ? flags.token : undefined });
 
   switch (cmd) {
     case 'identity': {
