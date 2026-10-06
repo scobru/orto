@@ -2911,7 +2911,7 @@
       <div class="cal-body" id="cal-body"></div>
     </section>
 
-    <!-- Blog pane: the user's public smollog posts, with write support -->
+    <!-- Blog pane: the user's public posts, with write support -->
     <section class="blog-pane" id="blog-pane">
       <div class="blog-list">
         <div class="blog-list-head"><span>Blog</span><a id="blog-open-link" target="_blank" rel="noopener">Open public
@@ -3169,7 +3169,7 @@
 
     let os;
     let pair;
-    // call sites written for ZEN's encrypt(value, pair) keep working on top of the SDK's AES-GCM
+    // encrypt/decrypt helpers over the SDK's AES-GCM (the cache and bookmark code call them with the key pair)
     const ZEN = { encrypt: (v) => os.encrypt(v), decrypt: (c) => os.decrypt(c) };
     let isAuthenticated = false;
 
