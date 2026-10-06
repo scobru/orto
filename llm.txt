@@ -20,7 +20,7 @@ client --HTTPS--> server.js --> data/orto.db (users, sessions, records) + data/f
 
 ```js
 import Orto from './orto.js';
-const os = new Orto();   // server: option or env ORTO_SERVER; default https://zenos.scobrudot.dev; '' = same origin in a browser
+const os = new Orto();   // server: option or env ORTO_SERVER; default https://orto.scobrudot.dev; '' = same origin in a browser
 await os.login(username, password, { create: false });        // create:true registers; error.status 404 = unknown user, 401 = wrong password
 os.pub                                                        // lowercase username = public handle
 ```

@@ -39,7 +39,7 @@ The old `ZENOS_*` variable names, a data folder holding `zenos.db` and the `zeno
 
 Notes (Markdown, tags, checklists), Tasks (Kanban), Calendar, Bookmarks (Brave/Chrome/Firefox import and export), Contacts (vCard), Secrets (with a password generator), Files, **Photos** (thumbnail grid of your images; upload is manual, a browser cannot back up a camera roll) and a public Blog at `/blog/<username>`, all encrypted in the browser. **Settings** has export / import, your public links with revoke and change password. Use *Install* / *Add to Home Screen* to get it as an app (the service worker only keeps the app itself available: your data needs the server). Contacts, Secrets, Bookmarks, Tasks and Calendar have an *Examples* button with fake entries to try things out.
 
-The app picks its server like this: the one set with the **Server** link on the login screen (it remembers the ones you used); otherwise the site it is served from, if that runs an Orto server; otherwise `https://zenos.scobrudot.dev`. To host `web/` on a static host, open it and use the **Server** link to point it at your server (tokens are sent as `Authorization` headers, not cookies, so cross-origin works). Public links (`/s/...`) only work when the server itself serves the app.
+The app picks its server like this: the one set with the **Server** link on the login screen (it remembers the ones you used); otherwise the site it is served from, if that runs an Orto server; otherwise `https://orto.scobrudot.dev`. To host `web/` on a static host, open it and use the **Server** link to point it at your server (tokens are sent as `Authorization` headers, not cookies, so cross-origin works). Public links (`/s/...`) only work when the server itself serves the app.
 
 ## Demo account
 
@@ -63,7 +63,7 @@ Forget the password and the data is gone: there is no recovery, by design. Usern
 ## CLI
 
 ```bash
-export ORTO_SERVER=http://127.0.0.1:8787     # or --server; default https://zenos.scobrudot.dev
+export ORTO_SERVER=http://127.0.0.1:8787     # or --server; default https://orto.scobrudot.dev
 node cli.js register --user alice --pass 'long passphrase'
 node cli.js vault-write --user alice --pass '…' --title "Hello" --body "First note"
 node cli.js vault-read  --user alice --pass '…'
@@ -73,7 +73,7 @@ node cli.js blog-read --alias alice            # public, no login
 node cli.js --help                             # every command
 ```
 
-The CLI and SDK talk to `https://zenos.scobrudot.dev` unless you set `ORTO_SERVER` / `--server` / `{ server }`.
+The CLI and SDK talk to `https://orto.scobrudot.dev` unless you set `ORTO_SERVER` / `--server` / `{ server }`.
 
 Put `ORTO_USER` / `ORTO_PASS` in `.env` (see `.env.example`) to drop the flags.
 
@@ -81,7 +81,7 @@ Put `ORTO_USER` / `ORTO_PASS` in `.env` (see `.env.example`) to drop the flags.
 
 ```js
 import Orto from './orto.js';
-const os = new Orto();   // default server: https://zenos.scobrudot.dev
+const os = new Orto();   // default server: https://orto.scobrudot.dev
 await os.login('alice', 'long passphrase', { create: true }); // create only the first time
 await os.writeVaultNote({ title: 'Hello', body: 'First note' });
 await os.writeTask({ title: 'Ship it', priority: 'high' });
@@ -107,7 +107,7 @@ All JSON. `Authorization: Bearer <token>` from `POST /api/login` or `/api/regist
 | `POST /api/password` (`{auth, newAuth}`; `check: true` = dry run) | swap the login secret after re-encrypting |
 | `GET /api/config` | `{registration, maxUpload, demo?}` (no auth) |
 | `GET /api/u/:name`, `GET /api/u/:name/posts` | public profile and blog, no auth |
-| `GET /blog/:name` | public blog page (e.g. https://zenos.scobrudot.dev/blog/scobru) |
+| `GET /blog/:name` | public blog page (e.g. https://orto.scobrudot.dev/blog/scobru) |
 
 ## Tests
 

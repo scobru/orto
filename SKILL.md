@@ -14,7 +14,7 @@ Apps (collections): `vault` notes, `calendar`, `tasks`, `bookmarks`, `contacts`,
 ```bash
 node cli.js register --user <u> --pass <p> --server http://host:8787   # first time only
 ```
-Server URL: `--server` or `ORTO_SERVER` (default `https://zenos.scobrudot.dev`). Credentials: `--user/--pass`, or `ORTO_USER`/`ORTO_PASS` in `.env` (see `.env.example`). Run the server with `npm start` (Node >= 22.5).
+Server URL: `--server` or `ORTO_SERVER` (default `https://orto.scobrudot.dev`). Credentials: `--user/--pass`, or `ORTO_USER`/`ORTO_PASS` in `.env` (see `.env.example`). Run the server with `npm start` (Node >= 22.5).
 
 Rules for agents:
 1. Username is case-insensitive, the password is case-sensitive; never alter the user's credentials. There is no password recovery.
