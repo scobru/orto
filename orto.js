@@ -164,6 +164,8 @@ const unseal = async (key, cipher) => {
   const raw = fromB64(cipher.slice(3));
   return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.subarray(0, 12) }, key, raw.subarray(12))));
 };
+// folder: "a/b" nests; album: flat. Trimmed, no empty parts, at most 100 chars.
+const groupName = (kind, s) => { const parts = String(s ?? '').split('/').map((x) => x.trim()).filter(Boolean); return (kind === 'album' ? parts.join('-') : parts.join('/')).slice(0, 100); };
 const chunked = async (items, fn, n = 20) => { for (let i = 0; i < items.length; i += n) await Promise.all(items.slice(i, i + n).map(fn)); };
 
 /**
@@ -399,17 +401,69 @@ export class Orto {
    * `type` (MIME) and `thumb` (small data: URL) are stored in the encrypted index entry; the web app's Photos view uses them.
    * @returns {Promise<{id:string, name:string, size:number, encrypted:boolean, addedAt:number}>}
    */
-  async uploadFile(data, name, { encrypt = true, type, thumb, addedAt } = {}) {
+  async uploadFile(data, name, { encrypt = true, type, thumb, addedAt, folder, album } = {}) {
     this._needKey();
     const body = encrypt ? new TextEncoder().encode(await this.encrypt(toB64(data))) : data;
     const { id } = await (await this._fetch('POST', '/files', body)).json();
-    const meta = { id, name, size: data.length, encrypted: encrypt, addedAt: addedAt ?? Date.now(), ...(type && { type }), ...(thumb && { thumb }) };
+    const meta = { id, name, size: data.length, encrypted: encrypt, addedAt: addedAt ?? Date.now(), ...(type && { type }), ...(thumb && { thumb }),
+      ...(groupName('folder', folder) && { folder: groupName('folder', folder) }), ...(groupName('album', album) && { album: groupName('album', album) }) };
     await this.put('files', id, meta);
     return meta;
   }
 
   async listFiles() {
     return (await this._readAll('files')).filter(f => f.id).sort((a, b) => b.addedAt - a.addedAt);
+  }
+
+  // Folders (Files view, "a/b" nests) and albums (Photos view, flat) are names kept in the encrypted index entry of each file
+  // (`folder`, `album`). Empty ones are remembered in one extra record of the `files` collection (soul `_groups`, no `id`, so
+  // listFiles() skips it).
+
+  async fileGroups() {
+    const r = await this._get('files', '_groups');
+    return { folders: r?.folders || [], albums: r?.albums || [] };
+  }
+
+  /** @param {'folder'|'album'} kind @returns {Promise<string>} the normalized name */
+  async addFileGroup(kind, name) {
+    this._needKey();
+    name = groupName(kind, name);
+    if (!name) throw new Error('name is required');
+    const g = await this.fileGroups(), key = kind + 's';
+    if (!g[key].includes(name)) await this.put('files', '_groups', { ...g, [key]: [...g[key], name].sort() });
+    return name;
+  }
+
+  /** Rename a folder (and everything below it) or an album. An empty `to` removes it: its files just lose the folder/album. */
+  async renameFileGroup(kind, from, to) {
+    this._needKey();
+    const key = kind + 's';
+    to = groupName(kind, to);
+    from = groupName(kind, from);
+    if (!from) throw new Error('name is required');
+    const under = (n) => n === from || (kind === 'folder' && n.startsWith(from + '/'));
+    const swap = (n) => (to ? to + n.slice(from.length) : '');
+    const g = await this.fileGroups();
+    const names = [...new Set([...g[key].filter((n) => !under(n)), ...g[key].filter(under).map(swap).filter(Boolean)])].sort();
+    await this.put('files', '_groups', { ...g, [key]: names });
+    let moved = 0;
+    for (const f of await this.listFiles()) if (f[kind] && under(f[kind])) { await this.moveFile(f.id, { [kind]: swap(f[kind]) }); moved++; }
+    return { name: to, moved };
+  }
+
+  /** Set (or, with '', clear) a file's folder and/or album. Leave a field undefined to keep it. */
+  async moveFile(id, { folder, album } = {}) {
+    this._needKey();
+    const m = await this._get('files', id);
+    if (!m?.id) throw new Error('No such file');
+    const { soul, updatedAt, ...meta } = m;
+    for (const [k, v] of [['folder', folder], ['album', album]]) {
+      if (v === undefined) continue;
+      const name = groupName(k, v);
+      if (name) meta[k] = name; else delete meta[k];
+    }
+    await this.put('files', id, meta);
+    return meta;
   }
 
   /** @returns {Promise<Uint8Array>} the file, decrypted if it was uploaded encrypted. */
@@ -526,8 +580,13 @@ export class Orto {
     const have = new Set((await this.listFiles()).map(sig));
     for (const f of data.collections?.files || []) {
       if (!f.id || have.has(sig(f)) || !data.files?.[f.id]) continue;
-      await this.uploadFile(fromB64(data.files[f.id]), f.name, { encrypt: f.encrypted !== false, type: f.type, thumb: f.thumb, addedAt: f.addedAt });
+      await this.uploadFile(fromB64(data.files[f.id]), f.name, { encrypt: f.encrypted !== false, type: f.type, thumb: f.thumb, addedAt: f.addedAt, folder: f.folder, album: f.album });
       done.files++;
+    }
+    const groups = (data.collections?.files || []).find((r) => r.soul === '_groups'); // empty folders and albums
+    if (groups) {
+      const cur = await this.fileGroups();
+      await this.put('files', '_groups', { folders: [...new Set([...cur.folders, ...(groups.folders || [])])].sort(), albums: [...new Set([...cur.albums, ...(groups.albums || [])])].sort() });
     }
     return done;
   }

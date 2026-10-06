@@ -337,6 +337,52 @@ console.log('Admin panel');
   u.close(); srv.closeAllConnections(); srv.close();
 }
 
+console.log('Folders and albums');
+{
+  const fo = await client('folders-user', 'pw');
+  const a = await fo.uploadFile(new TextEncoder().encode('aaa'), 'a.txt', { folder: ' Docs / 2026 ' });
+  const b = await fo.uploadFile(new TextEncoder().encode('bbb'), 'b.png', { type: 'image/png', album: 'Trip//Italy' });
+  const c = await fo.uploadFile(new TextEncoder().encode('ccc'), 'c.txt');
+  assert.equal(a.folder, 'Docs/2026'); assert.equal(b.album, 'Trip-Italy'); assert.equal(c.folder, undefined);
+  assert(!JSON.stringify(await raw(fo, 'files', a.id)).includes('Docs'), 'folder name is encrypted at rest');
+  await fo.addFileGroup('folder', 'Empty/Sub'); await fo.addFileGroup('album', 'Pets');
+  assert.deepEqual(await fo.fileGroups(), { folders: ['Empty/Sub'], albums: ['Pets'] });
+  assert.equal((await fo.listFiles()).length, 3, 'the groups record is not a file');
+  await fo.moveFile(c.id, { folder: 'Docs' });
+  assert.equal((await fo.moveFile(c.id, { album: 'Pets' })).folder, 'Docs', 'undefined keeps the other field');
+  assert.equal((await fo.moveFile(c.id, { folder: '' })).folder, undefined, 'empty clears it');
+  await fo.moveFile(c.id, { folder: 'Docs/2026/Tax' });
+  assert.deepEqual(await fo.renameFileGroup('folder', 'Docs', 'Papers'), { name: 'Papers', moved: 2 });
+  const byName = Object.fromEntries((await fo.listFiles()).map((f) => [f.name, f]));
+  assert.equal(byName['a.txt'].folder, 'Papers/2026'); assert.equal(byName['c.txt'].folder, 'Papers/2026/Tax');
+  const ex = await fo.exportAll();
+  assert.deepEqual(await fo.renameFileGroup('album', 'Trip-Italy', ''), { name: '', moved: 1 }, 'removing keeps the file');
+  assert.equal((await fo.listFiles()).find((f) => f.name === 'b.png').album, undefined);
+  await fo.changePassword('pw2'); // re-encrypts the groups record too
+  assert.deepEqual((await fo.fileGroups()).albums, ['Pets']);
+  const fresh = await client('folders-copy', 'pw');
+  await fresh.importAll(ex);
+  const got = Object.fromEntries((await fresh.listFiles()).map((f) => [f.name, f]));
+  assert.equal(got['a.txt'].folder, 'Papers/2026'); assert.equal(got['b.png'].album, 'Trip-Italy');
+  assert.deepEqual(await fresh.fileGroups(), { folders: ['Empty/Sub'], albums: ['Pets'] }, 'empty folders survive export/import');
+}
+
+console.log('Landing page and app routes');
+{
+  const web = createServer({ dataDir: path.join(dir, 'web-routes') }); // default web folder
+  await new Promise((r) => web.listen(0, '127.0.0.1', r));
+  const get = (p) => fetch('http://127.0.0.1:' + web.address().port + p);
+  const about = await get('/about');
+  assert.equal(about.status, 200); assert((await about.text()).includes('Your workspace'), '/about is the landing page');
+  assert.equal((await get('/about/')).status, 200);
+  const app = await get('/app/'); assert.equal(app.status, 200); assert((await app.text()).includes('login-screen'), '/app/ is the web app');
+  assert.equal((await get('/app')).status, 200);
+  assert.equal((await get('/app/vendor/fonts.css')).status, 200, 'assets resolve under /app too');
+  assert.equal((await get('/vendor/fonts.css')).status, 200);
+  assert.equal((await get('/app/../server.js')).status, 404, 'no path escape');
+  web.closeAllConnections(); web.close();
+}
+
 console.log('ok - all tests passed');
 clients.forEach(c => c.close());
 server.closeAllConnections();

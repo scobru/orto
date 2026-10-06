@@ -33,8 +33,9 @@ Usage:
   node cli.js identity [--user <user> --pass <pass>]   # check login, print username + server
 
   # File storage (encrypted client-side unless --plain)
-  node cli.js file-upload   [--user <user> --pass <pass>] --file <path> [--plain]
-  node cli.js file-list     [--user <user> --pass <pass>]
+  node cli.js file-upload   [--user <user> --pass <pass>] --file <path> [--plain] [--folder <a/b>] [--album <name>]
+  node cli.js file-list     [--user <user> --pass <pass>] [--folder <a/b>] [--album <name>]
+  node cli.js file-move     [--user <user> --pass <pass>] --id <id> [--folder <a/b>] [--album <name>]   # '' clears
   node cli.js file-download [--user <user> --pass <pass>] --id <id> --out <path>
   node cli.js file-delete   [--user <user> --pass <pass>] --id <id>
 
