@@ -89,6 +89,14 @@ Usage:
   node cli.js bookmarks-export [--user <user> --pass <pass>] [--folder <path>] [--file <out.html>]
   node cli.js bookmarks-update [--user <user> --pass <pass>] --file <changes.json>  # [{soul, title?, folder?, tags?}]
 
+  # Feeds: follow RSS/Atom (list encrypted; articles fetched live through the server, never stored)
+  node cli.js feed-add    [--user <user> --pass <pass>] --url <feed or site url> [--title <t>] [--folder <path>] [--no-check]   # a site address finds its feed
+  node cli.js feed-list   [--user <user> --pass <pass>] [--table] [--count]
+  node cli.js feed-read   [--user <user> --pass <pass>] (--soul <soul> | --url <feed url>) [-n <limit> -p <page>] [--table]   # --url works without following
+  node cli.js feed-delete [--user <user> --pass <pass>] (--soul <soul> | --url <feed url>)
+  node cli.js feed-import [--user <user> --pass <pass>] --file <subscriptions.opml>
+  node cli.js feed-export [--user <user> --pass <pass>] [--file <out.opml>]
+
   # Account, backup, sharing
   node cli.js password-change [--user <user> --pass <pass>] --new <new password>   # re-encrypts everything; export first
   node cli.js export [--user <user> --pass <pass>] --out <backup.json> [--no-files]   # plaintext of everything: store safely

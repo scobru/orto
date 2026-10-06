@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Blog</title>
+<link id="feed" rel="alternate" type="application/rss+xml">
 <style>
   :root { color-scheme: light dark; }
   body { font: 17px/1.6 system-ui, sans-serif; max-width: 42rem; margin: 0 auto; padding: 24px 16px 64px; }
@@ -16,6 +17,7 @@
 </head>
 <body>
 <h1 id="who"></h1>
+<p><small><a id="rss">RSS</a></small></p>
 <main id="posts">Loading…</main>
 <script src="/vendor/marked.min.js"></script>
 <script src="/vendor/purify.min.js"></script>
@@ -25,6 +27,9 @@
   const only = new URLSearchParams(location.search).get('post');
   document.getElementById('who').textContent = name;
   document.title = name + ' · Blog';
+  document.getElementById('rss').href = '/blog/' + encodeURIComponent(name) + '/feed.xml';
+  document.getElementById('feed').href = '/blog/' + encodeURIComponent(name) + '/feed.xml';
+  document.getElementById('feed').title = name;
   fetch('/api/u/' + encodeURIComponent(name) + '/posts').then(r => r.ok ? r.json() : Promise.reject()).then(list => {
     const posts = list.filter(p => !p.deleted && (!only || (p.id || p.soul) === only)).sort((a, b) => b.createdAt - a.createdAt);
     const root = document.getElementById('posts');

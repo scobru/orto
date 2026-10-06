@@ -2228,6 +2228,18 @@
     .bm-bar select { background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 7px; padding: 7px 10px; font: inherit; font-size: 14px; }
     .sec-val { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--text-secondary); max-width: 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+    /* ── Feeds view reuses the bookmarks layout ── */
+    body.feeds-mode #feeds-pane { display: flex; }
+    body.feeds-mode .note-list-pane, body.feeds-mode .editor-pane { display: none !important; }
+    .feed-folder { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 10px 10px 2px; }
+    .feed-row { cursor: pointer; }
+    .feed-row.unread b { font-weight: 700; }
+    .feed-row.unread b::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--bear-red); margin-right: 7px; vertical-align: 1px; }
+    .feed-art { line-height: 1.65; overflow-wrap: anywhere; font-size: 15px; }
+    .feed-art img, .feed-art video, .feed-art iframe { max-width: 100%; height: auto; }
+    .feed-art pre { overflow: auto; }
+    .feed-art a { color: var(--bear-red); }
+
     /* ── Files view (encrypted uploads) reuses the bookmarks layout ── */
     body.files-mode #files-pane { display: flex; }
     body.files-mode .note-list-pane,
@@ -2854,6 +2866,12 @@
           <span class="nav-count" id="count-bookmarks">0</span>
         </a>
 
+        <a class="nav-item" id="nav-feeds" onclick="openFeeds()">
+          <span class="nav-icon"><i class="ti ti-rss"></i></span>
+          <span class="nav-text">Feeds</span>
+          <span class="nav-count" id="count-feeds">0</span>
+        </a>
+
         <a class="nav-item" id="nav-contacts" onclick="openContacts()">
           <span class="nav-icon"><i class="ti ti-address-book"></i></span>
           <span class="nav-text">Contacts</span>
@@ -3018,8 +3036,8 @@
     <!-- Blog pane: the user's public posts, with write support -->
     <section class="blog-pane" id="blog-pane">
       <div class="blog-list">
-        <div class="blog-list-head"><span style="display:flex;align-items:center;gap:6px"><button class="mobile-menu-btn" onclick="toggleSidebar()" title="Menu" aria-label="Menu"><i class="ti ti-menu-2"></i></button>Blog</span><a id="blog-open-link" target="_blank" rel="noopener">Open public
-            page ↗</a></div>
+        <div class="blog-list-head"><span style="display:flex;align-items:center;gap:6px"><button class="mobile-menu-btn" onclick="toggleSidebar()" title="Menu" aria-label="Menu"><i class="ti ti-menu-2"></i></button>Blog</span><span><a id="blog-rss-link" target="_blank" rel="noopener" title="RSS feed of your public posts">RSS</a> · <a id="blog-open-link" target="_blank" rel="noopener">Open public
+            page ↗</a></span></div>
         <div style="display:flex;gap:8px;padding:8px 12px">
           <button class="cal-btn primary" onclick="blogEdit()"><i class="ti ti-plus"></i> New post</button>
         </div>
@@ -3046,6 +3064,26 @@
           <input type="file" id="bm-file" accept=".html,text/html" class="hidden" onchange="bmImport(this)">
         </div>
         <div class="bm-items" id="bm-items"></div>
+      </div>
+    </section>
+
+    <!-- Feeds pane: RSS/Atom you follow; the list is encrypted at the feeds collection, articles are fetched live -->
+    <section class="bm-pane" id="feeds-pane">
+      <div class="bm-folders" id="feeds-list"></div>
+      <div class="bm-main">
+        <div class="bm-bar">
+          <button class="mobile-menu-btn" onclick="toggleSidebar()" title="Menu" aria-label="Menu"><i class="ti ti-menu-2"></i></button>
+          <input type="search" id="feeds-search" placeholder="Search articles" oninput="feedSearch(this.value)">
+          <button class="cal-btn" onclick="feedsRefresh(true)" title="Refresh" aria-label="Refresh"><i class="ti ti-refresh"></i></button>
+          <button class="cal-btn" onclick="feedsMarkRead()" title="Mark all as read" aria-label="Mark all as read"><i class="ti ti-checks"></i></button>
+          <button class="cal-btn hidden" id="feeds-edit" onclick="feedEdit()" title="Rename or move" aria-label="Edit feed"><i class="ti ti-pencil"></i></button>
+          <button class="cal-btn hidden" id="feeds-del" onclick="feedUnfollow()" title="Unfollow" aria-label="Unfollow"><i class="ti ti-rss-off"></i></button>
+          <button class="cal-btn primary" onclick="feedAdd()"><i class="ti ti-plus"></i> Follow</button>
+          <button class="cal-btn" onclick="feedsExport()" title="Download your subscriptions as OPML"><i class="ti ti-download"></i></button>
+          <button class="cal-btn" onclick="document.getElementById('feeds-file').click()" title="Import OPML"><i class="ti ti-upload"></i></button>
+          <input type="file" id="feeds-file" accept=".opml,.xml,text/xml,text/x-opml" class="hidden" onchange="feedsImport(this)">
+        </div>
+        <div class="bm-items" id="feeds-items"></div>
       </div>
     </section>
 
@@ -3431,6 +3469,7 @@
         loadBookmarks();
         loadContacts();
         loadSecrets();
+        loadFeeds();
         loadTasks();
       } catch (e) {
         console.error("Login Error:", e);
@@ -4330,7 +4369,7 @@ print("Welcome to Orto!")
     function setFilter(filter) {
       closeCalendar();
       closeBlog();
-      closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeMedia();
+      closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeMedia();
       closeTasks();
       currentFilter = filter;
       triggerRender();
@@ -4586,7 +4625,7 @@ print("Welcome to Orto!")
     }
 
     function openCalendar() {
-      closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeMedia(); closeTasks();
+      closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeMedia(); closeTasks();
       calMode = true;
       document.body.classList.add('cal-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -4701,7 +4740,7 @@ print("Welcome to Orto!")
     }
     function unlinkNoteFromModal(soul) { evLinks = evLinks.filter(l => !(l.kind === 'note' && l.soul === soul)); renderEvLinks(); }
     function openLinkedNote(soul) {
-      closeEventModal(); if (typeof closeTaskModal === 'function') closeTaskModal(); closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeMedia(); if (typeof closeTasks === 'function') closeTasks(); selectNote(soul);
+      closeEventModal(); if (typeof closeTaskModal === 'function') closeTaskModal(); closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeMedia(); if (typeof closeTasks === 'function') closeTasks(); selectNote(soul);
     }
     // events & tasks linked to the open note, shown under its title; click one to open it
     function renderNoteEvents() {
@@ -4807,12 +4846,13 @@ print("Welcome to Orto!")
       });
     }
     function openBlog() {
-      closeCalendar(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeMedia(); closeTasks();
+      closeCalendar(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeMedia(); closeTasks();
       blogMode = true;
       document.body.classList.add('blog-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
       document.getElementById('nav-blog').classList.add('active');
       document.getElementById('blog-open-link').href = (serverUrl || location.origin) + '/blog/' + pair.pub;
+      document.getElementById('blog-rss-link').href = (serverUrl || location.origin) + '/blog/' + pair.pub + '/feed.xml';
       if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('open')) toggleSidebar();
       renderBlog();
     }
@@ -4991,7 +5031,7 @@ print("Welcome to Orto!")
     function bmScheduleRender() { clearTimeout(bmTimer); bmTimer = setTimeout(renderBookmarks, 150); }
 
     function openBookmarks() {
-      closeCalendar(); closeBlog(); closeTasks(); closeFiles(); closeContacts(); closeSecrets(); closeMedia();
+      closeCalendar(); closeBlog(); closeTasks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeMedia();
       bmMode = true;
       document.body.classList.add('bm-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -5121,7 +5161,7 @@ print("Welcome to Orto!")
       const b = e.target.closest('[data-act]'); if (b && handlers[b.dataset.act]) handlers[b.dataset.act](b.dataset.soul);
     });
     function openPane(mode, navId, render) {
-      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeMedia();
+      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeMedia();
       document.body.classList.add(mode);
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
       document.getElementById(navId).classList.add('active');
@@ -5264,6 +5304,140 @@ print("Welcome to Orto!")
     });
     Object.assign(window, { openContacts, ctSearch, ctEdit, ctImport, ctExport, openSecrets, secSearch, secKind, secEdit });
 
+
+    // Feeds — RSS/Atom you follow. The list (feeds collection) is encrypted like everything else; articles are fetched live through the
+    // server (it relays the XML, see GET /api/feed), parsed here and never stored. The server does learn which feed addresses are fetched.
+    const feeds = {}, feedData = {}; // soul -> record; soul -> { at, feed } | { at, err }
+    let feedsMode = false, feedSel = null, feedQuery = '', feedBusy = false;
+    const feedTitle = (f) => f.title || feedData[f.soul]?.feed?.title || f.url.replace(/^https?:\/\//, '');
+    const feedUnread = (f) => (feedData[f.soul]?.feed?.items || []).filter((i) => i.date && i.date > (f.readAt || 0)).length;
+    function loadFeeds() {
+      os.onFeed((f, soul, deleted) => {
+        syncBump();
+        if (deleted) { delete feeds[soul]; delete feedData[soul]; if (feedSel === soul) feedSel = null; } else feeds[soul] = { ...f, soul };
+        document.getElementById('count-feeds').textContent = Object.keys(feeds).length;
+        if (feedsMode) { renderFeeds(); if (!deleted && !feedData[soul]) feedsRefresh(); }
+      });
+    }
+    function openFeeds() { openPane('feeds-mode', 'nav-feeds', () => { renderFeeds(); feedsRefresh(); }); feedsMode = true; }
+    function closeFeeds() {
+      feedsMode = false;
+      document.body.classList.remove('feeds-mode');
+      document.getElementById('nav-feeds')?.classList.remove('active');
+    }
+    async function feedsRefresh(force) {
+      if (feedBusy) return;
+      const todo = Object.keys(feeds).filter((s) => force || !feedData[s] || Date.now() - feedData[s].at > 5 * 60e3);
+      if (!todo.length) return;
+      feedBusy = true;
+      let i = 0;
+      await Promise.all(Array.from({ length: Math.min(4, todo.length) }, async () => {
+        while (i < todo.length) {
+          const s = todo[i++]; if (!feeds[s]) continue;
+          try { feedData[s] = { at: Date.now(), feed: await os.fetchFeed(feeds[s].url) }; } catch (e) { feedData[s] = { at: Date.now(), err: e.message }; }
+          if (feedsMode) renderFeeds();
+        }
+      }));
+      feedBusy = false;
+      if (feedsMode) renderFeeds();
+    }
+    const feedPick = (soul) => { feedSel = soul; renderFeeds(); };
+    const feedSearch = (v) => { feedQuery = v.toLowerCase(); renderFeeds(); };
+    function renderFeeds() {
+      const list = Object.values(feeds).sort((a, b) => (a.folder || '').localeCompare(b.folder || '') || feedTitle(a).localeCompare(feedTitle(b)));
+      if (feedSel && !feeds[feedSel]) feedSel = null;
+      const row = (soul, label, n, err) => `<div class="bm-folder ${feedSel === soul ? 'active' : ''}" onclick="feedPick(${soul ? `'${soul}'` : 'null'})" title="${escapeHtml(err || '')}"><span>${escapeHtml(label)}${err ? ' ⚠' : ''}</span><span>${n || ''}</span></div>`;
+      let last = null;
+      document.getElementById('feeds-list').innerHTML = row(null, 'All', list.reduce((n, f) => n + feedUnread(f), 0)) + list.map((f) => {
+        const head = (f.folder || '') !== last && f.folder ? `<div class="feed-folder">${escapeHtml(f.folder)}</div>` : ''; last = f.folder || '';
+        return head + row(f.soul, feedTitle(f), feedUnread(f), feedData[f.soul]?.err);
+      }).join('');
+      document.getElementById('feeds-edit').classList.toggle('hidden', !feedSel);
+      document.getElementById('feeds-del').classList.toggle('hidden', !feedSel);
+      const items = [];
+      for (const f of list) if (!feedSel || feedSel === f.soul) (feedData[f.soul]?.feed?.items || []).forEach((it, idx) => items.push({ f, it, idx }));
+      const shown = items.filter(({ f, it }) => !feedQuery || [it.title, it.summary, feedTitle(f)].join(' ').toLowerCase().includes(feedQuery))
+        .sort((a, b) => (b.it.date || 0) - (a.it.date || 0)).slice(0, 200);
+      document.getElementById('feeds-items').innerHTML = shown.length ? shown.map(({ f, it, idx }) => `<div class="bm-item feed-row ${it.date && it.date > (f.readAt || 0) ? 'unread' : ''}" data-act="open" data-soul="${f.soul}:${idx}">
+          <div style="flex:1;min-width:0"><b>${escapeHtml(it.title)}</b><small>${escapeHtml(feedTitle(f))}${it.date ? ' · ' + new Date(it.date).toLocaleDateString() : ''}</small></div>
+          ${it.link ? actBtn('save', f.soul + ':' + idx, 'bookmark-plus', 'Save as bookmark') : ''}</div>`).join('')
+        : feedBusy ? '<div class="blog-empty">Loading…</div>'
+        : !list.length ? '<div class="blog-empty">No feeds yet.<br>Use Follow with a feed or site address, or import an OPML file from another reader.</div>'
+        : feedQuery ? '<div class="blog-empty">No articles match.</div>' : '<div class="blog-empty">No articles to show.</div>';
+    }
+    // article HTML from anywhere: sanitized, links open in a new tab, images do not tell the site who is reading
+    function feedHtml(html) {
+      const frag = DOMPurify.sanitize(html || '', { RETURN_DOM_FRAGMENT: true, FORBID_TAGS: ['style', 'form', 'iframe'] });
+      frag.querySelectorAll('a').forEach((a) => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
+      frag.querySelectorAll('img').forEach((i) => { i.referrerPolicy = 'no-referrer'; i.loading = 'lazy'; });
+      const d = document.createElement('div'); d.append(frag); return d.innerHTML;
+    }
+    const feedItem = (key) => { const [soul, idx] = key.split(':'); return { f: feeds[soul], it: feedData[soul]?.feed?.items[+idx] }; };
+    function feedOpen(key) {
+      const { f, it } = feedItem(key); if (!it) return;
+      const bg = modal(`<h2 style="margin:0 0 4px">${escapeHtml(it.title)}</h2><small style="color:var(--text-muted)">${escapeHtml(feedTitle(f))}${it.date ? ' · ' + new Date(it.date).toLocaleString() : ''}</small>
+        <div class="feed-art" style="margin-top:12px">${feedHtml(it.content || it.summary) || '<i>No text in the feed: open the original.</i>'}</div>
+        <div class="cal-actions">${it.link ? `<a class="cal-btn" href="${escapeHtml(it.link)}" target="_blank" rel="noopener noreferrer"><i class="ti ti-external-link"></i> Original</a><button class="cal-btn" id="feed-save"><i class="ti ti-bookmark-plus"></i> Save</button>` : ''}<button class="cal-btn primary" id="feed-close">Close</button></div>`);
+      bg.firstElementChild.style.cssText = 'max-width:720px;width:92vw;max-height:86vh;overflow:auto';
+      document.getElementById('feed-close').onclick = () => bg.remove();
+      if (it.link) document.getElementById('feed-save').onclick = () => feedSave(key);
+    }
+    async function feedSave(key) {
+      const { it } = feedItem(key);
+      try { await os.writeBookmark({ url: it.link, title: it.title }); showToast('Saved to Bookmarks'); } catch (e) { showToast(e.message); }
+    }
+    function feedAdd() {
+      const bg = modal(`<label>Feed or site address<input type="text" id="feed-url" placeholder="https://example.com/feed.xml or https://example.com" autocomplete="off"></label>
+        <label>Folder (optional)<input type="text" id="feed-folder" value="${escapeHtml(feedSel ? feeds[feedSel].folder || '' : '')}"></label>
+        <div class="cal-actions"><button class="cal-btn" id="feed-cancel">Cancel</button><button class="cal-btn primary" id="feed-go">Follow</button></div>`);
+      document.getElementById('feed-cancel').onclick = () => bg.remove();
+      document.getElementById('feed-go').onclick = async (e) => {
+        let url = field('feed-url'); if (!url) return;
+        if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+        e.target.disabled = true; e.target.textContent = 'Looking…';
+        try {
+          const found = await os.findFeed(url);
+          await os.addFeed(found.url, { title: found.feed.title, folder: field('feed-folder') });
+          bg.remove(); showToast('Following ' + (found.feed.title || found.url));
+        } catch (err) { showToast(err.message); e.target.disabled = false; e.target.textContent = 'Follow'; }
+      };
+      document.getElementById('feed-url').focus();
+    }
+    function feedEdit() {
+      const f = feeds[feedSel]; if (!f) return;
+      const folders = [...new Set(Object.values(feeds).map((x) => x.folder).filter(Boolean))].sort();
+      const bg = modal(`<label>Name<input type="text" id="feed-e-title" value="${escapeHtml(feedTitle(f))}"></label>
+        <label>Folder<input type="text" id="feed-e-folder" list="feed-folder-list" value="${escapeHtml(f.folder || '')}"></label>
+        <datalist id="feed-folder-list">${folders.map((x) => `<option value="${escapeHtml(x)}">`).join('')}</datalist>
+        <div class="cal-actions"><button class="cal-btn" id="feed-e-cancel">Cancel</button><button class="cal-btn primary" id="feed-e-save">Save</button></div>`);
+      document.getElementById('feed-e-cancel').onclick = () => bg.remove();
+      document.getElementById('feed-e-save').onclick = async () => {
+        try { await os.put('feeds', f.soul, { url: f.url, title: field('feed-e-title'), folder: field('feed-e-folder'), addedAt: f.addedAt, readAt: f.readAt || 0 }); bg.remove(); } catch (e) { showToast(e.message); }
+      };
+    }
+    async function feedUnfollow() {
+      const f = feeds[feedSel]; if (!f || !confirm('Unfollow ' + feedTitle(f) + '?')) return;
+      try { await os.deleteFeed(f.soul); } catch (e) { showToast(e.message); }
+    }
+    async function feedsMarkRead() {
+      const now = Date.now();
+      try { await Promise.all(Object.values(feeds).filter((f) => !feedSel || f.soul === feedSel).map((f) => os.markFeedRead(f.soul, now))); } catch (e) { showToast(e.message); }
+    }
+    async function feedsImport(input) {
+      const file = input.files[0]; input.value = '';
+      if (!file) return;
+      try { const r = await os.importFeedsOpml(await file.text()); showToast('Imported ' + r.imported + ' feeds' + (r.failed ? ' (' + r.failed + ' failed)' : '')); } catch (e) { showToast(e.message); }
+    }
+    async function feedsExport() {
+      if (!Object.keys(feeds).length) return showToast('No feeds to export');
+      download(new Blob([await os.exportFeedsOpml()], { type: 'text/x-opml' }), 'orto-feeds.opml');
+    }
+    wire('feeds-items', {
+      open: feedOpen,
+      save: feedSave
+    });
+    Object.assign(window, { openFeeds, feedsRefresh, feedPick, feedSearch, feedAdd, feedEdit, feedUnfollow, feedsMarkRead, feedsImport, feedsExport, renderFeeds });
+
     // Files and Photos — encrypted uploads stored on the Orto server; index in the `files` collection (see Orto.uploadFile).
     // Photos is the same data as a thumbnail grid of the image files (thumbnails are made in the browser and kept in the encrypted index).
     let filesMode = false, filesView = 'list', filesCache = [], filesGroups = { folders: [], albums: [], playlists: [] }, filesFolder = null, filesAlbum = null, mediaMode = false, mediaPlaylist = null; // null = all, '' = not in any folder/album/playlist
@@ -5282,7 +5456,7 @@ print("Welcome to Orto!")
     const closeModal = (id = 'zmodal-bg') => document.getElementById(id)?.remove();
 
     async function openFiles(view) {
-      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeMedia();
+      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeMedia();
       filesMode = true;
       filesView = view === 'photos' ? 'photos' : 'list';
       document.body.classList.add('files-mode');
@@ -5475,7 +5649,7 @@ print("Welcome to Orto!")
     function mediaFree() { if (mediaBlobUrl) { URL.revokeObjectURL(mediaBlobUrl); mediaBlobUrl = null; } }
 
     async function openMedia() {
-      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeMedia();
+      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeMedia();
       mediaMode = true;
       document.body.classList.add('media-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -5754,7 +5928,7 @@ print("Welcome to Orto!")
     }
 
     function openTasks() {
-      closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeMedia();
+      closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeMedia();
       tasksMode = true;
       document.body.classList.add('tasks-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));

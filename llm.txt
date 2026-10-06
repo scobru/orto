@@ -14,7 +14,7 @@ client --HTTPS--> server.js --> data/orto.db (users, sessions, records) + data/f
 - Record = `(user, collection, soul)` -> JSON. Private collections store `{ data: "e1.<base64 iv+ciphertext>", encrypted: true }`; the whole object is inside `data`. The server adds `updatedAt`.
 - `posts` (public blog) is stored in clear and readable without login.
 - Souls are client-chosen ids (`vault-…`, `cal-…`, `task-…`, `ct-…`, `sc-…`, `bm-<hash of url>`, file id from the server).
-- Collections: `vault`, `calendar`, `tasks`, `bookmarks`, `contacts`, `secrets`, `files` (encrypted index of uploads), `posts`.
+- Collections: `vault`, `calendar`, `tasks`, `bookmarks`, `contacts`, `secrets`, `feeds` (followed RSS/Atom), `files` (encrypted index of uploads), `posts`.
 
 ## SDK
 
@@ -34,6 +34,7 @@ Every collection follows the same shape (`onX(cb)` replays existing records, the
 | Tasks | `writeTask({title, status, priority, desc, dueDate, tags, assignee, column, links, soul})`, `updateTask(soul, patch)` | `readTasks({status, priority, tag, query})`, `getTask(soul)` | `deleteTask(soul)` | `onTask` |
 | Bookmarks | `writeBookmark({url, title, folder, tags})`, `importBookmarksHtml(html)`, `updateBookmarks([{soul, folder?, title?, tags?}])` | `readBookmarks({folder, query})`, `getBookmark(soul)`, `exportBookmarksHtml()` | `deleteBookmark(soul)` | `onBookmark` |
 | Contacts | `writeContact({name, emails, phones, org, notes, tags, pub, soul})`, `importContactsVcf(text)` | `readContacts({query, tag})`, `getContact(soul)`, `exportContactsVcf()` | `deleteContact(soul)` | `onContact` |
+| Feeds | `addFeed(url, {title, folder})` (same URL = same subscription), `importFeedsOpml(xml)` | `readFeeds()`, `fetchFeed(url)` -> `{title, link, items: [{id, title, link, date, summary, content}]}` (HTML in `summary`/`content`: sanitize), `findFeed(url)` (also accepts a web page that advertises its feed) -> `{url, feed}`, `exportFeedsOpml()` | `markFeedRead(soul, readAt)`, `deleteFeed(soul)` | `onFeed` |
 | Secrets | `writeSecret({name, kind, username, secret, url, notes, tags, soul})` | `readSecrets({query, kind, tag})`, `getSecret(soul)` | `deleteSecret(soul)` | `onSecret` |
 | Files | `uploadFile(bytes, name, {encrypt = true, folder, album, playlist})` -> `{id, name, size, encrypted, addedAt, folder?, album?, playlist?}`; `uploadFileChunked(blobOrBytes, name, {type, folder, album, playlist, onProgress})` (encrypted 1 MiB chunks, constant memory) | `listFiles()`, `downloadFile(id)` -> Uint8Array, `readFileRange(id, start, end)` (only the needed chunks), `fileGroups()` -> `{folders, albums, playlists}` | `moveFile(id, {folder, album, playlist})` ('' clears), `addFileGroup('folder'\|'album'\|'playlist', name)`, `renameFileGroup(kind, from, to)` ('' removes) | `deleteFile(id)` |
 | Blog | `publishBlogPost({title, content, tags, id, createdAt})` | `readBlogPosts(username?)`, `getBlogPost(id, username?)` | `deleteBlogPost(id)` | `onPost(username, cb)` |
@@ -63,7 +64,8 @@ JSON everywhere; `Authorization: Bearer <token>`.
 - chunked upload: `POST /api/files/begin` -> `{id}`; `PUT /api/files/:id/append` (raw chunk, header `X-Offset` = bytes stored so far, else 409; 413 over the size or quota limit and the file is cut back to the last good size, so retry) -> `{size}`; `POST /api/files/:id/finish[?replace=<existing id>]` -> `{id, size}`. Unfinished uploads are swept after a day.
 - `POST /api/s` (JSON `{data}` = text share, raw bytes = file share) -> `{id}`; `DELETE /api/s/:id`; `GET /api/s/:id` is public (ciphertext only)
 - `POST /api/password` `{auth, newAuth}` (after the client re-encrypted everything)
-- `GET /api/u/:name` (exists?), `GET /api/u/:name/posts` (public, no auth), `GET /blog/:name` (HTML)
+- `GET /api/u/:name` (exists?), `GET /api/u/:name/posts` (public, no auth), `GET /blog/:name` (HTML), `GET /blog/:name/feed.xml` (RSS 2.0 of the newest 50 public posts, no auth; links use `ORTO_PUBLIC_URL` or the request's Host)
+- `GET /api/feed?url=<http(s) url>` (auth): the server fetches that feed and relays the XML (browsers cannot, CORS). 2 MB, 10 s, 3 redirects; private/loopback addresses are refused unless the server has `ORTO_FEEDS_PRIVATE=1`; 403 on the demo account
 - admin panel (only when the server has `ORTO_ADMIN_PASS`, else 404): `POST /api/admin/login {pass}` -> `{token}` (separate from user tokens, 12 h); with it `GET|PUT /api/admin/settings` (`registration`, `maxUpload`, `quota`; `null` = env default), `GET /api/admin/users`, `DELETE /api/admin/users/:name`, `POST /api/admin/users/:name/logout`, `POST /api/admin/backup`. UI at `/admin`.
 - pages: `/` and `/app/` the web app, `/about` the landing page, `/blog/:name`, `/s/:id`; `/models/*` is the optional add-on folder (`ORTO_MODELS`, default `<data>/models`)
 - `GET /api/health`, `GET /api/config` (`{registration, maxUpload, demo?}`: `demo` is `{user, pass, hours}` when the server runs `ORTO_DEMO=1`, a public account that is reset with random fake data; sharing, posts and password change are 403 there)

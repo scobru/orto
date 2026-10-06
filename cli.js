@@ -263,6 +263,14 @@ Usage:
   node cli.js bookmarks-export [--user <user> --pass <pass>] [--folder <path>] [--file <out.html>]
   node cli.js bookmarks-update [--user <user> --pass <pass>] --file <changes.json>  # [{soul, title?, folder?, tags?}]
 
+  # Feeds: follow RSS/Atom (the list is encrypted; articles are fetched live through the server)
+  node cli.js feed-add    [--user <user> --pass <pass>] --url <feed url> [--title <t>] [--folder <path>] [--no-check]
+  node cli.js feed-list   [--user <user> --pass <pass>] [--table] [--count]
+  node cli.js feed-read   [--user <user> --pass <pass>] (--soul <soul> | --url <feed url>) [-n <limit> -p <page>] [--table]   # --url works without following it
+  node cli.js feed-delete [--user <user> --pass <pass>] (--soul <soul> | --url <feed url>)
+  node cli.js feed-import [--user <user> --pass <pass>] --file <subscriptions.opml>
+  node cli.js feed-export [--user <user> --pass <pass>] [--file <out.opml>]
+
   # Blog (public posts)
   node cli.js blog-publish [--user <user> --pass <pass>] --title <title> --content <content> [--tags <tags>] [--id <id>]
   node cli.js blog-get     --id <id> (--alias <username> | --user <user> --pass <pass>)
@@ -791,6 +799,70 @@ Server (all commands):
       await os.login(user, pass);
       console.log(JSON.stringify(await os.updateBookmarks(JSON.parse(fs.readFileSync(flags.file, 'utf8'))), null, 2));
       setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    // ─── Feeds ────────────────────────────────────────────────────────
+
+    case 'feed-add': {
+      if (!flags.url) throw new Error('--url is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      let url = flags.url, title = flags.title || '';
+      if (!flags['no-check']) { const f = await os.findFeed(url); url = f.url; title = title || f.feed.title; } // a web page address works too
+      console.log(JSON.stringify(await os.addFeed(url, { title, folder: flags.folder || '' }), null, 2));
+      setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    case 'feed-list': {
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      outputResults(await os.readFeeds(), flags);
+      process.exit(0);
+      break;
+    }
+
+    case 'feed-read': {
+      let url = flags.url;
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      if (!url && flags.soul) url = (await os.readFeeds()).find((f) => f.soul === flags.soul)?.url;
+      if (!url) throw new Error('--soul (of a followed feed) or --url is required.');
+      const feed = await os.fetchFeed(url);
+      const text = (h) => String(h || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+      const items = feed.items.map((i) => ({ title: i.title, url: i.link, addedAt: i.date || undefined, summary: text(i.summary || i.content) }));
+      outputResults(items, flags);
+      process.exit(0);
+      break;
+    }
+
+    case 'feed-delete': {
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      let soul = flags.soul;
+      if (!soul && flags.url) soul = (await os.readFeeds()).find((f) => f.url === flags.url)?.soul;
+      if (!soul) throw new Error('--soul or the --url of a followed feed is required.');
+      console.log(JSON.stringify(await os.deleteFeed(soul), null, 2));
+      setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    case 'feed-import': {
+      if (!flags.file) throw new Error('--file is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      console.log(JSON.stringify(await os.importFeedsOpml(fs.readFileSync(flags.file, 'utf8')), null, 2));
+      setTimeout(() => process.exit(0), 500);
+      break;
+    }
+
+    case 'feed-export': {
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const opml = await os.exportFeedsOpml();
+      if (flags.file) fs.writeFileSync(flags.file, opml); else process.stdout.write(opml);
+      process.exit(0);
       break;
     }
 
