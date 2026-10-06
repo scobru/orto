@@ -14,6 +14,7 @@
  *      ORTO_DEMO_HOURS (3) hours; sharing, the public blog and password change are off for it.
  *      ORTO_ADMIN_PASS (min 8 chars) turns on the admin panel at /admin: settings (registration, upload size, quota) edited
  *      from the browser and saved in the database (they override the env values), user list/removal, backups. Off when unset.
+ *      Pages: / the web app, /about the project landing page, /app the web app (same URLs as the hosted site), /admin the admin panel.
  *      (the old ZENOS_* names still work)
  */
 import http from 'node:http';
@@ -358,6 +359,9 @@ export function createServer(opts = {}) {
     if (rel.startsWith('/blog/')) rel = '/blog.html';
     else if (rel.startsWith('/s/')) rel = '/share.html';
     else if (rel === '/admin') rel = '/admin.html';
+    else if (rel === '/about' || rel === '/about/') rel = '/about.html'; // the project landing page
+    else if (rel === '/app') rel = '/index.html'; // same URLs as the hosted site: /app is the web app
+    else if (rel.startsWith('/app/')) rel = rel.slice(4);
     if (rel.endsWith('/')) rel += 'index.html';
     // the SDK lives next to this file (not in web/) so the CLI and the browser share one copy
     const file = rel === '/orto.js' ? path.join(here, 'orto.js') : path.normalize(path.join(webDir, rel));

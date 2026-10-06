@@ -1,6 +1,10 @@
 {
   "rewrites": [
     { "source": "/", "destination": "/site/index.html" },
+    { "source": "/about", "destination": "/web/about.html" },
+    { "source": "/vendor/:path*", "destination": "/web/vendor/:path*" },
+    { "source": "/icon.svg", "destination": "/web/icon.svg" },
+    { "source": "/apple-touch-icon.png", "destination": "/web/apple-touch-icon.png" },
     { "source": "/favicon.svg", "destination": "/site/favicon.svg" },
     { "source": "/app/orto.js", "destination": "/orto.js" },
     { "source": "/app", "destination": "/web/index.html" },
