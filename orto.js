@@ -1,5 +1,5 @@
 /**
- * ZenOS Client SDK — talks to a self-hosted ZenOS server (server.js, SQLite + file uploads).
+ * Orto (formerly ZenOS) client SDK — talks to a self-hosted Orto server (server.js, SQLite + file uploads).
  * Works in Node >= 18 and in browsers: fetch + WebCrypto only, no dependencies.
  *
  * Everything private is AES-GCM encrypted on the client with a key derived from username + password
@@ -8,6 +8,7 @@
  */
 
 const env = (globalThis.process && globalThis.process.env) || {};
+// ponytail: still the pre-rename domain; switch to https://orto.scobrudot.dev once it exists
 export const DEFAULT_SERVER = 'https://zenos.scobrudot.dev';
 
 /** Normalize a server URL: trims it and drops the trailing slash. '' means same origin (browser). */
@@ -136,7 +137,7 @@ export async function deriveKeys(username, password) {
   if (!name || !password) throw new Error('Username and password are required');
   const enc = new TextEncoder();
   const base = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
-  const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', iterations: 210000, salt: enc.encode('zenos:v1:' + name) }, base, 512));
+  const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', iterations: 210000, salt: enc.encode('zenos:v1:' + name) /* the pre-rename name: part of the key derivation, never change it or every login stops opening its data */ }, base, 512));
   return { name, key: await crypto.subtle.importKey('raw', bits.slice(0, 32), 'AES-GCM', false, ['encrypt', 'decrypt']), auth: toB64(bits.slice(32)) };
 }
 
@@ -160,7 +161,7 @@ const seal = async (key, value) => {
   return 'e1.' + toB64(out);
 };
 const unseal = async (key, cipher) => {
-  if (typeof cipher !== 'string' || !cipher.startsWith('e1.')) throw new Error('Not a ZenOS ciphertext');
+  if (typeof cipher !== 'string' || !cipher.startsWith('e1.')) throw new Error('Not an Orto ciphertext');
   const raw = fromB64(cipher.slice(3));
   return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.subarray(0, 12) }, key, raw.subarray(12))));
 };
@@ -173,7 +174,7 @@ const chunked = async (items, fn, n = 20) => { for (let i = 0; i < items.length;
 export async function readShare(link) {
   const u = new URL(link);
   const id = u.pathname.split('/').pop();
-  if (!/^[a-f0-9]{32}$/.test(id) || !u.hash.slice(1)) throw new Error('Not a ZenOS share link');
+  if (!/^[a-f0-9]{32}$/.test(id) || !u.hash.slice(1)) throw new Error('Not an Orto share link');
   const r = await fetch(`${u.origin}/api/s/${id}`);
   if (!r.ok) throw Object.assign(new Error((await r.json().catch(() => ({}))).error || 'HTTP ' + r.status), { status: r.status });
   const cipher = String((r.headers.get('content-type') || '').startsWith('application/json') ? (await r.json()).data : await r.text());
@@ -181,17 +182,17 @@ export async function readShare(link) {
   return p.kind === 'file' ? { ...p, data: fromB64(p.data) } : p;
 }
 
-export class ZenOS {
+export class Orto {
   /**
-   * @param {{server?:string, token?:string}} options  server: ZenOS server URL (env ZENOS_SERVER; '' = same origin in a browser)
+   * @param {{server?:string, token?:string}} options  server: Orto server URL (env ORTO_SERVER; '' = same origin in a browser)
    */
   constructor(options = {}) {
     const fallback = globalThis.window ? '' : DEFAULT_SERVER;
-    this.server = normalizeServer(options.server ?? env.ZENOS_SERVER ?? fallback);
+    this.server = normalizeServer(options.server ?? env.ORTO_SERVER ?? env.ZENOS_SERVER ?? fallback);
     this.token = options.token || null;
     this.key = null;
     this.username = null;
-    this.pair = null; // { pub }: kept so older callers can read pair.pub
+    this.pair = null; // { pub }: kept so apps written for the ZEN build can read pair.pub
   }
 
   /** Public handle of the user: the lowercase username (used in blog URLs). */
@@ -310,7 +311,7 @@ export class ZenOS {
     return () => this._subs.delete(sub);
   }
 
-  // ─── ZenVault (encrypted notes) ─────────────────────────────────────
+  // ─── Vault (encrypted notes) ─────────────────────────────────────
 
   async writeVaultNote({ title, body, cat = 'general', pinned = false, soul = null }) {
     this._needKey();
@@ -506,7 +507,7 @@ export class ZenOS {
    */
   async exportAll({ files = true } = {}) {
     this._needKey();
-    const out = { format: 'zenos-export', version: 1, user: this.username, exportedAt: Date.now(), collections: {}, files: {}, posts: await this._json('GET', '/c/posts') };
+    const out = { format: 'orto-export', version: 1, user: this.username, exportedAt: Date.now(), collections: {}, files: {}, posts: await this._json('GET', '/c/posts') };
     for (const coll of COLLECTIONS.filter(c => c !== 'shares')) out.collections[coll] = await this._readAll(coll);
     if (files) await chunked(out.collections.files.filter(f => f.id), async (f) => { try { out.files[f.id] = toB64(await this.downloadFile(f.id, { encrypted: f.encrypted })); } catch (_) {} }, 5);
     return out; // ponytail: files go in memory as base64, stream to a ZIP if exports get huge
@@ -515,7 +516,7 @@ export class ZenOS {
   /** Load an exportAll() result into this account (same souls overwrite; files with the same name, size and date are skipped). */
   async importAll(data) {
     this._needKey();
-    if (data?.format !== 'zenos-export') throw new Error('Not a ZenOS export');
+    if (!['orto-export', 'zenos-export'].includes(data?.format)) throw new Error('Not an Orto export');
     const done = { records: 0, posts: 0, files: 0 };
     for (const coll of COLLECTIONS.filter(c => c !== 'files' && c !== 'shares')) {
       await chunked(data.collections?.[coll] || [], async ({ soul, updatedAt, ...rest }) => { await this.put(coll, soul, rest); done.records++; });
@@ -588,7 +589,7 @@ export class ZenOS {
 
   // ─── Contacts ───────────────────────────────────────────────────────
 
-  /** `pub` is an optional ZenOS username, so a contact can be a ZenOS user too. */
+  /** `pub` is an optional Orto username, so a contact can be an Orto user too. */
   async writeContact({ soul = null, name, emails = [], phones = [], org = '', notes = '', tags = [], pub = '', addedAt = Date.now() }) {
     if (!name || !String(name).trim()) throw new Error('name is required.');
     return this.put('contacts', soul || this._newSoul('ct-'), { name: String(name).trim(), emails: asList(emails), phones: asList(phones), org, notes, tags: asList(tags).map(t => t.replace(/^#/, '')), pub, addedAt });
@@ -708,7 +709,7 @@ export class ZenOS {
     return (await this.readTasks()).filter(t => (t.links || []).some(l => l.kind === kind && l.soul === soul));
   }
 
-  // ─── Blog (public, plaintext) ───────────────────────────────
+  // ─── smollog (public blog, plaintext) ───────────────────────────────
 
   /** Publish (or edit, with the same `id`) a public markdown post. Readable by anyone at /api/u/<username>/posts. */
   async publishBlogPost({ title, content, tags = [], id = null, createdAt = Date.now() }) {
@@ -778,4 +779,5 @@ export class ZenOS {
   }
 }
 
-export default ZenOS;
+export { Orto as ZenOS }; // old name, for existing callers
+export default Orto;

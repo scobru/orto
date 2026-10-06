@@ -1,6 +1,6 @@
 {
-  "name": "ZenOS",
-  "short_name": "ZenOS",
+  "name": "Orto",
+  "short_name": "Orto",
   "description": "Self-hosted encrypted workspace",
   "start_url": "./",
   "scope": "./",

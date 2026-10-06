@@ -4,9 +4,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ZenOS — Sovereign Personal Workspace</title>
+  <title>Orto — Self-hosted Personal Workspace</title>
   <meta name="description"
-    content="ZenOS - self-hosted personal workspace: end-to-end encrypted notes, tasks, calendar, bookmarks, contacts, secrets, files and blog.">
+    content="Orto - self-hosted personal workspace: end-to-end encrypted notes, tasks, calendar, bookmarks, contacts, secrets, files and blog.">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#e04b4b">
@@ -2672,7 +2672,7 @@
         <i class="ti ti-paw"></i>
       </div>
       <div class="login-title-group">
-        <h1>ZenOS</h1>
+        <h1>Orto</h1>
         <p>Self-hosted Workspace<br>Enter your master credentials to unlock.</p>
       </div>
       <div class="login-form">
@@ -2686,7 +2686,7 @@
             autocomplete="current-password">
         </div>
         <button id="login-btn" class="login-btn">
-          <i class="ti ti-lock-open"></i> Unlock ZenOS
+          <i class="ti ti-lock-open"></i> Unlock Orto
         </button>
       </div>
       <p class="login-footer-desc"><a href="#" onclick="serverConfig();return false" style="color:inherit">Server</a></p>
@@ -2711,7 +2711,7 @@
       <div class="sidebar-header">
         <!-- macOS window dots -->
         <div class="mac-window-controls">
-          <span class="mac-dot mac-dot-close" onclick="logout()" title="Lock ZenOS"></span>
+          <span class="mac-dot mac-dot-close" onclick="logout()" title="Lock Orto"></span>
           <span class="mac-dot mac-dot-minimize" onclick="toggleSidebar()" title="Collapse Sidebar"></span>
           <span class="mac-dot mac-dot-zoom" onclick="createNewNote()" title="New Note"></span>
         </div>
@@ -2840,7 +2840,7 @@
             <i class="ti ti-settings"></i>
             <span>Settings</span>
           </button>
-          <button class="sidebar-btn" onclick="logout()" title="Lock ZenOS">
+          <button class="sidebar-btn" onclick="logout()" title="Lock Orto">
             <i class="ti ti-lock"></i>
             <span>Lock</span>
           </button>
@@ -2997,7 +2997,7 @@
       </div>
     </section>
 
-    <!-- Files pane: uploads stored on the ZenOS server, encrypted in the browser -->
+    <!-- Files pane: uploads stored on the Orto server, encrypted in the browser -->
     <section class="bm-pane" id="files-pane">
       <div class="bm-main">
         <div class="bm-bar">
@@ -3036,7 +3036,7 @@
       <!-- Unselected Note Placeholder -->
       <div id="editor-placeholder" class="editor-placeholder-view">
         <i class="ti ti-paw editor-placeholder-icon"></i>
-        <h3>ZenOS</h3>
+        <h3>Orto</h3>
         <p style="color:var(--text-secondary);max-width:280px;font-size:14px;">Select a note from the list, or create a
           new note in your Vault.</p>
         <button class="empty-action-btn" onclick="createNewNote()">
@@ -3168,7 +3168,11 @@
 
   <!-- Theme Script -->
   <script>
-    let currentTheme = localStorage.getItem('zenos_theme') || localStorage.getItem('zenvault_theme') || 'light';
+    // settings saved before the rename (ZenOS): copied once to the new keys
+    for (const [old, now] of [['zenos_theme', 'orto_theme'], ['zenvault_theme', 'orto_theme'], ['zenosServer', 'ortoServer'], ['zenosServers', 'ortoServers']]) {
+      try { const v = localStorage.getItem(old); if (v !== null && localStorage.getItem(now) === null) localStorage.setItem(now, v); } catch (_) { }
+    }
+    let currentTheme = localStorage.getItem('orto_theme') || 'light';
 
     function applyTheme() {
       document.documentElement.setAttribute('data-theme', currentTheme);
@@ -3180,8 +3184,7 @@
 
     function toggleTheme() {
       currentTheme = currentTheme === 'light' ? 'dark' : 'light';
-      localStorage.setItem('zenos_theme', currentTheme);
-      localStorage.setItem('zenvault_theme', currentTheme);
+      localStorage.setItem('orto_theme', currentTheme);
       applyTheme();
     }
 
@@ -3189,9 +3192,9 @@
     window.toggleTheme = toggleTheme;
   </script>
 
-  <!-- App logic: talks to the ZenOS server; all encryption happens here -->
+  <!-- App logic: talks to the Orto server; all encryption happens here -->
   <script type="module">
-    import { ZenOS, DEFAULT_SERVER, normalizeServer, contactsToVcf, generatePassword } from './zenos.js';
+    import { Orto, DEFAULT_SERVER, normalizeServer, contactsToVcf, generatePassword } from './orto.js';
 
     let os;
     let pair;
@@ -3207,12 +3210,12 @@
     let searchQuery = '';
     let autoSaveTimeout = null;
 
-    // ZenOS server: the one chosen with the login-screen link; else this site's own origin when it runs a ZenOS server
+    // Orto server: the one chosen with the login-screen link; else this site's own origin when it runs an Orto server
     // (the server also serves this app); else the default public server (e.g. when this page is hosted statically)
     let serverUrl = '';
-    try { serverUrl = normalizeServer(localStorage.getItem('zenosServer') || ''); } catch (_) { }
+    try { serverUrl = normalizeServer(localStorage.getItem('ortoServer') || ''); } catch (_) { }
     if (!serverUrl) {
-      const sameOrigin = await fetch('/api/health').then(r => r.json()).then(j => j && j.name === 'zenos').catch(() => false);
+      const sameOrigin = await fetch('/api/health').then(r => r.json()).then(j => j && ['orto', 'zenos'].includes(j.name)).catch(() => false);
       if (!sameOrigin) serverUrl = DEFAULT_SERVER;
     }
 
@@ -3285,7 +3288,7 @@
         btn.innerHTML = '<i class="ti ti-loader animate-spin"></i> Decrypting...';
         btn.disabled = true;
 
-        os = new ZenOS({ server: serverUrl });
+        os = new Orto({ server: serverUrl });
         try {
           pair = await os.login(userInput, passInput);
         } catch (e) {
@@ -3322,7 +3325,7 @@
         alert("Login failed: " + e.message);
         const btn = document.getElementById('login-btn');
         if (btn) {
-          btn.innerHTML = '<i class="ti ti-lock-open"></i> Unlock ZenOS';
+          btn.innerHTML = '<i class="ti ti-lock-open"></i> Unlock Orto';
           btn.disabled = false;
         }
       }
@@ -3976,7 +3979,7 @@
       ].map(x => os.writeSecret(x)),
       bookmarks: () => [
         { url: 'https://developer.mozilla.org/', title: 'MDN Web Docs', folder: 'Dev/Docs', tags: ['reference'] },
-        { url: 'https://github.com/scobru/zenos', title: 'ZenOS on GitHub', folder: 'Dev/Projects', tags: ['zenos'] },
+        { url: 'https://github.com/scobru/orto', title: 'Orto on GitHub', folder: 'Dev/Projects', tags: ['orto'] },
         { url: 'https://news.ycombinator.com/', title: 'Hacker News', folder: 'News', tags: ['daily'] },
         { url: 'https://www.seriouseats.com/', title: 'Serious Eats', folder: 'Home/Recipes', tags: ['cooking'] },
         { url: 'https://www.openstreetmap.org/', title: 'OpenStreetMap', folder: 'Travel', tags: ['maps'] },
@@ -4056,7 +4059,7 @@ struct Note {
 }
 
 let bear = Note(title: "Bear 2", tags: ["#design", "#apple"], isPinned: true)
-print("Welcome to ZenOS!")
+print("Welcome to Orto!")
 \`\`\`
 
 - [x] Learn Swift syntax
@@ -4429,7 +4432,7 @@ print("Welcome to ZenOS!")
 
     // ═══════════════════════════════════════════════════════════════
     // Calendar — events live at calendar collection as one encrypted
-    // object in `data` (same schema as ZenOS writeCalendarEvent).
+    // object in `data` (same schema as Orto writeCalendarEvent).
     // ═══════════════════════════════════════════════════════════════
     const calEvents = {};
     let calMode = false, calView = 'month', calCursor = new Date();
@@ -4748,7 +4751,7 @@ print("Welcome to ZenOS!")
 
     // ═══════════════════════════════════════════════════════════════
     // Bookmarks — events at bookmarks collection, one encrypted object
-    // in `data` (same schema as ZenOS writeBookmark). Soul = SHA-256(url),
+    // in `data` (same schema as Orto writeBookmark). Soul = SHA-256(url),
     // so re-importing never duplicates.
     // ═══════════════════════════════════════════════════════════════
     const bookmarks = {};
@@ -4758,7 +4761,7 @@ print("Welcome to ZenOS!")
       const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(url));
       return 'bm-' + [...new Uint8Array(h)].slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('');
     }
-    // Netscape bookmarks HTML (Brave/Chrome/Firefox export); http(s) only. Mirrors ZenOS parseBookmarksHtml.
+    // Netscape bookmarks HTML (Brave/Chrome/Firefox export); http(s) only. Mirrors Orto parseBookmarksHtml.
     function parseBookmarksHtml(html) {
       const decode = (t) => t.replace(/<[^>]*>/g, '').replace(/&(amp|lt|gt|quot|#39);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" })[e]).trim();
       const out = [], stack = [];
@@ -4777,7 +4780,7 @@ print("Welcome to ZenOS!")
       return out;
     }
 
-    // Netscape bookmarks HTML that Brave/Chrome/Firefox import; mirrors ZenOS bookmarksToHtml.
+    // Netscape bookmarks HTML that Brave/Chrome/Firefox import; mirrors Orto bookmarksToHtml.
     function bookmarksToHtml(list) {
       const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       const root = { dirs: new Map(), items: [] };
@@ -4813,7 +4816,7 @@ print("Welcome to ZenOS!")
     // pair (never plaintext at rest). Each entry keeps a signature of the ciphertext it came from, so an update with
     // unchanged data is not decrypted again, and a refresh renders from the cache before any decrypt happens.
     const idb = (mode, fn) => new Promise((resolve, reject) => {
-      const req = indexedDB.open('zenos', 1);
+      const req = indexedDB.open('orto', 1);
       req.onupgradeneeded = () => req.result.createObjectStore('cache');
       req.onerror = () => reject(req.error);
       req.onsuccess = () => {
@@ -4988,7 +4991,7 @@ print("Welcome to ZenOS!")
       }
     }
     // ═══════════════════════════════════════════════════════════════
-    // Contacts (contacts collection) and Secrets (secrets collection): whole records encrypted, see ZenOS.writeContact / writeSecret
+    // Contacts (contacts collection) and Secrets (secrets collection): whole records encrypted, see Orto.writeContact / writeSecret
     // ═══════════════════════════════════════════════════════════════
     const contacts = {}, secrets = {};
     let contactsMode = false, secretsMode = false, ctQuery = [], secQuery = [], secKindFilter = '';
@@ -5050,7 +5053,7 @@ print("Welcome to ZenOS!")
         <label>Phones (comma separated)<input type="text" id="ct-e-phones" value="${v('phones')}"></label>
         <label>Organization<input type="text" id="ct-e-org" value="${v('org')}"></label>
         <label>Tags (comma separated)<input type="text" id="ct-e-tags" value="${v('tags')}"></label>
-        <label>ZenOS username (optional, if they use ZenOS)<input type="text" id="ct-e-pub" value="${v('pub')}"></label>
+        <label>Orto username (optional, if they use Orto)<input type="text" id="ct-e-pub" value="${v('pub')}"></label>
         <label>Notes<textarea id="ct-e-notes" rows="4">${v('notes')}</textarea></label>
         <div class="cal-actions"><button class="cal-btn" id="ct-e-cancel">Cancel</button><button class="cal-btn primary" id="ct-e-save">Save</button></div>`);
       document.getElementById('ct-e-cancel').onclick = () => bg.remove();
@@ -5143,7 +5146,7 @@ print("Welcome to ZenOS!")
     });
     Object.assign(window, { openContacts, ctSearch, ctEdit, ctImport, ctExport, openSecrets, secSearch, secKind, secEdit });
 
-    // Files and Photos — encrypted uploads stored on the ZenOS server; index in the `files` collection (see ZenOS.uploadFile).
+    // Files and Photos — encrypted uploads stored on the Orto server; index in the `files` collection (see Orto.uploadFile).
     // Photos is the same data as a thumbnail grid of the image files (thumbnails are made in the browser and kept in the encrypted index).
     let filesMode = false, filesView = 'list', filesCache = [];
     const humanSize = (n) => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
@@ -5278,7 +5281,7 @@ print("Welcome to ZenOS!")
       $('st-close').onclick = () => closeModal();
       $('st-export').onclick = async () => {
         showToast('Exporting…');
-        try { download(new Blob([JSON.stringify(await os.exportAll({ files: $('st-files').checked }))], { type: 'application/json' }), `zenos-${pair.pub}-${new Date().toISOString().slice(0, 10)}.json`); showToast('Exported'); }
+        try { download(new Blob([JSON.stringify(await os.exportAll({ files: $('st-files').checked }))], { type: 'application/json' }), `orto-${pair.pub}-${new Date().toISOString().slice(0, 10)}.json`); showToast('Exported'); }
         catch (e) { showToast(e.message); }
       };
       $('st-import').onclick = () => $('st-import-file').click();
@@ -5313,16 +5316,16 @@ print("Welcome to ZenOS!")
 
     // Servers: remember the ones you use; the choice is stored in this browser only
     function serverConfig() {
-      let saved = []; try { saved = JSON.parse(localStorage.getItem('zenosServers') || '[]'); } catch (_) { }
-      const bg = openModal(`<b>ZenOS server</b><p class="hint">Empty = automatic (this site if it runs a server, else ${escapeHtml(DEFAULT_SERVER)}). Current: ${escapeHtml(serverUrl || location.origin)}</p>
-        <input type="url" id="srv-url" list="srv-list" placeholder="https://zenos.example.com" value="${escapeHtml(localStorage.getItem('zenosServer') || '')}"><datalist id="srv-list">${saved.map(u => `<option value="${escapeHtml(u)}">`).join('')}</datalist>
+      let saved = []; try { saved = JSON.parse(localStorage.getItem('ortoServers') || '[]'); } catch (_) { }
+      const bg = openModal(`<b>Orto server</b><p class="hint">Empty = automatic (this site if it runs a server, else ${escapeHtml(DEFAULT_SERVER)}). Current: ${escapeHtml(serverUrl || location.origin)}</p>
+        <input type="url" id="srv-url" list="srv-list" placeholder="https://orto.example.com" value="${escapeHtml(localStorage.getItem('ortoServer') || '')}"><datalist id="srv-list">${saved.map(u => `<option value="${escapeHtml(u)}">`).join('')}</datalist>
         <div class="cal-actions"><button class="cal-btn" id="srv-cancel">Cancel</button><button class="cal-btn primary" id="srv-save">Use this server</button></div>`);
       bg.querySelector('#srv-cancel').onclick = () => closeModal();
       bg.querySelector('#srv-save').onclick = () => {
         try {
           const u = normalizeServer(bg.querySelector('#srv-url').value);
-          if (u) { localStorage.setItem('zenosServer', u); localStorage.setItem('zenosServers', JSON.stringify([u, ...saved.filter(x => x !== u)].slice(0, 8))); }
-          else localStorage.removeItem('zenosServer');
+          if (u) { localStorage.setItem('ortoServer', u); localStorage.setItem('ortoServers', JSON.stringify([u, ...saved.filter(x => x !== u)].slice(0, 8))); }
+          else localStorage.removeItem('ortoServer');
         } catch (e) { return alert(e.message); }
         location.reload();
       };

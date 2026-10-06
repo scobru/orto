@@ -5,14 +5,14 @@ import os_ from 'os';
 import path from 'path';
 import { createServer } from './server.js';
 import { DatabaseSync } from 'node:sqlite';
-import { ZenOS, readShare, parseBookmarksHtml, bookmarksToHtml, parseVcf, contactsToVcf, generatePassword, normalizeServer } from './zenos.js';
+import { Orto, ZenOS, readShare, parseBookmarksHtml, bookmarksToHtml, parseVcf, contactsToVcf, generatePassword, normalizeServer } from './orto.js';
 
-const dir = fs.mkdtempSync(path.join(os_.tmpdir(), 'zenos-test-'));
+const dir = fs.mkdtempSync(path.join(os_.tmpdir(), 'orto-test-'));
 const server = createServer({ dataDir: dir, webDir: dir });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const url = 'http://127.0.0.1:' + server.address().port;
 const clients = [];
-const client = async (user, pass, create = true) => { const c = new ZenOS({ server: url }); await c.login(user, pass, { create }); clients.push(c); return c; };
+const client = async (user, pass, create = true) => { const c = new Orto({ server: url }); await c.login(user, pass, { create }); clients.push(c); return c; };
 const raw = (c, coll, soul) => c._json('GET', `/c/${coll}/${soul}`); // what the server stores
 
 assert.equal(normalizeServer('http://h:1/'), 'http://h:1');
@@ -23,7 +23,7 @@ assert.equal(os.pub, 'test-user');
 await assert.rejects(client('test-user', 'wrong', false), (e) => e.status === 401);
 await assert.rejects(client('nobody', 'x', false), (e) => e.status === 404);
 await assert.rejects(client('test-user', 'x', true), (e) => e.status === 409);
-await assert.rejects(new ZenOS({ server: url })._json('GET', '/c/vault'), (e) => e.status === 401);
+await assert.rejects(new Orto({ server: url })._json('GET', '/c/vault'), (e) => e.status === 401);
 const sameLogin = await client('test-user', 'test-pass', false);
 assert.equal((await os.encrypt({ a: 1 })).startsWith('e1.'), true);
 assert.deepEqual(await sameLogin.decrypt(await os.encrypt({ a: 1 })), { a: 1 }); // same login, same key
@@ -156,7 +156,7 @@ await assert.rejects(os._fetch('GET', '/files/' + up.id), (e) => e.status === 40
 console.log('9. Blog + isolation');
 const post = await os.publishBlogPost({ title: 'Hello', content: '# Welcome', tags: ['zen', 'os'], id: 'post-1' });
 assert.equal(post.id, 'post-1');
-const anon = new ZenOS({ server: url }); // no login: public read
+const anon = new Orto({ server: url }); // no login: public read
 const read = await anon.readBlogPosts('Test-User');
 assert.deepEqual([read[0].title, read[0].tags, read[0].authorAlias], ['Hello', ['zen', 'os'], 'test-user']);
 assert.equal((await anon.getBlogPost('post-1', 'test-user')).content, '# Welcome');
@@ -205,7 +205,7 @@ await os.deleteFile(sf0.id);
 
 console.log('12. Export / import');
 const dump = await os.exportAll();
-assert.equal(dump.format, 'zenos-export');
+assert.equal(dump.format, 'orto-export');
 assert(dump.collections.vault.some(n => n.title === 'Shared note'));
 const migrant = await client('migrant', 'pw-1');
 const dn = await migrant.importAll(JSON.parse(JSON.stringify(dump)));
@@ -215,7 +215,7 @@ const mf = (await migrant.listFiles())[0], of = (await os.listFiles())[0];
 assert.equal(mf.name, of.name);
 assert.deepEqual(await migrant.downloadFile(mf.id), await os.downloadFile(of.id));
 assert.equal((await migrant.importAll(dump)).files, 0, 'files not duplicated');
-await assert.rejects(migrant.importAll({}), /Not a ZenOS export/);
+await assert.rejects(migrant.importAll({}), /Not an Orto export/);
 
 console.log('13. Change password');
 const pwc = await client('pwc-user', 'old-pass');
@@ -243,12 +243,26 @@ assert.equal((await (await client('rs-user', 'b1', false))._get('vault', rn1.sou
 console.log('14. Backup');
 const bdir = path.join(dir, 'backup-out');
 server.backup(bdir);
-const bdb = new DatabaseSync(path.join(bdir, 'zenos.db'));
+const bdb = new DatabaseSync(path.join(bdir, 'orto.db'));
 assert(bdb.prepare('SELECT COUNT(*) AS n FROM users').get().n >= 5);
 assert(bdb.prepare('SELECT COUNT(*) AS n FROM records').get().n > 0);
 bdb.close();
 assert(fs.readdirSync(path.join(bdir, 'files')).length > 0);
 assert.throws(() => server.backup(bdir), /already exists/);
+
+console.log('15. Compatibility with the ZenOS name');
+assert.equal(ZenOS, Orto);
+assert.equal((await migrant.importAll({ ...JSON.parse(JSON.stringify(dump)), format: 'zenos-export' })).files, 0, 'old export format still imports');
+const legacyDir = path.join(dir, 'legacy');
+fs.cpSync(bdir, legacyDir, { recursive: true });
+fs.renameSync(path.join(legacyDir, 'orto.db'), path.join(legacyDir, 'zenos.db')); // data folder from before the rename
+const old = createServer({ dataDir: legacyDir, webDir: dir });
+await new Promise((r) => old.listen(0, '127.0.0.1', r));
+const oldClient = new Orto({ server: 'http://127.0.0.1:' + old.address().port });
+await oldClient.login('test-user', 'test-pass'); // same login, same keys as before the rename
+assert((await oldClient._readAll('vault')).some(n => n.title === 'Shared note'));
+assert(!fs.existsSync(path.join(legacyDir, 'orto.db')), 'must keep using zenos.db');
+oldClient.close(); old.closeAllConnections(); old.close();
 
 console.log('ok - all tests passed');
 clients.forEach(c => c.close());

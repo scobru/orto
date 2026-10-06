@@ -1,11 +1,11 @@
 ---
-name: zenos
-description: "Use when interacting with a self-hosted ZenOS server: read, write, search and sync encrypted notes (Vault), calendar events, tasks, bookmarks, contacts, secrets and files, and publish public blog posts. Works through the zenos CLI/SDK against a ZenOS server (SQLite)."
+name: orto
+description: "Use when interacting with a self-hosted Orto server: read, write, search and sync encrypted notes (Vault), calendar events, tasks, bookmarks, contacts, secrets and files, and publish public blog posts. Works through the orto CLI/SDK against an Orto server (SQLite)."
 ---
 
-# ZenOS Agent Skill (self-hosted)
+# Orto Agent Skill (self-hosted)
 
-ZenOS is a self-hosted personal workspace: one Node server (`server.js`, SQLite + upload folder) and a CLI/SDK. All private data is AES-GCM encrypted on the client with a key derived from the user's login, so the server stores only ciphertext.
+Orto is a self-hosted personal workspace: one Node server (`server.js`, SQLite + upload folder) and a CLI/SDK. All private data is AES-GCM encrypted on the client with a key derived from the user's login, so the server stores only ciphertext.
 
 Apps (collections): `vault` notes, `calendar`, `tasks`, `bookmarks`, `contacts`, `secrets`, `files`, and the public `posts` blog.
 
@@ -14,19 +14,19 @@ Apps (collections): `vault` notes, `calendar`, `tasks`, `bookmarks`, `contacts`,
 ```bash
 node cli.js register --user <u> --pass <p> --server http://host:8787   # first time only
 ```
-Server URL: `--server` or `ZENOS_SERVER` (default `https://zenos.scobrudot.dev`). Credentials: `--user/--pass`, or `ZENOS_USER`/`ZENOS_PASS` in `.env` (see `.env.example`). Run the server with `npm start` (Node >= 22.5).
+Server URL: `--server` or `ORTO_SERVER` (default `https://zenos.scobrudot.dev`). Credentials: `--user/--pass`, or `ORTO_USER`/`ORTO_PASS` in `.env` (see `.env.example`). Run the server with `npm start` (Node >= 22.5).
 
 Rules for agents:
 1. Username is case-insensitive, the password is case-sensitive; never alter the user's credentials. There is no password recovery.
 2. Never print or store the password in notes, logs or commits.
-3. Registration may be closed (`ZENOS_REGISTRATION=closed`): ask the user for an existing account.
+3. Registration may be closed (`ORTO_REGISTRATION=closed`): ask the user for an existing account.
 4. Read commands accept `--count`, `--limit/-n`, `--page/-p`, `--offset`, `--table/-t` so large collections do not flood the context.
 5. Bulk rewrites (e.g. reorganising bookmarks) have no undo: run `bookmarks-export --file backup.html` first, show the user the plan, then apply.
 
 ## Commands
 
 ```
-ZenOS CLI — Sovereign Agent Tools
+Orto CLI — tools for scripts and agents
 Usage:
   # Account
   node cli.js register [--user <user> --pass <pass>]   # create the account on the server (if registration is open)
@@ -39,7 +39,7 @@ Usage:
   node cli.js file-delete   [--user <user> --pass <pass>] --id <id>
 
   # Contacts (Encrypted)
-  node cli.js contact-add    [--user <user> --pass <pass>] --name <name> [--email <a,b>] [--phone <a,b>] [--org <org>] [--notes <text>] [--tags <a,b>] [--pub <zenos username>] [--soul <soul>]
+  node cli.js contact-add    [--user <user> --pass <pass>] --name <name> [--email <a,b>] [--phone <a,b>] [--org <org>] [--notes <text>] [--tags <a,b>] [--pub <orto username>] [--soul <soul>]
   node cli.js contact-get    [--user <user> --pass <pass>] --soul <soul>
   node cli.js contact-read   [--user <user> --pass <pass>] [--query <q>] [--tag <tag>] [--table] [--count] [-n <limit> -p <page>]
   node cli.js contact-delete [--user <user> --pass <pass>] --soul <soul>
@@ -112,15 +112,15 @@ Pagination & formatting options (read commands):
 
 Credentials:
   Flags:     --user <user> --pass <pass> (or -u <user>)
-  Env vars:  ZENOS_USER and ZENOS_PASS (or ZENOS_USERNAME / ZENOS_PASSWORD)
+  Env vars:  ORTO_USER and ORTO_PASS (or ORTO_USERNAME / ORTO_PASSWORD)
   Files:     .env in skill directory or current working directory (or --env <path>)
 ```
 
 ## SDK
 
 ```js
-import ZenOS from './zenos.js';
-const os = new ZenOS({ server });
+import Orto from './orto.js';
+const os = new Orto({ server });
 await os.login(user, pass);                       // { create: true } registers
 await os.writeVaultNote({ title, body, cat });
 await os.readTasks({ status: 'todo' });

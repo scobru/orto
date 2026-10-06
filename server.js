@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 /**
- * ZenOS server: self-hosted replacement for the ZEN relay network.
+ * Orto server (formerly ZenOS): your personal workspace on a server you run.
  * One SQLite file (records, users, sessions) + a folder of uploaded blobs, zero npm dependencies.
  * Requires Node >= 22.5 (built-in node:sqlite).
  *
  * The server never sees plaintext of private collections: clients encrypt (AES-GCM) before PUT.
  * Only the `posts` collection (public blog) is stored and served in clear.
  *
- * Backup: node server.js backup <folder>  (database + uploads; restore by stopping the server and using the folder as ZENOS_DATA).
- * Env: PORT (8787), HOST (127.0.0.1), ZENOS_DATA (./data), ZENOS_WEB (../zenos-web/app or ./web),
- *      ZENOS_REGISTRATION=open|closed (open), ZENOS_MAX_UPLOAD bytes (200MB), ZENOS_QUOTA bytes per user (5GB)
+ * Backup: node server.js backup <folder>  (database + uploads; restore by stopping the server and using the folder as ORTO_DATA).
+ * Env: PORT (8787), HOST (127.0.0.1), ORTO_DATA (./data), ORTO_WEB (./web),
+ *      ORTO_REGISTRATION=open|closed (open), ORTO_MAX_UPLOAD bytes (200MB), ORTO_QUOTA bytes per user (5GB)
+ *      (the old ZENOS_* names still work)
  */
 import http from 'node:http';
 import fs from 'node:fs';
@@ -38,17 +39,22 @@ async function readJson(req, limit = 8e6) {
   throw new HttpError(400, 'Body must be a JSON object');
 }
 
+// settings come from ORTO_*; the old ZENOS_* names still work
+const settings = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('ZENOS_')).map(([k, v]) => ['ORTO_' + k.slice(6), v])), ...process.env };
+
 export function createServer(opts = {}) {
-  const env = process.env;
-  const dataDir = path.resolve(opts.dataDir || env.ZENOS_DATA || path.join(process.cwd(), 'data'));
-  const webDir = path.resolve(opts.webDir || env.ZENOS_WEB || (fs.existsSync(path.join(here, '../zenos-web/app')) ? path.join(here, '../zenos-web/app') : path.join(here, 'web')));
-  const registration = opts.registration || env.ZENOS_REGISTRATION || 'open';
-  const maxUpload = Number(opts.maxUpload || env.ZENOS_MAX_UPLOAD || 200 * 1024 * 1024);
-  const quota = Number(opts.quota || env.ZENOS_QUOTA || 5 * 1024 ** 3);
+  const env = settings;
+  const dataDir = path.resolve(opts.dataDir || env.ORTO_DATA || path.join(process.cwd(), 'data'));
+  const webDir = path.resolve(opts.webDir || env.ORTO_WEB || path.join(here, 'web'));
+  const registration = opts.registration || env.ORTO_REGISTRATION || 'open';
+  const maxUpload = Number(opts.maxUpload || env.ORTO_MAX_UPLOAD || 200 * 1024 * 1024);
+  const quota = Number(opts.quota || env.ORTO_QUOTA || 5 * 1024 ** 3);
   const filesDir = path.join(dataDir, 'files');
   fs.mkdirSync(filesDir, { recursive: true });
 
-  const db = new DatabaseSync(path.join(dataDir, 'zenos.db'));
+  // zenos.db is the file name from before the rename: keep using it if that is what is on disk
+  const dbFile = ['orto.db', 'zenos.db'].map(f => path.join(dataDir, f)).find(f => fs.existsSync(f)) || path.join(dataDir, 'orto.db');
+  const db = new DatabaseSync(dbFile);
   db.exec(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, auth_hash TEXT NOT NULL, created_at INTEGER NOT NULL);
@@ -130,7 +136,7 @@ export function createServer(opts = {}) {
     const json = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
     for (const p of parts) if (!SEG.test(p)) throw new HttpError(400, 'Bad path');
 
-    if (a === 'health') return json(200, { ok: true, name: 'zenos' });
+    if (a === 'health') return json(200, { ok: true, name: 'orto' });
 
     if (a === 'config') return json(200, { registration, maxUpload });
 
@@ -266,8 +272,9 @@ export function createServer(opts = {}) {
     if (rel.startsWith('/blog/')) rel = '/blog.html';
     else if (rel.startsWith('/s/')) rel = '/share.html';
     if (rel.endsWith('/')) rel += 'index.html';
-    const file = path.normalize(path.join(webDir, rel));
-    if (!file.startsWith(webDir + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
+    // the SDK lives next to this file (not in web/) so the CLI and the browser share one copy
+    const file = rel === '/orto.js' ? path.join(here, 'orto.js') : path.normalize(path.join(webDir, rel));
+    if ((rel !== '/orto.js' && !file.startsWith(webDir + path.sep)) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       return res.end('Not found');
     }
@@ -297,9 +304,9 @@ export function createServer(opts = {}) {
   server.backup = (out) => {
     out = path.resolve(out);
     fs.mkdirSync(out, { recursive: true });
-    const dbFile = path.join(out, 'zenos.db');
-    if (fs.existsSync(dbFile)) throw new Error(dbFile + ' already exists');
-    db.prepare('VACUUM INTO ?').run(dbFile);
+    const copy = path.join(out, 'orto.db');
+    if (fs.existsSync(copy)) throw new Error(copy + ' already exists');
+    db.prepare('VACUUM INTO ?').run(copy);
     fs.cpSync(filesDir, path.join(out, 'files'), { recursive: true, filter: (f) => !f.endsWith('.part') });
     return out;
   };
@@ -313,5 +320,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     process.exit(0);
   }
   const port = Number(process.env.PORT || 8787), host = process.env.HOST || '127.0.0.1';
-  createServer().listen(port, host, () => console.log(`ZenOS server on http://${host}:${port}`));
+  createServer().listen(port, host, () => console.log(`Orto server on http://${host}:${port}`));
 }

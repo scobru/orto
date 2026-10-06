@@ -1,10 +1,10 @@
 // /s/<id>#<key>: the key never leaves this page. The server only returns ciphertext; it is decrypted here.
-import { readShare } from '/zenos.js';
+import { readShare } from '/orto.js';
 const out = document.getElementById('out');
 const el = (tag, text) => Object.assign(document.createElement(tag), { textContent: text });
 try {
   const r = await readShare(location.href);
-  document.title = (r.title || r.name || 'Shared') + ' · ZenOS';
+  document.title = (r.title || r.name || 'Shared') + ' · Orto';
   out.textContent = '';
   if (r.kind === 'note') {
     if (!window.DOMPurify || !window.marked) throw new Error('markdown libraries unavailable');

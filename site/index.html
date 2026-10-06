@@ -4,9 +4,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ZenOS — Self-hosted Personal Workspace</title>
+  <title>Orto — Self-hosted Personal Workspace</title>
   <meta name="description"
-    content="ZenOS: self-hosted, end-to-end encrypted notes, calendar, bookmarks, tasks, contacts, secrets, files and blog. One small server, one SQLite file, agent-ready.">
+    content="Orto: self-hosted, end-to-end encrypted notes, calendar, bookmarks, tasks, contacts, secrets, files and blog. One small server, one SQLite file, agent-ready.">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <style>
     :root {
@@ -198,13 +198,13 @@
 <body>
   <main>
     <header>
-      <a href="#"><img src="favicon.svg" alt="">ZenOS</a>
+      <a href="#"><img src="favicon.svg" alt="">Orto</a>
       <nav><a href="#what">What</a><a href="#install">Install</a><a href="#use">Use</a><a href="#server">Server</a><a
-          href="https://github.com/scobru/zenos">GitHub</a></nav>
+          href="https://github.com/scobru/orto">GitHub</a></nav>
     </header>
 
     <h1>Your workspace.<br>Your server. Your data.</h1>
-    <p class="lead">ZenOS is a self-hosted personal workspace: encrypted notes, calendar, bookmarks, tasks, contacts, secrets, files and a
+    <p class="lead">Orto is a self-hosted personal workspace: encrypted notes, calendar, bookmarks, tasks, contacts, secrets, files and a
       public blog, on one small Node server with a single SQLite file. Everything private is encrypted in your browser
       with a key derived from your username and password; the server only stores ciphertext.</p>
     <div class="cta">
@@ -227,7 +227,7 @@
         <p>Private library with folders and tags. Import/export Brave, Chrome, Firefox HTML.</p>
       </div>
       <div class="card"><b>👥 Contacts</b><code>contacts</code>
-        <p>Encrypted address book with tags and an optional ZenOS username per contact. Import and export vCard (.vcf).</p>
+        <p>Encrypted address book with tags and an optional Orto username per contact. Import and export vCard (.vcf).</p>
       </div>
       <div class="card"><b>🔑 Secrets</b><code>secrets</code>
         <p>Passwords, API keys and secure notes, encrypted before they leave your browser. Hidden by default, with a password generator.</p>
@@ -253,9 +253,8 @@
 
     <h2 id="install">Install</h2>
     <p>Needs Node 22.5+ (built-in SQLite). No npm packages.</p>
-    <pre>git clone https://github.com/scobru/zenos.git
-git clone https://github.com/scobru/zenos-web.git
-cd zenos && npm start          # http://127.0.0.1:8787</pre>
+    <pre>git clone https://github.com/scobru/orto.git
+cd orto && npm start          # http://127.0.0.1:8787</pre>
     <p>Open the URL, pick a username and password; the app offers to create the account on first login. Put it behind
       HTTPS (Caddy, nginx) before exposing it.</p>
     <div class="note">
@@ -275,26 +274,26 @@ node cli.js contacts-import --user alice --pass secret --file contacts.vcf
 node cli.js secret-add --user alice --pass secret --name GitHub --generate
 node cli.js file-upload --user alice --pass secret --file photo.png
 node cli.js blog-publish --user alice --pass secret \
-  --title "Hello" --content "First post" --tags "zenos,notes"
+  --title "Hello" --content "First post" --tags "orto,notes"
 node cli.js blog-read --alias alice</pre>
     <p>Or the JavaScript SDK:</p>
-    <pre>import ZenOS from './zenos.js';
-const os = new ZenOS();   // default server: https://zenos.scobrudot.dev
+    <pre>import Orto from './orto.js';
+const os = new Orto();   // default server: https://zenos.scobrudot.dev
 await os.login('alice', 'secret');
 await os.writeVaultNote({ title: 'Hi', body: 'Encrypted.', cat: 'logs' });
 await os.writeCalendarEvent({ title: 'Standup', start: Date.now() + 36e5 });</pre>
-    <p>Agents: see <a href="llm.txt" style="color:var(--acc)">llm.txt</a> for the integration guide.</p>
+    <p>Agents: see <a href="https://github.com/scobru/orto/blob/main/llm.txt" style="color:var(--acc)">llm.txt</a> for the integration guide.</p>
 
     <h2 id="server">Server</h2>
     <p>One file, <code>server.js</code>: an HTTP API, live updates (SSE), SQLite storage and an uploads folder. Back up
       the <code>data/</code> folder and you have backed up everything. Settings are environment variables
-      (<code>PORT</code>, <code>ZENOS_DATA</code>, <code>ZENOS_REGISTRATION=closed</code>, <code>ZENOS_QUOTA</code>, ...), listed in the
-      <a href="https://github.com/scobru/zenos#run-it" style="color:var(--acc)">README</a>.</p>
+      (<code>PORT</code>, <code>ORTO_DATA</code>, <code>ORTO_REGISTRATION=closed</code>, <code>ORTO_QUOTA</code>, ...), listed in the
+      <a href="https://github.com/scobru/orto#run-it" style="color:var(--acc)">README</a>.</p>
     <p>The operator sees usernames, record ids, timestamps, sizes and IPs, never contents.</p>
 
     <footer>
-      <a href="app/index.html">Web app source</a><a href="https://github.com/scobru/zenos">zenos</a><a
-        href="https://github.com/scobru/zenos-web">zenos-web</a><a href="llm.txt">llm.txt</a>MIT License
+      <a href="app/">Web app</a><a href="https://github.com/scobru/orto">GitHub</a><a
+        href="https://github.com/scobru/orto/blob/main/llm.txt">llm.txt</a>MIT License
     </footer>
   </main>
 </body>
