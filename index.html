@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ZenOS — Sovereign Personal Workspace</title>
   <meta name="description"
-    content="ZenOS: zero-backend, end-to-end encrypted notes, calendar, bookmarks, tasks, contacts, secrets, files and blog on the ZEN P2P graph. One login, no server, agent-ready.">
+    content="ZenOS: self-hosted, end-to-end encrypted notes, calendar, bookmarks, tasks, contacts, secrets, files and blog. One small server, one SQLite file, agent-ready.">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <style>
     :root {
@@ -199,68 +199,63 @@
   <main>
     <header>
       <a href="#"><img src="favicon.svg" alt="">ZenOS</a>
-      <nav><a href="#what">What</a><a href="#install">Install</a><a href="#use">Use</a><a href="#relays">Relays</a><a
+      <nav><a href="#what">What</a><a href="#install">Install</a><a href="#use">Use</a><a href="#server">Server</a><a
           href="https://github.com/scobru/zenos">GitHub</a></nav>
     </header>
 
-    <h1>Your workspace.<br>No server. No account.</h1>
-    <p class="lead">ZenOS is a decentralized personal workspace: encrypted notes, calendar, bookmarks, tasks, contacts, secrets, files and a
-      public blog, all stored in the <b>ZEN</b> P2P graph under one cryptographic identity derived from your username
-      and password.</p>
+    <h1>Your workspace.<br>Your server. Your data.</h1>
+    <p class="lead">ZenOS is a self-hosted personal workspace: encrypted notes, calendar, bookmarks, tasks, contacts, secrets, files and a
+      public blog, on one small Node server with a single SQLite file. Everything private is encrypted in your browser
+      with a key derived from your username and password; the server only stores ciphertext.</p>
     <div class="cta">
-      <a class="btn p" href="app/">Open ZenOS Web</a>
+      <a class="btn p" href="#install">Run your server</a>
       <a class="btn" href="#install">Install CLI / SDK</a>
     </div>
 
     <h2 id="what">What it does</h2>
     <div class="grid">
-      <div class="card"><b>🔒 Vault</b><code>~pub/vault</code>
-        <p>Markdown notes, tags, checklists. AES-GCM-256 encrypted in your browser; relays see only ciphertext.</p>
+      <div class="card"><b>🔒 Vault</b><code>vault</code>
+        <p>Markdown notes, tags, checklists. AES-GCM-256 encrypted in your browser; the server sees only ciphertext.</p>
       </div>
-      <div class="card"><b>📋 Tasks</b><code>~pub/tasks</code>
+      <div class="card"><b>📋 Tasks</b><code>tasks</code>
         <p>Encrypted Kanban board with columns, priorities, due dates, and note cross-links.</p>
       </div>
-      <div class="card"><b>📅 Calendar</b><code>~pub/calendar</code>
+      <div class="card"><b>📅 Calendar</b><code>calendar</code>
         <p>Encrypted events and agenda, linked to Vault notes.</p>
       </div>
-      <div class="card"><b>🔖 Bookmarks</b><code>~pub/bookmarks</code>
+      <div class="card"><b>🔖 Bookmarks</b><code>bookmarks</code>
         <p>Private library with folders and tags. Import/export Brave, Chrome, Firefox HTML.</p>
       </div>
-      <div class="card"><b>👥 Contacts</b><code>~pub/contacts</code>
-        <p>Encrypted address book with tags and a ZEN key per contact. Import and export vCard (.vcf).</p>
+      <div class="card"><b>👥 Contacts</b><code>contacts</code>
+        <p>Encrypted address book with tags and an optional ZenOS username per contact. Import and export vCard (.vcf).</p>
       </div>
-      <div class="card"><b>🔑 Secrets</b><code>~pub/secrets</code>
+      <div class="card"><b>🔑 Secrets</b><code>secrets</code>
         <p>Passwords, API keys and secure notes, encrypted before they leave your browser. Hidden by default, with a password generator.</p>
       </div>
-      <div class="card"><b>📁 Files</b><code>~pub/files</code>
-        <p>Encrypted file storage on IPFS. Needs a Delay relay and its token; the app checks the relay type for you.</p>
+      <div class="card"><b>📁 Files</b><code>files</code>
+        <p>Upload any file. Encrypted in the browser, stored on your server's disk, with a per-user quota.</p>
       </div>
-      <div class="card"><b>🪶 smollog</b><code>~pub/posts</code>
-        <p>Public Markdown blog, ECDSA-signed so readers can verify the author.</p>
+      <div class="card"><b>🪶 Blog</b><code>posts</code>
+        <p>Public Markdown blog at <code>/blog/&lt;username&gt;</code>.</p>
       </div>
     </div>
-    <p style="margin-top:16px">Serverless: static HTML + <code>secp256k1</code> keys + ZEN relays for sync. Same login
-      gives the same identity in ZenOS Web, CLI, smollog and FID. AI agents can read and write the same data through the
-      SDK.</p>
+    <p style="margin-top:16px">One login works in the web app, the CLI and the SDK. AI agents can read and write the same
+      data through the SDK.</p>
 
     <h2 id="install">Install</h2>
-    <p><b>Web:</b> nothing to install. Open <a href="app/" style="color:var(--acc)">the app</a>, log in with username +
-      password. First login creates your identity.</p>
-    <p style="margin-top:16px"><b>CLI / SDK</b> (Node 18+):</p>
+    <p>Needs Node 22.5+ (built-in SQLite). No npm packages.</p>
     <pre>git clone https://github.com/scobru/zenos.git
-cd zenos
-node cli.js identity --user "alice" --pass "secret"</pre>
-    <p><b>Self-host the web app:</b> it is plain static files. Serve the folder anywhere (GitHub Pages, Vercel,
-      Netlify):</p>
-    <pre>git clone https://github.com/scobru/zenos-web.git
-npx serve zenos-web</pre>
+git clone https://github.com/scobru/zenos-web.git
+cd zenos && npm start          # http://127.0.0.1:8787</pre>
+    <p>Open the URL, pick a username and password; the app offers to create the account on first login. Put it behind
+      HTTPS (Caddy, nginx) before exposing it.</p>
     <div class="note">
-      <p>Username and password are case-sensitive and are the only key. Lose them, lose the data. No recovery.</p>
+      <p>The password is the only key to your data. Lose it, lose the data. No recovery.</p>
     </div>
 
     <h2 id="use">Use</h2>
     <ol>
-      <li><b>Log in</b> on the web app. Write notes, add events, import bookmarks and contacts, store passwords, upload files, publish posts.</li>
+      <li><b>Log in</b> on your server's web app. Write notes, add events, import bookmarks and contacts, store passwords, upload files, publish posts.</li>
       <li><b>Script it</b> with the CLI:</li>
     </ol>
     <pre>node cli.js vault-write --user alice --pass secret \
@@ -269,33 +264,27 @@ node cli.js vault-read  --user alice --pass secret --query idea
 node cli.js bookmarks-import --user alice --pass secret --file bookmarks.html
 node cli.js contacts-import --user alice --pass secret --file contacts.vcf
 node cli.js secret-add --user alice --pass secret --name GitHub --generate
-ZENOS_STORAGE_TOKEN=... node cli.js file-upload --user alice --pass secret --file photo.png
+node cli.js file-upload --user alice --pass secret --file photo.png
 node cli.js blog-publish --user alice --pass secret \
-  --title "Hello" --content "First post" --tags "zenos,p2p"
+  --title "Hello" --content "First post" --tags "zenos,notes"
 node cli.js blog-read --alias alice</pre>
     <p>Or the JavaScript SDK:</p>
     <pre>import ZenOS from './zenos.js';
-const os = new ZenOS();
+const os = new ZenOS({ server: 'http://127.0.0.1:8787' });
 await os.login('alice', 'secret');
 await os.writeVaultNote({ title: 'Hi', body: 'Encrypted.', cat: 'logs' });
 await os.writeCalendarEvent({ title: 'Standup', start: Date.now() + 36e5 });</pre>
     <p>Agents: see <a href="llm.txt" style="color:var(--acc)">llm.txt</a> for the integration guide.</p>
 
-    <h2 id="relays">Relays</h2>
-    <p>Data syncs through ZEN relays (WebSocket peers). Defaults: <code>wss://delay.scobrudot.dev/zen</code> (author's
-      personal relay, best-effort, no SLA) and <code>wss://zen.akao.io:8420/zen</code> (public network). For anything
-      serious, run your own:</p>
-    <pre>node cli.js vault-read --user alice --pass secret \
-  --relay "wss://relay.example.com/zen" --no-default-relays</pre>
-    <p><b>File storage</b> only works on a <a href="https://github.com/scobru/delay" style="color:var(--acc)">Delay</a>
-      relay (it adds IPFS next to the ZEN websocket). <code>zen.akao.io</code> is a plain ZEN relay and has none. Upload
-      needs the Delay relay's admin token or API key, so on a relay you do not run, ask its operator. In the web app
-      set it under Files &rarr; Token; it is stored encrypted with your key.</p>
-    <p>Relay operators see public keys, timestamps, paths and IPs, never vault contents. Guide: <a
-        href="https://github.com/scobru/zenos/blob/main/RELAYS.md" style="color:var(--acc)">RELAYS.md</a>.</p>
+    <h2 id="server">Server</h2>
+    <p>One file, <code>server.js</code>: an HTTP API, live updates (SSE), SQLite storage and an uploads folder. Back up
+      the <code>data/</code> folder and you have backed up everything. Settings are environment variables
+      (<code>PORT</code>, <code>ZENOS_DATA</code>, <code>ZENOS_REGISTRATION=closed</code>, <code>ZENOS_QUOTA</code>, ...), listed in the
+      <a href="https://github.com/scobru/zenos#run-it" style="color:var(--acc)">README</a>.</p>
+    <p>The operator sees usernames, record ids, timestamps, sizes and IPs, never contents.</p>
 
     <footer>
-      <a href="app/">Web app</a><a href="https://github.com/scobru/zenos">zenos</a><a
+      <a href="app/index.html">Web app source</a><a href="https://github.com/scobru/zenos">zenos</a><a
         href="https://github.com/scobru/zenos-web">zenos-web</a><a href="llm.txt">llm.txt</a>MIT License
     </footer>
   </main>
