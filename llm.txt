@@ -20,7 +20,7 @@ client --HTTPS--> server.js --> data/zenos.db (users, sessions, records) + data/
 
 ```js
 import ZenOS from './zenos.js';
-const os = new ZenOS({ server: 'http://127.0.0.1:8787' });   // or env ZENOS_SERVER; '' = same origin in a browser
+const os = new ZenOS();   // server: option or env ZENOS_SERVER; default https://zenos.scobrudot.dev; '' = same origin in a browser
 await os.login(username, password, { create: false });        // create:true registers; error.status 404 = unknown user, 401 = wrong password
 os.pub                                                        // lowercase username = public handle
 ```
