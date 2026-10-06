@@ -399,6 +399,21 @@
       transition: all 0.2s ease;
     }
 
+    /* icon-only: three text labels did not fit the 240px drawer (Lock was cut off); the labels stay for screen readers and tooltips */
+    .sidebar-btn {
+      font-size: 16px;
+      padding: 8px 0;
+    }
+
+    .sidebar-btn span {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
     .sidebar-btn:hover {
       background: rgba(255, 255, 255, 0.12);
       color: #ffffff;
@@ -2859,15 +2874,15 @@
           <span id="status-footer-text">Connecting...</span>
         </div>
         <div class="sidebar-actions-row">
-          <button class="sidebar-btn" onclick="toggleTheme()" title="Switch Light/Dark Theme">
+          <button class="sidebar-btn" onclick="toggleTheme()" aria-label="Switch Light/Dark Theme" title="Switch Light/Dark Theme">
             <i class="ti ti-sun-moon"></i>
             <span id="theme-btn-label">Theme</span>
           </button>
-          <button class="sidebar-btn" onclick="openSettings()" title="Backup, shared links, password">
+          <button class="sidebar-btn" onclick="openSettings()" aria-label="Settings" title="Backup, shared links, password">
             <i class="ti ti-settings"></i>
             <span>Settings</span>
           </button>
-          <button class="sidebar-btn" onclick="logout()" title="Lock Orto">
+          <button class="sidebar-btn" onclick="logout()" aria-label="Lock Orto" title="Lock Orto">
             <i class="ti ti-lock"></i>
             <span>Lock</span>
           </button>
