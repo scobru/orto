@@ -25,4 +25,5 @@ Vault note (inside the ciphertext): `{ title, body, cat, pinned, trash, timestam
 1. Same username + password = same keys as the human. Never log or store the password; there is no recovery.
 2. Update a note by writing with its existing `soul`; omit `soul` to create.
 3. Deletes are permanent. Export backups before bulk changes.
-4. Only the blog is public; never publish secrets.
+4. Only the blog and explicit share links are public; never publish secrets.
+5. Sharing, export/import and password change are SDK methods too (`shareNote`, `shareFile`, `exportAll`, `importAll`, `changePassword`); see the zenos repo's llm.txt.

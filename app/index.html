@@ -7,7 +7,9 @@
   <title>ZenOS — Sovereign Personal Workspace</title>
   <meta name="description"
     content="ZenOS - self-hosted personal workspace: end-to-end encrypted notes, tasks, calendar, bookmarks, contacts, secrets, files and blog.">
-  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#e04b4b">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2648,6 +2650,16 @@
         padding: 20px 16px 80px;
       }
     }
+
+    /* Photos grid, settings, share dialogs */
+    .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; padding: 12px; align-content: start; }
+    .photo-tile { aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--input-bg); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 28px; }
+    .photo-tile img { width: 100%; height: 100%; object-fit: cover; }
+    .cal-modal input[type=password], .cal-modal input[type=url] { width: 100%; box-sizing: border-box; background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 7px; padding: 8px 10px; font: inherit; font-size: 14px; }
+    .cal-modal h4 { margin: 10px 0 0; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
+    .cal-modal p.hint { margin: 0; font-size: 12px; color: var(--text-muted); }
+    .cal-modal .share-row { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+    .cal-modal .share-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   </style>
 </head>
 
@@ -2785,6 +2797,12 @@
           <span class="nav-count" id="count-files">0</span>
         </a>
 
+        <a class="nav-item" id="nav-photos" onclick="openFiles('photos')">
+          <span class="nav-icon"><i class="ti ti-photo"></i></span>
+          <span class="nav-text">Photos</span>
+          <span class="nav-count" id="count-photos">0</span>
+        </a>
+
         <a class="nav-item" id="nav-tasks" onclick="openTasks()">
           <span class="nav-icon"><i class="ti ti-layout-kanban"></i></span>
           <span class="nav-text">Tasks</span>
@@ -2817,6 +2835,10 @@
           <button class="sidebar-btn" onclick="toggleTheme()" title="Switch Light/Dark Theme">
             <i class="ti ti-sun-moon"></i>
             <span id="theme-btn-label">Theme</span>
+          </button>
+          <button class="sidebar-btn" onclick="openSettings()" title="Backup, shared links, password">
+            <i class="ti ti-settings"></i>
+            <span>Settings</span>
           </button>
           <button class="sidebar-btn" onclick="logout()" title="Lock ZenOS">
             <i class="ti ti-lock"></i>
@@ -2981,7 +3003,7 @@
         <div class="bm-bar">
           <span id="files-status" style="flex:1;font-size:13px;color:var(--text-muted)"></span>
           <button class="cal-btn primary" onclick="document.getElementById('files-input').click()"><i class="ti ti-upload"></i> Upload</button>
-          <input type="file" id="files-input" class="hidden" onchange="filesUpload(this)">
+          <input type="file" id="files-input" class="hidden" multiple onchange="filesUpload(this)">
         </div>
         <div class="bm-items" id="files-items"></div>
       </div>
@@ -3085,6 +3107,9 @@
               </button>
               <button class="popover-item" onclick="exportNoteAsMarkdown()">
                 <span><i class="ti ti-download"></i> Export .md File</span>
+              </button>
+              <button class="popover-item" onclick="shareNoteLink()">
+                <span><i class="ti ti-link"></i> Share public link</span>
               </button>
               <div class="popover-divider"></div>
               <button class="popover-item" onclick="deleteActiveNote()" style="color:var(--bear-red);">
@@ -3190,16 +3215,6 @@
       const sameOrigin = await fetch('/api/health').then(r => r.json()).then(j => j && j.name === 'zenos').catch(() => false);
       if (!sameOrigin) serverUrl = DEFAULT_SERVER;
     }
-    function serverConfig() {
-      const t = prompt('ZenOS server URL (empty = automatic).\nCurrent: ' + (serverUrl || location.origin), localStorage.getItem('zenosServer') || '');
-      if (t === null) return;
-      try {
-        const u = normalizeServer(t);
-        if (u) localStorage.setItem('zenosServer', u); else localStorage.removeItem('zenosServer');
-      } catch (e) { return alert(e.message); }
-      location.reload();
-    }
-    window.serverConfig = serverConfig;
 
     // Tag emoji mapping (Like Bear in the screenshot)
     const tagEmojiMap = {
@@ -5128,16 +5143,31 @@ print("Welcome to ZenOS!")
     });
     Object.assign(window, { openContacts, ctSearch, ctEdit, ctImport, ctExport, openSecrets, secSearch, secKind, secEdit });
 
-    // Files — encrypted uploads stored on the ZenOS server; index in the `files` collection (see ZenOS.uploadFile)
-    let filesMode = false;
+    // Files and Photos — encrypted uploads stored on the ZenOS server; index in the `files` collection (see ZenOS.uploadFile).
+    // Photos is the same data as a thumbnail grid of the image files (thumbnails are made in the browser and kept in the encrypted index).
+    let filesMode = false, filesView = 'list', filesCache = [];
     const humanSize = (n) => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+    const isPhoto = (f) => /^image\//.test(f.type || '') || /\.(jpe?g|png|gif|webp|avif|bmp|svg)$/i.test(f.name || '');
+    const download = (blob, name) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
+    // every modal here goes above the login screen (z-index 10000) and closes through closeModal()
+    const openModal = (html, id = 'zmodal-bg') => {
+      document.getElementById(id)?.remove();
+      const bg = document.createElement('div'); bg.className = 'cal-modal-bg'; bg.id = id; bg.style.zIndex = 20000;
+      bg.innerHTML = '<div class="cal-modal">' + html + '</div>';
+      bg.addEventListener('mousedown', (e) => { if (e.target === bg) bg.remove(); });
+      document.body.appendChild(bg);
+      return bg;
+    };
+    const closeModal = (id = 'zmodal-bg') => document.getElementById(id)?.remove();
 
-    async function openFiles() {
+    async function openFiles(view) {
       closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets();
       filesMode = true;
+      filesView = view === 'photos' ? 'photos' : 'list';
       document.body.classList.add('files-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
-      document.getElementById('nav-files').classList.add('active');
+      document.getElementById(filesView === 'photos' ? 'nav-photos' : 'nav-files').classList.add('active');
+      document.getElementById('files-input').accept = filesView === 'photos' ? 'image/*' : '';
       if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('open')) toggleSidebar();
       renderFiles();
     }
@@ -5145,6 +5175,7 @@ print("Welcome to ZenOS!")
       filesMode = false;
       document.body.classList.remove('files-mode');
       document.getElementById('nav-files')?.classList.remove('active');
+      document.getElementById('nav-photos')?.classList.remove('active');
     }
     async function renderFiles() {
       const status = document.getElementById('files-status'), items = document.getElementById('files-items');
@@ -5156,36 +5187,148 @@ print("Welcome to ZenOS!")
         return;
       }
       status.textContent = '';
+      filesCache = files;
       document.getElementById('count-files').textContent = files.length;
+      document.getElementById('count-photos').textContent = files.filter(isPhoto).length;
+      items.classList.toggle('photo-grid', filesView === 'photos');
+      if (filesView === 'photos') {
+        const photos = files.filter(isPhoto);
+        items.innerHTML = photos.length ? photos.map(f => `<div class="photo-tile" title="${escapeHtml(f.name)}" onclick="photoOpen('${escapeHtml(f.id)}')">${typeof f.thumb === 'string' && f.thumb.startsWith('data:image/') ? `<img src="${escapeHtml(f.thumb)}" alt="">` : '<i class="ti ti-photo"></i>'}</div>`).join('') : '<div class="blog-empty">No photos yet. Use Upload.</div>';
+        return;
+      }
       items.innerHTML = files.length ? files.map(f => `<div class="bm-item file-item"><div style="flex:1;min-width:0"><b>${escapeHtml(f.name)}</b><small>${humanSize(f.size)} · ${new Date(f.addedAt).toLocaleString()}${f.encrypted ? ' · encrypted' : ''}</small></div>
+          <button class="bm-del" title="Public link" onclick="filesShare('${escapeHtml(f.id)}')"><i class="ti ti-link"></i></button>
           <button class="bm-del" title="Download" onclick="filesDownload('${escapeHtml(f.id)}','${encodeURIComponent(f.name)}')"><i class="ti ti-download"></i></button>
           <button class="bm-del" title="Delete" onclick="filesDelete('${escapeHtml(f.id)}')"><i class="ti ti-trash"></i></button></div>`).join('') : '<div class="blog-empty">No files yet. Use Upload.</div>';
     }
-    async function filesUpload(input) {
-      const file = input.files[0]; input.value = '';
-      if (!file) return;
-      showToast('Encrypting & uploading…');
+    async function makeThumb(file) { // 256px JPEG data URL, or undefined (not an image / format the browser cannot decode)
+      if (!/^image\//.test(file.type)) return;
       try {
-        await os.uploadFile(new Uint8Array(await file.arrayBuffer()), file.name);
-        showToast('Uploaded ' + file.name);
-      } catch (e) { return showToast(e.message); }
+        const bmp = await createImageBitmap(file), k = Math.min(1, 256 / Math.max(bmp.width, bmp.height));
+        const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(bmp.width * k)); c.height = Math.max(1, Math.round(bmp.height * k));
+        c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); bmp.close?.();
+        return c.toDataURL('image/jpeg', 0.7);
+      } catch (_) { }
+    }
+    async function filesUpload(input) {
+      const list = [...input.files]; input.value = '';
+      for (const [i, file] of list.entries()) {
+        showToast(`Encrypting & uploading ${file.name}${list.length > 1 ? ` (${i + 1}/${list.length})` : ''}…`);
+        try { await os.uploadFile(new Uint8Array(await file.arrayBuffer()), file.name, { type: file.type || undefined, thumb: await makeThumb(file) }); }
+        catch (e) { showToast(file.name + ': ' + e.message); break; }
+      }
+      if (list.length) showToast(list.length > 1 ? 'Uploaded ' + list.length + ' files' : 'Uploaded ' + list[0].name);
       renderFiles();
     }
     async function filesDownload(id, name) {
-      try {
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([await os.downloadFile(id)]));
-        a.download = decodeURIComponent(name);
-        a.click();
-        URL.revokeObjectURL(a.href);
-      } catch (e) { showToast(e.message); }
+      try { download(new Blob([await os.downloadFile(id)]), decodeURIComponent(name)); } catch (e) { showToast(e.message); }
     }
     async function filesDelete(id) {
       if (!confirm('Delete this file?')) return;
       try { await os.deleteFile(id); } catch (e) { return showToast(e.message); }
-      renderFiles();
+      closeModal('photo-modal-bg'); renderFiles();
     }
-    Object.assign(window, { openFiles, filesUpload, filesDownload, filesDelete });
+    async function filesShare(id) {
+      showToast('Creating link…');
+      try { shareDialog(await os.shareFile(id)); } catch (e) { showToast(e.message); }
+    }
+    async function photoOpen(id) {
+      const f = filesCache.find(x => x.id === id); if (!f) return;
+      const bg = openModal(`<b>${escapeHtml(f.name)}</b><div style="text-align:center;min-height:80px"><img id="photo-full" alt="" style="max-width:100%;max-height:68vh"></div>
+        <div class="cal-actions"><button class="cal-btn" id="ph-del" style="margin-right:auto">Delete</button><button class="cal-btn" id="ph-share">Link</button><button class="cal-btn" id="ph-dl">Download</button><button class="cal-btn primary" id="ph-close">Close</button></div>`, 'photo-modal-bg');
+      bg.firstChild.style.maxWidth = 'min(94vw, 900px)';
+      const $ = (x) => bg.querySelector('#' + x);
+      let url, bytes;
+      $('ph-close').onclick = () => { closeModal('photo-modal-bg'); if (url) URL.revokeObjectURL(url); };
+      $('ph-del').onclick = () => filesDelete(id);
+      $('ph-share').onclick = () => filesShare(id);
+      $('ph-dl').onclick = () => bytes && download(new Blob([bytes]), f.name);
+      try { bytes = await os.downloadFile(id); url = URL.createObjectURL(new Blob([bytes], { type: /^image\/(png|jpe?g|gif|webp|avif|bmp)$/.test(f.type || '') ? f.type : '' })); $('photo-full').src = url; }
+      catch (e) { showToast(e.message); }
+    }
+
+    // Public share links: the item is encrypted with a fresh key that only lives in the link's #fragment
+    function shareDialog(r) {
+      const bg = openModal(`<b>Public link</b><p class="hint">Anyone with this link can read “${escapeHtml(r.title || '')}”. The server cannot. Revoke it any time in Settings.</p>
+        <input type="text" id="share-url" readonly value="${escapeHtml(r.url)}">
+        <div class="cal-actions"><button class="cal-btn" id="sh-close">Close</button><button class="cal-btn primary" id="sh-copy">Copy</button></div>`);
+      const input = bg.querySelector('#share-url'); input.select();
+      bg.querySelector('#sh-close').onclick = () => closeModal();
+      bg.querySelector('#sh-copy').onclick = async () => { try { await navigator.clipboard.writeText(r.url); showToast('Link copied'); } catch (_) { input.select(); showToast('Press Ctrl+C to copy'); } };
+    }
+    async function shareNoteLink() {
+      document.getElementById('more-menu-popover')?.classList.add('hidden');
+      if (!selectedNoteId) return showToast('Open a note first');
+      try { shareDialog(await os.shareNote(selectedNoteId)); } catch (e) { showToast(e.message); }
+    }
+
+    // Settings: backup (export/import), shared links, password
+    async function openSettings() {
+      const bg = openModal(`<b>Settings</b><p class="hint">${escapeHtml(pair.pub)} on ${escapeHtml(serverUrl || location.origin)}</p>
+        <h4>Backup &amp; migration</h4>
+        <p class="hint">Export saves everything decrypted as one file (plain text: keep it safe). Import it into any account on any server.</p>
+        <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="st-files" checked> Include file contents</label>
+        <div class="cal-actions" style="justify-content:flex-start"><button class="cal-btn" id="st-export">Export everything</button><button class="cal-btn" id="st-import">Import…</button><input type="file" id="st-import-file" accept=".json,application/json" class="hidden"></div>
+        <h4>Shared links</h4><div id="st-shares"><p class="hint">Loading…</p></div>
+        <h4>Password</h4>
+        <p class="hint">Changes the encryption key: everything is re-encrypted and your other sessions are signed out. Export first; it can take a while with many files.</p>
+        <input type="password" id="st-pw1" placeholder="New password" autocomplete="new-password"><input type="password" id="st-pw2" placeholder="Repeat new password" autocomplete="new-password">
+        <div class="cal-actions"><button class="cal-btn" id="st-pw">Change password</button><button class="cal-btn primary" id="st-close">Close</button></div>`);
+      const $ = (x) => bg.querySelector('#' + x);
+      $('st-close').onclick = () => closeModal();
+      $('st-export').onclick = async () => {
+        showToast('Exporting…');
+        try { download(new Blob([JSON.stringify(await os.exportAll({ files: $('st-files').checked }))], { type: 'application/json' }), `zenos-${pair.pub}-${new Date().toISOString().slice(0, 10)}.json`); showToast('Exported'); }
+        catch (e) { showToast(e.message); }
+      };
+      $('st-import').onclick = () => $('st-import-file').click();
+      $('st-import-file').onchange = async (e) => {
+        const file = e.target.files[0]; if (!file) return;
+        if (!confirm('Import ' + file.name + ' into this account? Items with the same id are overwritten.')) return;
+        showToast('Importing…');
+        try { const r = await os.importAll(JSON.parse(await file.text())); showToast(`Imported ${r.records} items, ${r.posts} posts, ${r.files} files`); if (filesMode) renderFiles(); }
+        catch (err) { showToast(err.message); }
+      };
+      $('st-pw').onclick = async () => {
+        const p1 = $('st-pw1').value;
+        if (p1.length < 8) return showToast('Use at least 8 characters');
+        if (p1 !== $('st-pw2').value) return showToast('Passwords do not match');
+        if (!confirm('Change the password now? If you forget the new one, the data cannot be recovered.')) return;
+        $('st-pw').disabled = true; showToast('Re-encrypting everything…');
+        try { await os.changePassword(p1); showToast('Password changed'); closeModal(); }
+        catch (e) { showToast(e.message + ' (nothing is lost: you can retry with the same new password)'); $('st-pw').disabled = false; }
+      };
+      const box = $('st-shares');
+      const drawShares = async () => {
+        let list; try { list = await os.listShares(); } catch (e) { box.innerHTML = '<p class="hint">' + escapeHtml(e.message) + '</p>'; return; }
+        box.innerHTML = list.length ? list.map(x => `<div class="share-row"><i class="ti ti-${x.kind === 'file' ? 'file' : 'note'}"></i><span title="${escapeHtml(x.title || '')}">${escapeHtml(x.title || x.id)}</span><button class="cal-btn" data-copy="${escapeHtml(x.url)}">Copy</button><button class="cal-btn" data-revoke="${escapeHtml(x.id)}">Revoke</button></div>`).join('') : '<p class="hint">No public links.</p>';
+      };
+      box.onclick = async (e) => {
+        const t = e.target.closest('button'); if (!t) return;
+        if (t.dataset.copy) { try { await navigator.clipboard.writeText(t.dataset.copy); showToast('Link copied'); } catch (_) { showToast('Copy not allowed here'); } }
+        else if (t.dataset.revoke && confirm('Revoke this link? It stops working immediately.')) { try { await os.unshare(t.dataset.revoke); showToast('Link revoked'); } catch (err) { showToast(err.message); } drawShares(); }
+      };
+      drawShares();
+    }
+
+    // Servers: remember the ones you use; the choice is stored in this browser only
+    function serverConfig() {
+      let saved = []; try { saved = JSON.parse(localStorage.getItem('zenosServers') || '[]'); } catch (_) { }
+      const bg = openModal(`<b>ZenOS server</b><p class="hint">Empty = automatic (this site if it runs a server, else ${escapeHtml(DEFAULT_SERVER)}). Current: ${escapeHtml(serverUrl || location.origin)}</p>
+        <input type="url" id="srv-url" list="srv-list" placeholder="https://zenos.example.com" value="${escapeHtml(localStorage.getItem('zenosServer') || '')}"><datalist id="srv-list">${saved.map(u => `<option value="${escapeHtml(u)}">`).join('')}</datalist>
+        <div class="cal-actions"><button class="cal-btn" id="srv-cancel">Cancel</button><button class="cal-btn primary" id="srv-save">Use this server</button></div>`);
+      bg.querySelector('#srv-cancel').onclick = () => closeModal();
+      bg.querySelector('#srv-save').onclick = () => {
+        try {
+          const u = normalizeServer(bg.querySelector('#srv-url').value);
+          if (u) { localStorage.setItem('zenosServer', u); localStorage.setItem('zenosServers', JSON.stringify([u, ...saved.filter(x => x !== u)].slice(0, 8))); }
+          else localStorage.removeItem('zenosServer');
+        } catch (e) { return alert(e.message); }
+        location.reload();
+      };
+    }
+    window.serverConfig = serverConfig;
+    Object.assign(window, { openFiles, filesUpload, filesDownload, filesDelete, filesShare, photoOpen, shareNoteLink, openSettings });
 
     Object.assign(window, { openBookmarks, bmSearch, bmPickFolder, bmAdd, bmImport, bmDelete, bmEdit, bmRenameFolder, bmExport });
 
@@ -5589,6 +5732,8 @@ print("Welcome to ZenOS!")
       taskSearch, taskFilterPriority, taskDragStart, taskDragOver, taskDragLeave, taskDrop,
       taskToggleDone, taskDelete, linkTaskNoteFromSelect, unlinkTaskNote
     });
+
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
 
     document.getElementById('user-input').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') document.getElementById('pass-input').focus();
