@@ -14,6 +14,7 @@
  *      ORTO_DEMO_HOURS (3) hours; sharing, the public blog and password change are off for it.
  *      ORTO_ADMIN_PASS (min 8 chars) turns on the admin panel at /admin: settings (registration, upload size, quota) edited
  *      from the browser and saved in the database (they override the env values), user list/removal, backups. Off when unset.
+ *      /models/* serves <data>/models/* (optional on-device add-ons, see scripts/install-gist.mjs).
  *      Pages: / the web app, /about the project landing page, /app the web app (same URLs as the hosted site), /admin the admin panel.
  *      (the old ZENOS_* names still work)
  */
@@ -31,7 +32,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const NAME = /^[a-z0-9][a-z0-9_.-]{1,31}$/;
 const SEG = /^[\w.:-]{1,128}$/;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2', '.wasm': 'application/wasm', '.mjs': 'text/javascript; charset=utf-8' };
 
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 
@@ -363,9 +364,12 @@ export function createServer(opts = {}) {
     else if (rel === '/app') rel = '/index.html'; // same URLs as the hosted site: /app is the web app
     else if (rel.startsWith('/app/')) rel = rel.slice(4);
     if (rel.endsWith('/')) rel += 'index.html';
+    // /models/* is <data>/models/*: optional add-ons installed by the admin (scripts/install-gist.mjs); nothing else of the data folder is reachable
+    const root = rel.startsWith('/models/') ? path.join(dataDir, 'models') : webDir;
+    if (root !== webDir) rel = rel.slice('/models'.length);
     // the SDK lives next to this file (not in web/) so the CLI and the browser share one copy
-    const file = rel === '/orto.js' ? path.join(here, 'orto.js') : path.normalize(path.join(webDir, rel));
-    if ((rel !== '/orto.js' && !file.startsWith(webDir + path.sep)) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
+    const file = rel === '/orto.js' && root === webDir ? path.join(here, 'orto.js') : path.normalize(path.join(root, rel));
+    if ((!(rel === '/orto.js' && root === webDir) && !file.startsWith(root + path.sep)) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       return res.end('Not found');
     }

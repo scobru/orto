@@ -383,6 +383,35 @@ console.log('Landing page and app routes');
   web.closeAllConnections(); web.close();
 }
 
+console.log('On-device tag suggestions (add-on plumbing)');
+{
+  const ai = await import('./web/classifier.js');
+  assert.equal(ai.aiEnabled(), false, 'off by default');
+  assert.equal(ai.emojiFor({ slug: 'technology', name: 'Technology & Software' }), '💻');
+  assert.equal(ai.emojiFor({ slug: 'food-drink', name: 'Food & Drink' }), '🍳');
+  assert.equal(ai.emojiFor({ slug: 'zzz', name: 'Unknown thing' }), '🏷️', 'neutral fallback');
+  assert.equal(ai.tagFor({ slug: 'Arts & Culture!' }), 'arts-culture');
+  ai.setClassifier({ classify: async (text, k) => { assert(!text.includes('http') && !text.includes('const x'), 'links and code are not sent to the model'); return [{ slug: 'technology', name: 'Technology & Software', score: 0.9 }].slice(0, k); } });
+  assert.deepEqual(await ai.suggestTags('Intro https://example.com/x ```const x = 1``` to computers'), [{ tag: 'technology', label: 'Technology & Software', emoji: '💻', score: 0.9 }]);
+  assert.deepEqual(await ai.suggestTags('  '), [], 'nothing to tag');
+  ai.setClassifier(null);
+
+  // /models/* is <data>/models/* and nothing else of the data folder
+  const mdir = path.join(dir, 'models-route');
+  fs.mkdirSync(path.join(mdir, 'models', 'gist'), { recursive: true });
+  fs.writeFileSync(path.join(mdir, 'models', 'gist', 'manifest.json'), '{"name":"gist"}');
+  fs.writeFileSync(path.join(mdir, 'secret.txt'), 'nope');
+  const ms = createServer({ dataDir: mdir });
+  await new Promise((r) => ms.listen(0, '127.0.0.1', r));
+  const mget = (p) => fetch('http://127.0.0.1:' + ms.address().port + p);
+  assert.equal((await mget('/models/gist/manifest.json')).status, 200);
+  assert.equal((await mget('/models/gist/missing.json')).status, 404);
+  assert.equal((await mget('/models/../secret.txt')).status, 404, 'no path escape');
+  assert.equal((await mget('/models/%2e%2e/secret.txt')).status, 404, 'no encoded path escape');
+  assert.equal((await mget('/models/../orto.db')).status, 404);
+  ms.closeAllConnections(); ms.close();
+}
+
 console.log('ok - all tests passed');
 clients.forEach(c => c.close());
 server.closeAllConnections();

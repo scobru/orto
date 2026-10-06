@@ -3,6 +3,7 @@
     { "source": "/", "destination": "/site/index.html" },
     { "source": "/about", "destination": "/web/about.html" },
     { "source": "/vendor/:path*", "destination": "/web/vendor/:path*" },
+    { "source": "/classifier.js", "destination": "/web/classifier.js" },
     { "source": "/icon.svg", "destination": "/web/icon.svg" },
     { "source": "/apple-touch-icon.png", "destination": "/web/apple-touch-icon.png" },
     { "source": "/favicon.svg", "destination": "/site/favicon.svg" },
