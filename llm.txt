@@ -283,6 +283,19 @@ The web app has **Contacts** (`~{pub}/contacts`) and **Secrets** (`~{pub}/secret
 
 ---
 
+## 8c. Calendar, Bookmarks, Tasks and Blog
+
+The web app also has Calendar, Bookmarks, Tasks and Blog views. Agents should use the ZenOS SDK/CLI; full schemas and CLI commands: https://github.com/scobru/zenos/blob/main/llm.txt (sections 5-8).
+
+| Module | Path | Encryption | Core fields | SDK |
+|---|---|---|---|---|
+| Calendar | `~{pub}/calendar` | AES-GCM | `title, start, end, allDay, notes, location, links[]` | `writeCalendarEvent`, `readCalendarEvents`, `deleteCalendarEvent` |
+| Bookmarks | `~{pub}/bookmarks` | AES-GCM | `url, title, folder, tags[], addedAt` | `writeBookmark`, `readBookmarks`, `updateBookmark`, `importBookmarksHtml` |
+| Tasks | `~{pub}/tasks` | AES-GCM | `title, status, priority, desc, dueDate, tags[], assignee, column, links[]` | `writeTask`, `readTasks`, `updateTask`, `deleteTask` |
+| Blog (smollog) | `~{pub}/posts` | none (public, signed) | `id, title, content, tags, authorAlias, authorPub, createdAt, updatedAt, deleted` | `publishBlogPost`, `readBlogPosts`, `deleteBlogPost`, `registerAlias` |
+
+---
+
 ## 9. Troubleshooting & Best Practices for Agents
 
 1. **Wait for P2P propagation**: GunDB/ZEN propagates asynchronously over WebSockets. Always wrap `.put()` in a Promise and allow 500-1500ms before disconnecting process.
