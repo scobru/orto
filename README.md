@@ -39,7 +39,7 @@ Forget the password and the data is gone: there is no recovery, by design. Usern
 ## CLI
 
 ```bash
-export ZENOS_SERVER=http://127.0.0.1:8787     # or --server
+export ZENOS_SERVER=http://127.0.0.1:8787     # or --server; default https://zenos.scobrudot.dev
 node cli.js register --user alice --pass 'long passphrase'
 node cli.js vault-write --user alice --pass '…' --title "Hello" --body "First note"
 node cli.js vault-read  --user alice --pass '…'
@@ -49,13 +49,15 @@ node cli.js blog-read --alias alice            # public, no login
 node cli.js --help                             # every command
 ```
 
+The CLI and SDK talk to `https://zenos.scobrudot.dev` unless you set `ZENOS_SERVER` / `--server` / `{ server }`.
+
 Put `ZENOS_USER` / `ZENOS_PASS` in `.env` (see `.env.example`) to drop the flags.
 
 ## SDK
 
 ```js
 import ZenOS from './zenos.js';
-const os = new ZenOS({ server: 'http://127.0.0.1:8787' });
+const os = new ZenOS();   // default server: https://zenos.scobrudot.dev
 await os.login('alice', 'long passphrase', { create: true }); // create only the first time
 await os.writeVaultNote({ title: 'Hello', body: 'First note' });
 await os.writeTask({ title: 'Ship it', priority: 'high' });
