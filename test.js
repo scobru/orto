@@ -4,7 +4,8 @@ import fs from 'fs';
 import os_ from 'os';
 import path from 'path';
 import { createServer } from './server.js';
-import { ZenOS, parseBookmarksHtml, bookmarksToHtml, parseVcf, contactsToVcf, generatePassword, normalizeServer } from './zenos.js';
+import { DatabaseSync } from 'node:sqlite';
+import { ZenOS, readShare, parseBookmarksHtml, bookmarksToHtml, parseVcf, contactsToVcf, generatePassword, normalizeServer } from './zenos.js';
 
 const dir = fs.mkdtempSync(path.join(os_.tmpdir(), 'zenos-test-'));
 const server = createServer({ dataDir: dir, webDir: dir });
@@ -177,6 +178,77 @@ await os.deleteTask(lt.soul);
 for (let i = 0; i < 50 && seen.length < 2; i++) await new Promise(r => setTimeout(r, 50));
 assert.deepEqual(seen, [['live one', false], [undefined, true]]);
 stop();
+
+console.log('11. Public share links');
+const sn = await os.writeVaultNote({ title: 'Shared note', body: '# Hi', cat: 'x' });
+const shn = await os.shareNote(sn.soul);
+assert(/\/s\/[a-f0-9]{32}#.{40,}$/.test(shn.url));
+const rn = await readShare(shn.url); // anonymous: the key is only in the link
+assert.deepEqual([rn.kind, rn.title, rn.body], ['note', 'Shared note', '# Hi']);
+assert(!/Shared note|# Hi/.test(await (await fetch(url + '/api/s/' + shn.id)).text()), 'share stored in clear');
+await assert.rejects(readShare(shn.url.replace(/#.*/, '#' + 'A'.repeat(43))), 'wrong key must fail');
+const fbytes = Uint8Array.from({ length: 3000 }, (_, i) => (i * 7) % 256);
+const sf0 = await os.uploadFile(fbytes, 'pic.png', { type: 'image/png' });
+const shf = await os.shareFile(sf0.id);
+const rf = await readShare(shf.url);
+assert.deepEqual([rf.kind, rf.name, rf.type], ['file', 'pic.png', 'image/png']);
+assert.deepEqual(rf.data, fbytes);
+assert.deepEqual((await os.listShares()).map(x => x.id).sort(), [shn.id, shf.id].sort());
+assert.equal((await os.listFiles()).find(f => f.id === sf0.id).type, 'image/png');
+await assert.rejects(other._json('DELETE', '/s/' + shn.id), (e) => e.status === 404); // not yours to revoke
+assert.equal((await readShare(shn.url)).title, 'Shared note');
+await os.unshare(shn.id); await os.unshare(shf.id);
+await assert.rejects(readShare(shn.url), (e) => e.status === 404);
+await assert.rejects(readShare(shf.url), (e) => e.status === 404);
+assert.deepEqual(await os.listShares(), []);
+await os.deleteFile(sf0.id);
+
+console.log('12. Export / import');
+const dump = await os.exportAll();
+assert.equal(dump.format, 'zenos-export');
+assert(dump.collections.vault.some(n => n.title === 'Shared note'));
+const migrant = await client('migrant', 'pw-1');
+const dn = await migrant.importAll(JSON.parse(JSON.stringify(dump)));
+assert(dn.records >= 3 && dn.files === 1);
+assert((await migrant._readAll('vault')).some(n => n.title === 'Shared note'));
+const mf = (await migrant.listFiles())[0], of = (await os.listFiles())[0];
+assert.equal(mf.name, of.name);
+assert.deepEqual(await migrant.downloadFile(mf.id), await os.downloadFile(of.id));
+assert.equal((await migrant.importAll(dump)).files, 0, 'files not duplicated');
+await assert.rejects(migrant.importAll({}), /Not a ZenOS export/);
+
+console.log('13. Change password');
+const pwc = await client('pwc-user', 'old-pass');
+const pn = await pwc.writeVaultNote({ title: 'Keep me', body: 'secret body' });
+const pf = await pwc.uploadFile(fbytes, 'keep.bin');
+const dev2 = await client('pwc-user', 'old-pass', false); // another signed-in device
+await assert.rejects(pwc.changePassword(''), /required/);
+await pwc.changePassword('new-pass');
+await assert.rejects(client('pwc-user', 'old-pass', false), (e) => e.status === 401);
+const np = await client('pwc-user', 'new-pass', false);
+assert.equal((await np._get('vault', pn.soul)).title, 'Keep me');
+assert.deepEqual(await np.downloadFile(pf.id), fbytes);
+assert.equal((await pwc._get('vault', pn.soul)).title, 'Keep me'); // the client that changed it keeps working
+await assert.rejects(dev2._json('GET', '/c/vault'), (e) => e.status === 401); // other sessions signed out
+// interrupted run: everything re-encrypted but the login secret not swapped yet; re-running finishes it
+const rs = await client('rs-user', 'a1');
+const rn1 = await rs.writeVaultNote({ title: 'Resume', body: 'b' });
+const realJson = rs._json.bind(rs);
+rs._json = async (m, p, b) => { if (p === '/password') throw new Error('boom'); return realJson(m, p, b); };
+await assert.rejects(rs.changePassword('b1'), /boom/);
+const rs2 = await client('rs-user', 'a1', false); // old password still logs in
+await rs2.changePassword('b1');
+assert.equal((await (await client('rs-user', 'b1', false))._get('vault', rn1.soul)).title, 'Resume');
+
+console.log('14. Backup');
+const bdir = path.join(dir, 'backup-out');
+server.backup(bdir);
+const bdb = new DatabaseSync(path.join(bdir, 'zenos.db'));
+assert(bdb.prepare('SELECT COUNT(*) AS n FROM users').get().n >= 5);
+assert(bdb.prepare('SELECT COUNT(*) AS n FROM records').get().n > 0);
+bdb.close();
+assert(fs.readdirSync(path.join(bdir, 'files')).length > 0);
+assert.throws(() => server.backup(bdir), /already exists/);
 
 console.log('ok - all tests passed');
 clients.forEach(c => c.close());
