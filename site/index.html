@@ -15,7 +15,7 @@
       --mut: #575c66;
       --line: #e5e7eb;
       --card: #f7f8fa;
-      --acc: #e04b4b;
+      --acc: #c4532f;
       --code: #16171c;
       --codefg: #e6e8ec
     }
@@ -72,7 +72,16 @@
     }
 
     header img {
-      width: 24px
+      width: 40px;
+      border-radius: 10px
+    }
+
+    .hero-logo {
+      display: block;
+      margin: 24px auto 0;
+      border-radius: 24px;
+      max-width: 60%;
+      height: auto
     }
 
     h1 {
@@ -203,6 +212,7 @@
           href="https://github.com/scobru/orto">GitHub</a></nav>
     </header>
 
+    <img class="hero-logo" src="logo.png" alt="orto" width="200" height="200">
     <h1>Your workspace.<br>Your server. Your data.</h1>
     <p class="lead">Orto is a self-hosted personal workspace: encrypted notes, calendar, bookmarks, tasks, contacts, secrets, files and a
       public blog, on one small Node server with a single SQLite file. Everything private is encrypted in your browser
