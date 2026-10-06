@@ -10,6 +10,8 @@
  * Backup: node server.js backup <folder>  (database + uploads; restore by stopping the server and using the folder as ORTO_DATA).
  * Env: PORT (8787), HOST (127.0.0.1), ORTO_DATA (./data), ORTO_WEB (./web),
  *      ORTO_REGISTRATION=open|closed (open), ORTO_MAX_UPLOAD bytes (200MB), ORTO_QUOTA bytes per user (5GB)
+ *      ORTO_DEMO=1 turns on a public demo account (demo / demo) that is wiped and refilled with random fake data every
+ *      ORTO_DEMO_HOURS (3) hours; sharing, the public blog and password change are off for it.
  *      (the old ZENOS_* names still work)
  */
 import http from 'node:http';
@@ -19,6 +21,8 @@ import crypto from 'node:crypto';
 import { once } from 'node:events';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
+import { Orto, deriveKeys } from './orto.js';
+import { seedDemo } from './demo.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -49,6 +53,9 @@ export function createServer(opts = {}) {
   const registration = opts.registration || env.ORTO_REGISTRATION || 'open';
   const maxUpload = Number(opts.maxUpload || env.ORTO_MAX_UPLOAD || 200 * 1024 * 1024);
   const quota = Number(opts.quota || env.ORTO_QUOTA || 5 * 1024 ** 3);
+  const demoOn = opts.demo ?? !['', '0', 'false', undefined].includes(env.ORTO_DEMO);
+  const demoHours = Number(opts.demoHours || env.ORTO_DEMO_HOURS || 3);
+  const DEMO = { user: 'demo', pass: 'demo', quota: 10 * 1024 ** 2, maxRecords: 1000, maxFiles: 40 };
   const filesDir = path.join(dataDir, 'files');
   fs.mkdirSync(filesDir, { recursive: true });
 
@@ -109,8 +116,9 @@ export function createServer(opts = {}) {
   // Stream the request body to disk (new file, or replace `id` in place). Written to a temp file first so a failed upload never damages the old blob.
   async function saveUpload(u, req, id = null) {
     const old = id && q.file.get(u.user_id, id);
+    const limit = demoOn && u.name === DEMO.user ? DEMO.quota : quota;
     const used = q.used.get(u.user_id).n - (old ? old.size : 0);
-    if (used + Number(req.headers['content-length'] || 0) > quota) throw new HttpError(413, 'Storage quota exceeded');
+    if (used + Number(req.headers['content-length'] || 0) > limit) throw new HttpError(413, 'Storage quota exceeded');
     id = id || crypto.randomBytes(12).toString('hex');
     const dir = path.join(filesDir, String(u.user_id));
     fs.mkdirSync(dir, { recursive: true });
@@ -119,7 +127,7 @@ export function createServer(opts = {}) {
     try {
       for await (const chunk of req) {
         size += chunk.length;
-        if (size > maxUpload || used + size > quota) throw new HttpError(413, 'File too large');
+        if (size > maxUpload || used + size > limit) throw new HttpError(413, 'File too large');
         if (!out.write(chunk)) await once(out, 'drain');
       }
       out.end(); await once(out, 'finish');
@@ -138,7 +146,7 @@ export function createServer(opts = {}) {
 
     if (a === 'health') return json(200, { ok: true, name: 'orto' });
 
-    if (a === 'config') return json(200, { registration, maxUpload });
+    if (a === 'config') return json(200, { registration, maxUpload, ...(demoOn && { demo: { user: DEMO.user, pass: DEMO.pass, hours: demoHours } }) });
 
     if ((a === 'register' || a === 'login') && req.method === 'POST') {
       const { name: raw, auth } = await readJson(req, 1e4);
@@ -181,6 +189,13 @@ export function createServer(opts = {}) {
 
     const u = authed(req);
 
+    if (demoOn && u.name === DEMO.user) { // the demo account is public: no sharing, no public posts, no password change, bounded size
+      const off = (a === 'password') || (a === 's' && req.method !== 'GET') || (a === 'c' && b === 'posts' && req.method !== 'GET');
+      const full = (a === 'c' && req.method === 'PUT' && db.prepare('SELECT COUNT(*) AS n FROM records WHERE user_id = ?').get(u.user_id).n >= DEMO.maxRecords)
+        || (a === 'files' && req.method === 'POST' && db.prepare('SELECT COUNT(*) AS n FROM files WHERE user_id = ?').get(u.user_id).n >= DEMO.maxFiles);
+      if (off || full) throw new HttpError(403, 'Not available in the demo');
+    }
+
     if (a === 'events') { // live updates of the user's own collections (SSE)
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
       res.write(': ok\n\n');
@@ -217,12 +232,13 @@ export function createServer(opts = {}) {
     }
 
     if (a === 'password' && req.method === 'POST') { // the client re-encrypted everything first; this swaps the login secret and signs out every other session
-      const { auth, newAuth } = await readJson(req, 1e4);
+      const { auth, newAuth, check } = await readJson(req, 1e4);
       for (const v of [auth, newAuth]) if (typeof v !== 'string' || v.length < 32 || v.length > 128) throw new HttpError(400, 'Bad auth key');
       const key = req.socket.remoteAddress + '|' + u.name;
       if (throttled(key)) throw new HttpError(429, 'Too many attempts, try again later');
       const user = q.userByName.get(u.name);
       if (!crypto.timingSafeEqual(Buffer.from(sha(sha(auth))), Buffer.from(sha(user.auth_hash)))) { failed(key); throw new HttpError(401, 'Wrong password'); }
+      if (check) return json(200, { ok: true, check: true }); // dry run: lets the client fail before it re-encrypts anything
       q.setAuth.run(sha(newAuth), user.id);
       q.dropSessions.run(user.id, sha((req.headers.authorization || '').replace(/^Bearer /, '')));
       return json(200, { ok: true });
@@ -299,6 +315,28 @@ export function createServer(opts = {}) {
     }
   });
   server.on('close', () => db.close());
+  // Public demo: wipe the demo account and refill it with random fake data through the normal API (so it is encrypted like real data).
+  // Never touches a user named "demo" that has another password: that is a real account.
+  if (demoOn) {
+    let busy = null;
+    const reset = () => busy ||= (async () => {
+      const { name, auth } = await deriveKeys(DEMO.user, DEMO.pass);
+      let user = q.userByName.get(name);
+      if (user && user.auth_hash !== sha(auth)) throw new Error(`a user named "${name}" already exists with another password: not touching it, demo is off`);
+      if (!user) { q.addUser.run(name, sha(auth), Date.now()); user = q.userByName.get(name); }
+      for (const t of ['records', 'shares', 'files', 'sessions']) db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(user.id);
+      fs.rmSync(path.join(filesDir, String(user.id)), { recursive: true, force: true });
+      const os = new Orto({ server: 'http://127.0.0.1:' + server.address().port });
+      try { await os.login(DEMO.user, DEMO.pass); return await seedDemo(os, { hours: demoHours }); } finally { os.close(); }
+    })().finally(() => { busy = null; });
+    server.resetDemo = reset;
+    server.once('listening', () => {
+      server.demoReady = reset();
+      server.demoReady.catch((e) => console.error('demo:', e.message));
+      const t = setInterval(() => reset().catch((e) => console.error('demo:', e.message)), demoHours * 36e5);
+      t.unref(); server.on('close', () => clearInterval(t));
+    });
+  }
   // Consistent copy of everything: the database (VACUUM INTO is safe while the server runs) plus the uploads folder.
   // Restore = stop the server and put the copy back as the data folder.
   server.backup = (out) => {
@@ -321,4 +359,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   }
   const port = Number(process.env.PORT || 8787), host = process.env.HOST || '127.0.0.1';
   createServer().listen(port, host, () => console.log(`Orto server on http://${host}:${port}`));
+  if (!['', '0', 'false', undefined].includes(settings.ORTO_DEMO)) console.log('Demo account on: user demo, password demo (reset every ' + (settings.ORTO_DEMO_HOURS || 3) + ' h)');
 }

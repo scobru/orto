@@ -479,6 +479,7 @@ export class Orto {
   async changePassword(newPassword) {
     this._needKey();
     const next = await deriveKeys(this.username, newPassword);
+    await this._json('POST', '/password', { auth: this._auth, newAuth: next.auth, check: true }); // fail now (wrong session, demo account...) rather than after re-encrypting
     const open = async (cipher) => {
       for (const [key, fresh] of [[this.key, false], [next.key, true]]) { try { return { v: await unseal(key, cipher), fresh }; } catch (_) {} }
       return null;

@@ -2689,6 +2689,7 @@
           <i class="ti ti-lock-open"></i> Unlock Orto
         </button>
       </div>
+      <p class="login-footer-desc hidden" id="demo-row"><a href="#" onclick="demoLogin();return false" style="color:inherit"><i class="ti ti-sparkles"></i> Try the demo account</a></p>
       <p class="login-footer-desc"><a href="#" onclick="serverConfig();return false" style="color:inherit">Server</a></p>
       <p class="login-footer-desc">
         <i class="ti ti-shield-check"></i> AES-GCM 256 keys derived locally in your browser. Master credentials never
@@ -3297,6 +3298,7 @@
         }
         isAuthenticated = true;
         window.os = os; window.pair = pair;
+        if (demoCfg && pair.pub === demoCfg.user) setTimeout(() => showToast(`Demo account: random fake data, reset every ${demoCfg.hours} h. Sharing and the password are off here.`), 800);
 
         document.getElementById('login-screen').classList.add('hidden');
         document.getElementById('dashboard').classList.remove('hidden');
@@ -5267,16 +5269,17 @@ print("Welcome to Orto!")
 
     // Settings: backup (export/import), shared links, password
     async function openSettings() {
+      const isDemo = !!demoCfg && pair.pub === demoCfg.user;
       const bg = openModal(`<b>Settings</b><p class="hint">${escapeHtml(pair.pub)} on ${escapeHtml(serverUrl || location.origin)}</p>
         <h4>Backup &amp; migration</h4>
         <p class="hint">Export saves everything decrypted as one file (plain text: keep it safe). Import it into any account on any server.</p>
         <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="st-files" checked> Include file contents</label>
         <div class="cal-actions" style="justify-content:flex-start"><button class="cal-btn" id="st-export">Export everything</button><button class="cal-btn" id="st-import">Import…</button><input type="file" id="st-import-file" accept=".json,application/json" class="hidden"></div>
         <h4>Shared links</h4><div id="st-shares"><p class="hint">Loading…</p></div>
-        <h4>Password</h4>
+        ${isDemo ? '' : `<h4>Password</h4>
         <p class="hint">Changes the encryption key: everything is re-encrypted and your other sessions are signed out. Export first; it can take a while with many files.</p>
-        <input type="password" id="st-pw1" placeholder="New password" autocomplete="new-password"><input type="password" id="st-pw2" placeholder="Repeat new password" autocomplete="new-password">
-        <div class="cal-actions"><button class="cal-btn" id="st-pw">Change password</button><button class="cal-btn primary" id="st-close">Close</button></div>`);
+        <input type="password" id="st-pw1" placeholder="New password" autocomplete="new-password"><input type="password" id="st-pw2" placeholder="Repeat new password" autocomplete="new-password">`}
+        <div class="cal-actions">${isDemo ? '' : '<button class="cal-btn" id="st-pw">Change password</button>'}<button class="cal-btn primary" id="st-close">Close</button></div>`);
       const $ = (x) => bg.querySelector('#' + x);
       $('st-close').onclick = () => closeModal();
       $('st-export').onclick = async () => {
@@ -5292,7 +5295,7 @@ print("Welcome to Orto!")
         try { const r = await os.importAll(JSON.parse(await file.text())); showToast(`Imported ${r.records} items, ${r.posts} posts, ${r.files} files`); if (filesMode) renderFiles(); }
         catch (err) { showToast(err.message); }
       };
-      $('st-pw').onclick = async () => {
+      if ($('st-pw')) $('st-pw').onclick = async () => {
         const p1 = $('st-pw1').value;
         if (p1.length < 8) return showToast('Use at least 8 characters');
         if (p1 !== $('st-pw2').value) return showToast('Passwords do not match');
@@ -5315,6 +5318,18 @@ print("Welcome to Orto!")
     }
 
     // Servers: remember the ones you use; the choice is stored in this browser only
+    // Public demo account (server started with ORTO_DEMO=1): the server says so in /api/config
+    let demoCfg = null;
+    try { demoCfg = (await (await fetch((serverUrl || '') + '/api/config')).json()).demo || null; } catch (_) { }
+    if (demoCfg) document.getElementById('demo-row').classList.remove('hidden');
+    function demoLogin() {
+      if (!demoCfg) return;
+      document.getElementById('user-input').value = demoCfg.user;
+      document.getElementById('pass-input').value = demoCfg.pass;
+      login();
+    }
+    window.demoLogin = demoLogin;
+
     function serverConfig() {
       let saved = []; try { saved = JSON.parse(localStorage.getItem('ortoServers') || '[]'); } catch (_) { }
       const bg = openModal(`<b>Orto server</b><p class="hint">Empty = automatic (this site if it runs a server, else ${escapeHtml(DEFAULT_SERVER)}). Current: ${escapeHtml(serverUrl || location.origin)}</p>
@@ -5736,6 +5751,7 @@ print("Welcome to Orto!")
       taskToggleDone, taskDelete, linkTaskNoteFromSelect, unlinkTaskNote
     });
 
+    if (demoCfg && new URLSearchParams(location.search).has('demo')) demoLogin(); // e.g. https://my-server/?demo
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
 
     document.getElementById('user-input').addEventListener('keydown', (e) => {
