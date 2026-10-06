@@ -31,6 +31,7 @@ Put it behind a reverse proxy with HTTPS (Caddy, nginx) before exposing it to th
 | `ORTO_REGISTRATION` | `open` | `closed` once your accounts exist |
 | `ORTO_MAX_UPLOAD` | 200 MB | per file, bytes |
 | `ORTO_QUOTA` | 5 GB | per user, bytes |
+| `ORTO_DEMO` / `ORTO_DEMO_HOURS` | off / `3` | public demo account, see below |
 
 The old `ZENOS_*` variable names, a data folder holding `zenos.db` and the `zenos-data` Docker volume all keep working after the rename.
 
@@ -39,6 +40,12 @@ The old `ZENOS_*` variable names, a data folder holding `zenos.db` and the `zeno
 Notes (Markdown, tags, checklists), Tasks (Kanban), Calendar, Bookmarks (Brave/Chrome/Firefox import and export), Contacts (vCard), Secrets (with a password generator), Files, **Photos** (thumbnail grid of your images; upload is manual, a browser cannot back up a camera roll) and a public Blog at `/blog/<username>`, all encrypted in the browser. **Settings** has export / import, your public links with revoke and change password. Use *Install* / *Add to Home Screen* to get it as an app (the service worker only keeps the app itself available: your data needs the server). Contacts, Secrets, Bookmarks, Tasks and Calendar have an *Examples* button with fake entries to try things out.
 
 The app picks its server like this: the one set with the **Server** link on the login screen (it remembers the ones you used); otherwise the site it is served from, if that runs an Orto server; otherwise `https://zenos.scobrudot.dev`. To host `web/` on a static host, open it and use the **Server** link to point it at your server (tokens are sent as `Authorization` headers, not cookies, so cross-origin works). Public links (`/s/...`) only work when the server itself serves the app.
+
+## Demo account
+
+`ORTO_DEMO=1 npm start` (or `ORTO_DEMO=1` in your Docker environment) adds a public **demo** account (user `demo`, password `demo`) that is wiped and refilled with random fake data (notes, tasks, events, bookmarks, contacts, secrets and 8 generated photos) at start and every `ORTO_DEMO_HOURS` (default 3) hours. The login screen shows *Try the demo account*, and `https://your-server/?demo` signs straight in, so you can link visitors to it.
+
+It is still encrypted like any account; the password is just public. For the demo user the server turns off public links, public blog posts and password change (they would be shared by everyone), and caps it at 10 MB, 1000 records and 40 files. Other accounts on the same server are not touched. A real account that already has the name `demo` with another password is never wiped (the demo stays off and says so in the log). Visitors can still edit or delete what they see; the next reset puts everything back.
 
 ## Backup, migration, sharing
 
@@ -97,7 +104,8 @@ All JSON. `Authorization: Bearer <token>` from `POST /api/login` or `/api/regist
 | `POST /api/files` (raw body), `GET/PUT/DELETE /api/files/:id` | blobs (PUT replaces in place) |
 | `POST /api/s` (`{data}` JSON or raw bytes), `DELETE /api/s/:id` | create / revoke a public share |
 | `GET /api/s/:id` | public ciphertext of a share, no auth (`/s/:id#key` is the page) |
-| `POST /api/password` (`{auth, newAuth}`) | swap the login secret after re-encrypting |
+| `POST /api/password` (`{auth, newAuth}`; `check: true` = dry run) | swap the login secret after re-encrypting |
+| `GET /api/config` | `{registration, maxUpload, demo?}` (no auth) |
 | `GET /api/u/:name`, `GET /api/u/:name/posts` | public profile and blog, no auth |
 | `GET /blog/:name` | public blog page (e.g. https://zenos.scobrudot.dev/blog/scobru) |
 

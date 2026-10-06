@@ -264,6 +264,50 @@ assert((await oldClient._readAll('vault')).some(n => n.title === 'Shared note'))
 assert(!fs.existsSync(path.join(legacyDir, 'orto.db')), 'must keep using zenos.db');
 oldClient.close(); old.closeAllConnections(); old.close();
 
+console.log('16. Demo account');
+const ddir = path.join(dir, 'demo-data');
+const dsrv = createServer({ dataDir: ddir, webDir: dir, demo: true, demoHours: 3 });
+await new Promise((r) => dsrv.listen(0, '127.0.0.1', r));
+const durl = 'http://127.0.0.1:' + dsrv.address().port;
+const seeded = await dsrv.demoReady;
+assert.deepEqual(await (await fetch(durl + '/api/config')).json(), { registration: 'open', maxUpload: 200 * 1024 * 1024, demo: { user: 'demo', pass: 'demo', hours: 3 } });
+const dm = new Orto({ server: durl }); await dm.login('demo', 'demo');
+const count = async () => ({ notes: (await dm._readAll('vault')).length, tasks: (await dm.readTasks()).length, events: (await dm._readAll('calendar')).length, bookmarks: (await dm.readBookmarks()).length,
+  contacts: (await dm._readAll('contacts')).length, secrets: (await dm._readAll('secrets')).length, photos: (await dm.listFiles()).length });
+assert.deepEqual(await count(), seeded);
+assert(seeded.notes >= 8 && seeded.tasks >= 8 && seeded.events >= 6 && seeded.bookmarks >= 6 && seeded.contacts >= 6 && seeded.secrets >= 3 && seeded.photos === 8);
+const ph = (await dm.listFiles())[0];
+assert(ph.type === 'image/png' && ph.thumb.startsWith('data:image/png;base64,'));
+assert.deepEqual([...(await dm.downloadFile(ph.id)).slice(0, 4)], [0x89, 0x50, 0x4e, 0x47], 'a real PNG');
+assert(!fs.readFileSync(path.join(ddir, 'zenos.db').replace('zenos.db', 'orto.db')).includes('Welcome to the Orto demo'), 'demo data stored in clear');
+await assert.rejects(dm.changePassword('hijack'), (e) => e.status === 403); // would lock everyone out
+assert.deepEqual(await count(), seeded, 'refused before re-encrypting anything')
+await assert.rejects(dm._json('POST', '/password', { auth: 'x'.repeat(40), newAuth: 'y'.repeat(40) }), (e) => e.status === 403);
+await assert.rejects(dm.shareNote((await dm._readAll('vault'))[0].soul), (e) => e.status === 403);
+await assert.rejects(dm.publishBlogPost({ title: 'spam', content: 'x' }), (e) => e.status === 403);
+const normal = new Orto({ server: durl }); await normal.login('someone', 'pw', { create: true }); // real accounts on the same server are unaffected
+await normal.writeVaultNote({ title: 'mine', body: 'private' });
+await normal.publishBlogPost({ title: 'ok', content: 'x' });
+for (const n of await dm._readAll('vault')) await dm.deleteVaultNote(n.soul); // a visitor wipes the notes
+assert.equal((await count()).notes, 0);
+const again = await dsrv.resetDemo();
+await assert.rejects(dm._json('GET', '/c/vault'), (e) => e.status === 401); // visitors are signed out by the reset
+await dm.login('demo', 'demo');
+assert.deepEqual(await count(), again); assert(again.notes >= 8, 'reset refills');
+assert.equal((await normal._readAll('vault')).length, 1, 'reset leaves other users alone');
+dm.close(); normal.close(); dsrv.closeAllConnections(); dsrv.close();
+// a real account called "demo" is never wiped
+const rdir = path.join(dir, 'demo-real');
+const plain = createServer({ dataDir: rdir, webDir: dir });
+await new Promise((r) => plain.listen(0, '127.0.0.1', r));
+const real = new Orto({ server: 'http://127.0.0.1:' + plain.address().port }); await real.login('demo', 'not-the-demo-password', { create: true });
+await real.writeVaultNote({ title: 'precious', body: 'x' }); real.close(); plain.closeAllConnections(); plain.close();
+const guarded = createServer({ dataDir: rdir, webDir: dir, demo: true });
+await new Promise((r) => guarded.listen(0, '127.0.0.1', r));
+await assert.rejects(guarded.demoReady, /another password/);
+const real2 = new Orto({ server: 'http://127.0.0.1:' + guarded.address().port }); await real2.login('demo', 'not-the-demo-password');
+assert.equal((await real2._readAll('vault'))[0].title, 'precious'); real2.close(); guarded.closeAllConnections(); guarded.close();
+
 console.log('ok - all tests passed');
 clients.forEach(c => c.close());
 server.closeAllConnections();

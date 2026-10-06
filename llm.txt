@@ -62,7 +62,7 @@ JSON everywhere; `Authorization: Bearer <token>`.
 - `POST /api/s` (JSON `{data}` = text share, raw bytes = file share) -> `{id}`; `DELETE /api/s/:id`; `GET /api/s/:id` is public (ciphertext only)
 - `POST /api/password` `{auth, newAuth}` (after the client re-encrypted everything)
 - `GET /api/u/:name` (exists?), `GET /api/u/:name/posts` (public, no auth), `GET /blog/:name` (HTML)
-- `GET /api/health`, `GET /api/config`
+- `GET /api/health`, `GET /api/config` (`{registration, maxUpload, demo?}`: `demo` is `{user, pass, hours}` when the server runs `ORTO_DEMO=1`, a public account that is reset with random fake data; sharing, posts and password change are 403 there)
 
 ## CLI
 
