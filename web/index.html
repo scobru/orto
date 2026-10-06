@@ -5279,6 +5279,7 @@ print("Welcome to Orto!")
         ${isDemo ? '' : `<h4>Password</h4>
         <p class="hint">Changes the encryption key: everything is re-encrypted and your other sessions are signed out. Export first; it can take a while with many files.</p>
         <input type="password" id="st-pw1" placeholder="New password" autocomplete="new-password"><input type="password" id="st-pw2" placeholder="Repeat new password" autocomplete="new-password">`}
+        <p class="hint">Orto is free and open source. <a href="https://buymeacoffee.com/scobru" target="_blank" rel="noopener">Buy me a coffee</a> if it is useful to you.</p>
         <div class="cal-actions">${isDemo ? '' : '<button class="cal-btn" id="st-pw">Change password</button>'}<button class="cal-btn primary" id="st-close">Close</button></div>`);
       const $ = (x) => bg.querySelector('#' + x);
       $('st-close').onclick = () => closeModal();
