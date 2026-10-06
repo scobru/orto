@@ -109,6 +109,14 @@ function safeExit(code = 0) {
   process.exit(code);
 }
 
+function fmtSize(n) {
+  if (!(n >= 0)) return '';
+  const u = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return `${i ? n.toFixed(1) : n} ${u[i]}`;
+}
+
 function outputResults(items, flags) {
   if (flags.count) {
     console.log(JSON.stringify({ total: items.length }, null, 2));
@@ -150,6 +158,10 @@ function outputResults(items, flags) {
         if (item.url !== undefined) row.URL = item.url ? item.url.slice(0, 50) : '';
         if (item.start !== undefined) row.Start = new Date(item.start).toISOString();
         if (item.cat !== undefined) row.Cat = item.cat;
+        if (item.type !== undefined) row.Type = item.type || '';
+        if (item.size !== undefined) row.Size = fmtSize(item.size);
+        if (item.encrypted !== undefined) row.Enc = item.encrypted ? 'yes' : 'no';
+        if (item.addedAt !== undefined) row.Added = new Date(item.addedAt).toISOString().slice(0, 16).replace('T', ' ');
         if (item.soul !== undefined) row.Soul = item.soul;
         return row;
       }));
@@ -191,7 +203,7 @@ Usage:
 
   # File storage (encrypted client-side unless --plain)
   node cli.js file-upload   [--user <user> --pass <pass>] --file <path> [--plain]
-  node cli.js file-list     [--user <user> --pass <pass>]
+  node cli.js file-list     [--user <user> --pass <pass>] [--table] [--count] [-n <limit> -p <page>]
   node cli.js file-download [--user <user> --pass <pass>] --id <id> --out <path>
   node cli.js file-delete   [--user <user> --pass <pass>] --id <id>
 
@@ -374,7 +386,9 @@ Server (all commands):
     case 'file-list': {
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      console.log(JSON.stringify(await os.listFiles(), null, 2));
+      // thumbs are huge base64 blobs: drop them from the listing
+      const files = (await os.listFiles()).map(({ thumb, ...f }) => f);
+      outputResults(files, flags);
       safeExit(0);
       break;
     }
