@@ -2697,6 +2697,7 @@
     .photo-tile { aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--input-bg); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 28px; }
     .photo-tile img { width: 100%; height: 100%; object-fit: cover; }
     .cal-modal input[type=password], .cal-modal input[type=url] { width: 100%; box-sizing: border-box; background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 7px; padding: 8px 10px; font: inherit; font-size: 14px; }
+    .cal-modal a { color: var(--bear-red); }
     .cal-modal h4 { margin: 10px 0 0; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
     .cal-modal p.hint { margin: 0; font-size: 12px; color: var(--text-muted); }
     .cal-modal .share-row { display: flex; gap: 8px; align-items: center; font-size: 14px; }
@@ -5394,7 +5395,7 @@ print("Welcome to Orto!")
       const ai = await aiMod();
       const installed = await ai.aiInstalled(serverUrl || '');
       box.checked = installed && ai.aiEnabled(); box.disabled = !installed;
-      status.textContent = installed ? 'Installed on this server. Credit: Gist by Desert Ant Labs.' : 'Not installed on this server.';
+      status.textContent = installed ? 'Installed on this server. Credit: Gist by Desert Ant Labs.' : 'Not installed on this server. Admin: run scripts/install-gist.mjs, or rebuild the Docker image (docker compose up -d --build).';
       box.onchange = () => {
         if (box.checked && !confirm('The first suggestion downloads about 75 MB from huggingface.co (then it is cached). The text you tag never leaves this browser. Turn it on?')) { box.checked = false; return; }
         ai.setAiEnabled(box.checked);

@@ -2,7 +2,7 @@
 /**
  * Optional add-on: on-device tag suggestions with Gist by Desert Ant Labs (36 topics, 101 languages, runs in the browser).
  *
- *   node scripts/install-gist.mjs [--data <folder>]     # default: $ORTO_DATA or ./data
+ *   node scripts/install-gist.mjs [--data <folder>] [--models <folder>]     # defaults: $ORTO_DATA or ./data, and <data>/models ($ORTO_MODELS)
  *
  * Needs npm and a network, once. It puts the model *code* in <data>/models/gist, which the Orto server serves at /models/gist/
  * and the web app runs inside a sandboxed iframe (no access to your keys or storage, and a CSP that only allows the model
@@ -20,7 +20,7 @@ import { spawnSync } from 'node:child_process';
 const PIN = { '@desert-ant-labs/gist': '3.6.0', '@litertjs/core': '2.5.3' }; // pinned: this runs inside your pages
 const arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : undefined; };
 const data = path.resolve(arg('--data') || process.env.ORTO_DATA || process.env.ZENOS_DATA || path.join(process.cwd(), 'data'));
-const out = path.join(data, 'models', 'gist');
+const out = path.join(path.resolve(arg('--models') || process.env.ORTO_MODELS || path.join(data, 'models')), 'gist');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'orto-gist-'));
 fs.writeFileSync(path.join(tmp, 'package.json'), '{"private":true}');

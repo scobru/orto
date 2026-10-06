@@ -14,7 +14,7 @@
  *      ORTO_DEMO_HOURS (3) hours; sharing, the public blog and password change are off for it.
  *      ORTO_ADMIN_PASS (min 8 chars) turns on the admin panel at /admin: settings (registration, upload size, quota) edited
  *      from the browser and saved in the database (they override the env values), user list/removal, backups. Off when unset.
- *      /models/* serves <data>/models/* (optional on-device add-ons, see scripts/install-gist.mjs).
+ *      ORTO_MODELS (<data>/models) is the folder served at /models/* (optional on-device add-ons, see scripts/install-gist.mjs).
  *      Pages: / the web app, /about the project landing page, /app the web app (same URLs as the hosted site), /admin the admin panel.
  *      (the old ZENOS_* names still work)
  */
@@ -64,6 +64,7 @@ export function createServer(opts = {}) {
   const demoOn = opts.demo ?? !['', '0', 'false', undefined].includes(env.ORTO_DEMO);
   const demoHours = Number(opts.demoHours || env.ORTO_DEMO_HOURS || 3);
   const DEMO = { user: 'demo', pass: 'demo', quota: 10 * 1024 ** 2, maxRecords: 1000, maxFiles: 40 };
+  const modelsDir = path.resolve(opts.modelsDir || env.ORTO_MODELS || path.join(dataDir, 'models')); // optional add-ons, served at /models/*
   const filesDir = path.join(dataDir, 'files');
   fs.mkdirSync(filesDir, { recursive: true });
 
@@ -364,8 +365,8 @@ export function createServer(opts = {}) {
     else if (rel === '/app') rel = '/index.html'; // same URLs as the hosted site: /app is the web app
     else if (rel.startsWith('/app/')) rel = rel.slice(4);
     if (rel.endsWith('/')) rel += 'index.html';
-    // /models/* is <data>/models/*: optional add-ons installed by the admin (scripts/install-gist.mjs); nothing else of the data folder is reachable
-    const root = rel.startsWith('/models/') ? path.join(dataDir, 'models') : webDir;
+    // /models/* is the models folder (default <data>/models, or ORTO_MODELS): optional add-ons installed by the admin (scripts/install-gist.mjs); nothing else of the data folder is reachable
+    const root = rel.startsWith('/models/') ? modelsDir : webDir;
     if (root !== webDir) rel = rel.slice('/models'.length);
     // the SDK lives next to this file (not in web/) so the CLI and the browser share one copy
     const file = rel === '/orto.js' && root === webDir ? path.join(here, 'orto.js') : path.normalize(path.join(root, rel));

@@ -410,6 +410,12 @@ console.log('On-device tag suggestions (add-on plumbing)');
   assert.equal((await mget('/models/%2e%2e/secret.txt')).status, 404, 'no encoded path escape');
   assert.equal((await mget('/models/../orto.db')).status, 404);
   ms.closeAllConnections(); ms.close();
+  const alt = path.join(dir, 'models-elsewhere'); // ORTO_MODELS / opts.modelsDir: a folder outside the data folder (the Docker image)
+  fs.mkdirSync(path.join(alt, 'gist'), { recursive: true }); fs.writeFileSync(path.join(alt, 'gist', 'manifest.json'), '{}');
+  const as = createServer({ dataDir: path.join(dir, 'models-data'), modelsDir: alt });
+  await new Promise((r) => as.listen(0, '127.0.0.1', r));
+  assert.equal((await fetch('http://127.0.0.1:' + as.address().port + '/models/gist/manifest.json')).status, 200);
+  as.closeAllConnections(); as.close();
 }
 
 console.log('ok - all tests passed');
