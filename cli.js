@@ -159,6 +159,7 @@ function outputResults(items, flags) {
         if (item.assignee !== undefined && item.assignee) row.Assignee = item.assignee;
         if (item.folder !== undefined) row.Folder = item.folder || '';
         if (item.album !== undefined) row.Album = item.album || '';
+        if (item.playlist !== undefined) row.Playlist = item.playlist || '';
         if (item.url !== undefined) row.URL = item.url ? item.url.slice(0, 50) : '';
         if (item.start !== undefined) row.Start = new Date(item.start).toISOString();
         if (item.cat !== undefined) row.Cat = item.cat;
@@ -206,9 +207,9 @@ Usage:
   node cli.js share-read   --url <link> [--out <path>]                                # no login needed
 
   # File storage (encrypted client-side unless --plain)
-  node cli.js file-upload   [--user <user> --pass <pass>] --file <path> [--plain] [--folder <a/b>] [--album <name>]
-  node cli.js file-list     [--user <user> --pass <pass>] [--folder <a/b>] [--album <name>] [--table] [--count] [-n <limit> -p <page>]
-  node cli.js file-move     [--user <user> --pass <pass>] --id <id> [--folder <a/b>] [--album <name>]   # '' clears
+  node cli.js file-upload   [--user <user> --pass <pass>] --file <path> [--plain] [--folder <a/b>] [--album <name>] [--playlist <name>]   # above 4 MB: encrypted chunks, playable while streaming
+  node cli.js file-list     [--user <user> --pass <pass>] [--folder <a/b>] [--album <name>] [--playlist <name>] [--table] [--count] [-n <limit> -p <page>]
+  node cli.js file-move     [--user <user> --pass <pass>] --id <id> [--folder <a/b>] [--album <name>] [--playlist <name>]   # '' clears
   node cli.js file-download [--user <user> --pass <pass>] --id <id> --out <path>
   node cli.js file-delete   [--user <user> --pass <pass>] --id <id>
 
@@ -382,7 +383,7 @@ Server (all commands):
       if (typeof flags.file !== 'string') throw new Error('--file is required.');
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const opts = { folder: grp(flags.folder), album: grp(flags.album) };
+      const opts = { folder: grp(flags.folder), album: grp(flags.album), playlist: grp(flags.playlist) };
       // big files go up in encrypted chunks read from disk piece by piece (and can be played while they download); --plain keeps the old single blob
       const res = !flags.plain && fs.statSync(flags.file).size > 4 * 1024 * 1024
         ? await os.uploadFileChunked(await fs.openAsBlob(flags.file), path.basename(flags.file), opts)
@@ -398,7 +399,8 @@ Server (all commands):
       // thumbs are huge base64 blobs: drop them from the listing
       const files = (await os.listFiles()).map(({ thumb, ...f }) => f)
         .filter((f) => (grp(flags.folder) === undefined || (f.folder || '') === grp(flags.folder) || (f.folder || '').startsWith(grp(flags.folder) + '/'))
-          && (grp(flags.album) === undefined || (f.album || '') === grp(flags.album)));
+          && (grp(flags.album) === undefined || (f.album || '') === grp(flags.album))
+          && (grp(flags.playlist) === undefined || (f.playlist || '') === grp(flags.playlist)));
       outputResults(files, flags);
       safeExit(0);
       break;
@@ -408,7 +410,7 @@ Server (all commands):
       if (typeof flags.id !== 'string') throw new Error('--id is required.');
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const { thumb, ...meta } = await os.moveFile(flags.id, { folder: grp(flags.folder), album: grp(flags.album) });
+      const { thumb, ...meta } = await os.moveFile(flags.id, { folder: grp(flags.folder), album: grp(flags.album), playlist: grp(flags.playlist) });
       console.log(JSON.stringify(meta, null, 2));
       safeExit(0);
       break;

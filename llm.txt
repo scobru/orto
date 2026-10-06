@@ -49,7 +49,8 @@ Low level: `os.encrypt(value)`, `os.decrypt(cipher)`, `os.put(collection, soul, 
 Notes:
 - Bookmark soul = hash of the URL, so the same URL is never stored twice.
 - Search and date filters run client-side (fields are encrypted), after downloading the collection.
-- Files are encrypted in memory before upload (AES-GCM, base64 inside JSON): fine for documents and photos, not for multi-GB files. `encrypt:false` uploads raw bytes.
+- `uploadFile` encrypts the whole file in memory (AES-GCM, base64 inside the ciphertext): fine for documents and photos. Use `uploadFileChunked` for big files and media: 1 MiB chunks, each `iv(12) | AES-GCM | tag(16)` with authenticated data = file nonce + chunk index + chunk count, so memory stays constant and any byte range can be read with `readFileRange(id, start, end)` (a Range request for just the covering chunks). The index entry carries `chunked: {size, n, nonce}`; `downloadFile`, export/import, shares and `changePassword` handle both formats. `encrypt:false` uploads raw bytes (single blob).
+- `folder` (nests with `/`), `album` and `playlist` are plain strings inside the encrypted index entry; empty ones live in one extra record of the `files` collection (soul `_groups`, no `id`, so `listFiles()` skips it).
 
 ## HTTP API
 
@@ -58,10 +59,13 @@ JSON everywhere; `Authorization: Bearer <token>`.
 - `POST /api/register`, `POST /api/login` — body `{name, auth}` -> `{token, name}`. Errors: 400, 401, 403 (registration closed), 404 (unknown user), 409 (name taken), 429.
 - `GET /api/c/:coll`, `GET|PUT|DELETE /api/c/:coll/:soul`
 - `GET /api/events` — server-sent events: `{coll, soul, deleted, record?}`
-- `POST /api/files` (raw body) -> `{id, size}`; `GET|PUT|DELETE /api/files/:id` (PUT replaces the blob)
+- `POST /api/files` (raw body) -> `{id, size}`; `GET|PUT|DELETE /api/files/:id` (PUT replaces the blob; GET answers one `Range: bytes=a-b` with 206)
+- chunked upload: `POST /api/files/begin` -> `{id}`; `PUT /api/files/:id/append` (raw chunk, header `X-Offset` = bytes stored so far, else 409; 413 over the size or quota limit and the file is cut back to the last good size, so retry) -> `{size}`; `POST /api/files/:id/finish[?replace=<existing id>]` -> `{id, size}`. Unfinished uploads are swept after a day.
 - `POST /api/s` (JSON `{data}` = text share, raw bytes = file share) -> `{id}`; `DELETE /api/s/:id`; `GET /api/s/:id` is public (ciphertext only)
 - `POST /api/password` `{auth, newAuth}` (after the client re-encrypted everything)
 - `GET /api/u/:name` (exists?), `GET /api/u/:name/posts` (public, no auth), `GET /blog/:name` (HTML)
+- admin panel (only when the server has `ORTO_ADMIN_PASS`, else 404): `POST /api/admin/login {pass}` -> `{token}` (separate from user tokens, 12 h); with it `GET|PUT /api/admin/settings` (`registration`, `maxUpload`, `quota`; `null` = env default), `GET /api/admin/users`, `DELETE /api/admin/users/:name`, `POST /api/admin/users/:name/logout`, `POST /api/admin/backup`. UI at `/admin`.
+- pages: `/` and `/app/` the web app, `/about` the landing page, `/blog/:name`, `/s/:id`; `/models/*` is the optional add-on folder (`ORTO_MODELS`, default `<data>/models`)
 - `GET /api/health`, `GET /api/config` (`{registration, maxUpload, demo?}`: `demo` is `{user, pass, hours}` when the server runs `ORTO_DEMO=1`, a public account that is reset with random fake data; sharing, posts and password change are 403 there)
 
 ## CLI
