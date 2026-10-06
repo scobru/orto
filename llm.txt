@@ -1,6 +1,6 @@
-# ZenOS (self-hosted) — LLM & agent integration guide
+# Orto (self-hosted) — LLM & agent integration guide
 
-ZenOS is a self-hosted personal workspace. One Node server (`server.js`: HTTP API + SQLite file + upload folder) and a dependency-free client SDK (`zenos.js`, Node >= 18 and browsers). No P2P network.
+Orto is a self-hosted personal workspace. One Node server (`server.js`: HTTP API + SQLite file + upload folder) and a dependency-free client SDK (`orto.js`, Node >= 18 and browsers). No P2P network.
 
 ## Architecture
 
@@ -8,7 +8,7 @@ ZenOS is a self-hosted personal workspace. One Node server (`server.js`: HTTP AP
 username + password --PBKDF2 (210k, SHA-256, salt "zenos:v1:<username lowercased>", 512 bits)--+
    first 256 bits -> AES-GCM key   (stays on the client, encrypts every private record)
    last  256 bits -> auth secret   (sent to the server, stored only as sha256 hash)
-client --HTTPS--> server.js --> data/zenos.db (users, sessions, records) + data/files/<user>/<id>
+client --HTTPS--> server.js --> data/orto.db (users, sessions, records) + data/files/<user>/<id>
 ```
 
 - Record = `(user, collection, soul)` -> JSON. Private collections store `{ data: "e1.<base64 iv+ciphertext>", encrypted: true }`; the whole object is inside `data`. The server adds `updatedAt`.
@@ -19,8 +19,8 @@ client --HTTPS--> server.js --> data/zenos.db (users, sessions, records) + data/
 ## SDK
 
 ```js
-import ZenOS from './zenos.js';
-const os = new ZenOS();   // server: option or env ZENOS_SERVER; default https://zenos.scobrudot.dev; '' = same origin in a browser
+import Orto from './orto.js';
+const os = new Orto();   // server: option or env ORTO_SERVER; default https://zenos.scobrudot.dev; '' = same origin in a browser
 await os.login(username, password, { create: false });        // create:true registers; error.status 404 = unknown user, 401 = wrong password
 os.pub                                                        // lowercase username = public handle
 ```
@@ -40,6 +40,10 @@ Every collection follows the same shape (`onX(cb)` replays existing records, the
 
 Links: `linkToEvent / unlinkFromEvent(eventSoul, {kind, soul})`, `linkToTask / unlinkFromTask`, `eventsFor({kind, soul})`, `tasksFor({kind, soul})`, `notesForEvent(eventSoul)`. `kind` is `note | bookmark | event | task`. Links live inside the encrypted record.
 
+Sharing: `shareNote(soul)`, `shareFile(id)` -> `{id, url}` where url = `<server>/s/<id>#<key>` (key never reaches the server); `listShares()`, `unshare(id)`; `readShare(url)` (named export, no login). Account: `changePassword(new)`, `exportAll({files})` -> plain JSON object, `importAll(obj)`. `uploadFile(bytes, name, {encrypt, type, thumb, addedAt})` keeps `type` (MIME) and `thumb` (small data: URL) in the encrypted index.
+
+Server backup: `node server.js backup <folder>`.
+
 Low level: `os.encrypt(value)`, `os.decrypt(cipher)`, `os.put(collection, soul, obj)` (encrypts then stores), `os.resolveAlias(username)`, `os.close()`.
 
 Notes:
@@ -54,13 +58,15 @@ JSON everywhere; `Authorization: Bearer <token>`.
 - `POST /api/register`, `POST /api/login` — body `{name, auth}` -> `{token, name}`. Errors: 400, 401, 403 (registration closed), 404 (unknown user), 409 (name taken), 429.
 - `GET /api/c/:coll`, `GET|PUT|DELETE /api/c/:coll/:soul`
 - `GET /api/events` — server-sent events: `{coll, soul, deleted, record?}`
-- `POST /api/files` (raw body) -> `{id, size}`; `GET|DELETE /api/files/:id`
+- `POST /api/files` (raw body) -> `{id, size}`; `GET|PUT|DELETE /api/files/:id` (PUT replaces the blob)
+- `POST /api/s` (JSON `{data}` = text share, raw bytes = file share) -> `{id}`; `DELETE /api/s/:id`; `GET /api/s/:id` is public (ciphertext only)
+- `POST /api/password` `{auth, newAuth}` (after the client re-encrypted everything)
 - `GET /api/u/:name` (exists?), `GET /api/u/:name/posts` (public, no auth), `GET /blog/:name` (HTML)
-- `GET /api/health`, `GET /api/config`
+- `GET /api/health`, `GET /api/config` (`{registration, maxUpload, demo?}`: `demo` is `{user, pass, hours}` when the server runs `ORTO_DEMO=1`, a public account that is reset with random fake data; sharing, posts and password change are 403 there)
 
 ## CLI
 
-`node cli.js --help` lists everything. Credentials via `--user/--pass` or `ZENOS_USER/ZENOS_PASS`; server via `--server` or `ZENOS_SERVER`.
+`node cli.js --help` lists everything. Credentials via `--user/--pass` or `ORTO_USER/ORTO_PASS`; server via `--server` or `ORTO_SERVER`.
 
 ## Operating rules for agents
 

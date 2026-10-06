@@ -1,0 +1,9 @@
+{
+  "rewrites": [
+    { "source": "/", "destination": "/site/index.html" },
+    { "source": "/favicon.svg", "destination": "/site/favicon.svg" },
+    { "source": "/app/orto.js", "destination": "/orto.js" },
+    { "source": "/app", "destination": "/web/index.html" },
+    { "source": "/app/:path*", "destination": "/web/:path*" }
+  ]
+}

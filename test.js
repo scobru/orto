@@ -4,14 +4,15 @@ import fs from 'fs';
 import os_ from 'os';
 import path from 'path';
 import { createServer } from './server.js';
-import { ZenOS, parseBookmarksHtml, bookmarksToHtml, parseVcf, contactsToVcf, generatePassword, normalizeServer } from './zenos.js';
+import { DatabaseSync } from 'node:sqlite';
+import { Orto, ZenOS, readShare, parseBookmarksHtml, bookmarksToHtml, parseVcf, contactsToVcf, generatePassword, normalizeServer } from './orto.js';
 
-const dir = fs.mkdtempSync(path.join(os_.tmpdir(), 'zenos-test-'));
+const dir = fs.mkdtempSync(path.join(os_.tmpdir(), 'orto-test-'));
 const server = createServer({ dataDir: dir, webDir: dir });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const url = 'http://127.0.0.1:' + server.address().port;
 const clients = [];
-const client = async (user, pass, create = true) => { const c = new ZenOS({ server: url }); await c.login(user, pass, { create }); clients.push(c); return c; };
+const client = async (user, pass, create = true) => { const c = new Orto({ server: url }); await c.login(user, pass, { create }); clients.push(c); return c; };
 const raw = (c, coll, soul) => c._json('GET', `/c/${coll}/${soul}`); // what the server stores
 
 assert.equal(normalizeServer('http://h:1/'), 'http://h:1');
@@ -22,7 +23,7 @@ assert.equal(os.pub, 'test-user');
 await assert.rejects(client('test-user', 'wrong', false), (e) => e.status === 401);
 await assert.rejects(client('nobody', 'x', false), (e) => e.status === 404);
 await assert.rejects(client('test-user', 'x', true), (e) => e.status === 409);
-await assert.rejects(new ZenOS({ server: url })._json('GET', '/c/vault'), (e) => e.status === 401);
+await assert.rejects(new Orto({ server: url })._json('GET', '/c/vault'), (e) => e.status === 401);
 const sameLogin = await client('test-user', 'test-pass', false);
 assert.equal((await os.encrypt({ a: 1 })).startsWith('e1.'), true);
 assert.deepEqual(await sameLogin.decrypt(await os.encrypt({ a: 1 })), { a: 1 }); // same login, same key
@@ -155,7 +156,7 @@ await assert.rejects(os._fetch('GET', '/files/' + up.id), (e) => e.status === 40
 console.log('9. Blog + isolation');
 const post = await os.publishBlogPost({ title: 'Hello', content: '# Welcome', tags: ['zen', 'os'], id: 'post-1' });
 assert.equal(post.id, 'post-1');
-const anon = new ZenOS({ server: url }); // no login: public read
+const anon = new Orto({ server: url }); // no login: public read
 const read = await anon.readBlogPosts('Test-User');
 assert.deepEqual([read[0].title, read[0].tags, read[0].authorAlias], ['Hello', ['zen', 'os'], 'test-user']);
 assert.equal((await anon.getBlogPost('post-1', 'test-user')).content, '# Welcome');
@@ -177,6 +178,135 @@ await os.deleteTask(lt.soul);
 for (let i = 0; i < 50 && seen.length < 2; i++) await new Promise(r => setTimeout(r, 50));
 assert.deepEqual(seen, [['live one', false], [undefined, true]]);
 stop();
+
+console.log('11. Public share links');
+const sn = await os.writeVaultNote({ title: 'Shared note', body: '# Hi', cat: 'x' });
+const shn = await os.shareNote(sn.soul);
+assert(/\/s\/[a-f0-9]{32}#.{40,}$/.test(shn.url));
+const rn = await readShare(shn.url); // anonymous: the key is only in the link
+assert.deepEqual([rn.kind, rn.title, rn.body], ['note', 'Shared note', '# Hi']);
+assert(!/Shared note|# Hi/.test(await (await fetch(url + '/api/s/' + shn.id)).text()), 'share stored in clear');
+await assert.rejects(readShare(shn.url.replace(/#.*/, '#' + 'A'.repeat(43))), 'wrong key must fail');
+const fbytes = Uint8Array.from({ length: 3000 }, (_, i) => (i * 7) % 256);
+const sf0 = await os.uploadFile(fbytes, 'pic.png', { type: 'image/png' });
+const shf = await os.shareFile(sf0.id);
+const rf = await readShare(shf.url);
+assert.deepEqual([rf.kind, rf.name, rf.type], ['file', 'pic.png', 'image/png']);
+assert.deepEqual(rf.data, fbytes);
+assert.deepEqual((await os.listShares()).map(x => x.id).sort(), [shn.id, shf.id].sort());
+assert.equal((await os.listFiles()).find(f => f.id === sf0.id).type, 'image/png');
+await assert.rejects(other._json('DELETE', '/s/' + shn.id), (e) => e.status === 404); // not yours to revoke
+assert.equal((await readShare(shn.url)).title, 'Shared note');
+await os.unshare(shn.id); await os.unshare(shf.id);
+await assert.rejects(readShare(shn.url), (e) => e.status === 404);
+await assert.rejects(readShare(shf.url), (e) => e.status === 404);
+assert.deepEqual(await os.listShares(), []);
+await os.deleteFile(sf0.id);
+
+console.log('12. Export / import');
+const dump = await os.exportAll();
+assert.equal(dump.format, 'orto-export');
+assert(dump.collections.vault.some(n => n.title === 'Shared note'));
+const migrant = await client('migrant', 'pw-1');
+const dn = await migrant.importAll(JSON.parse(JSON.stringify(dump)));
+assert(dn.records >= 3 && dn.files === 1);
+assert((await migrant._readAll('vault')).some(n => n.title === 'Shared note'));
+const mf = (await migrant.listFiles())[0], of = (await os.listFiles())[0];
+assert.equal(mf.name, of.name);
+assert.deepEqual(await migrant.downloadFile(mf.id), await os.downloadFile(of.id));
+assert.equal((await migrant.importAll(dump)).files, 0, 'files not duplicated');
+await assert.rejects(migrant.importAll({}), /Not an Orto export/);
+
+console.log('13. Change password');
+const pwc = await client('pwc-user', 'old-pass');
+const pn = await pwc.writeVaultNote({ title: 'Keep me', body: 'secret body' });
+const pf = await pwc.uploadFile(fbytes, 'keep.bin');
+const dev2 = await client('pwc-user', 'old-pass', false); // another signed-in device
+await assert.rejects(pwc.changePassword(''), /required/);
+await pwc.changePassword('new-pass');
+await assert.rejects(client('pwc-user', 'old-pass', false), (e) => e.status === 401);
+const np = await client('pwc-user', 'new-pass', false);
+assert.equal((await np._get('vault', pn.soul)).title, 'Keep me');
+assert.deepEqual(await np.downloadFile(pf.id), fbytes);
+assert.equal((await pwc._get('vault', pn.soul)).title, 'Keep me'); // the client that changed it keeps working
+await assert.rejects(dev2._json('GET', '/c/vault'), (e) => e.status === 401); // other sessions signed out
+// interrupted run: everything re-encrypted but the login secret not swapped yet; re-running finishes it
+const rs = await client('rs-user', 'a1');
+const rn1 = await rs.writeVaultNote({ title: 'Resume', body: 'b' });
+const realJson = rs._json.bind(rs);
+rs._json = async (m, p, b) => { if (p === '/password') throw new Error('boom'); return realJson(m, p, b); };
+await assert.rejects(rs.changePassword('b1'), /boom/);
+const rs2 = await client('rs-user', 'a1', false); // old password still logs in
+await rs2.changePassword('b1');
+assert.equal((await (await client('rs-user', 'b1', false))._get('vault', rn1.soul)).title, 'Resume');
+
+console.log('14. Backup');
+const bdir = path.join(dir, 'backup-out');
+server.backup(bdir);
+const bdb = new DatabaseSync(path.join(bdir, 'orto.db'));
+assert(bdb.prepare('SELECT COUNT(*) AS n FROM users').get().n >= 5);
+assert(bdb.prepare('SELECT COUNT(*) AS n FROM records').get().n > 0);
+bdb.close();
+assert(fs.readdirSync(path.join(bdir, 'files')).length > 0);
+assert.throws(() => server.backup(bdir), /already exists/);
+
+console.log('15. Compatibility with the ZenOS name');
+assert.equal(ZenOS, Orto);
+assert.equal((await migrant.importAll({ ...JSON.parse(JSON.stringify(dump)), format: 'zenos-export' })).files, 0, 'old export format still imports');
+const legacyDir = path.join(dir, 'legacy');
+fs.cpSync(bdir, legacyDir, { recursive: true });
+fs.renameSync(path.join(legacyDir, 'orto.db'), path.join(legacyDir, 'zenos.db')); // data folder from before the rename
+const old = createServer({ dataDir: legacyDir, webDir: dir });
+await new Promise((r) => old.listen(0, '127.0.0.1', r));
+const oldClient = new Orto({ server: 'http://127.0.0.1:' + old.address().port });
+await oldClient.login('test-user', 'test-pass'); // same login, same keys as before the rename
+assert((await oldClient._readAll('vault')).some(n => n.title === 'Shared note'));
+assert(!fs.existsSync(path.join(legacyDir, 'orto.db')), 'must keep using zenos.db');
+oldClient.close(); old.closeAllConnections(); old.close();
+
+console.log('16. Demo account');
+const ddir = path.join(dir, 'demo-data');
+const dsrv = createServer({ dataDir: ddir, webDir: dir, demo: true, demoHours: 3 });
+await new Promise((r) => dsrv.listen(0, '127.0.0.1', r));
+const durl = 'http://127.0.0.1:' + dsrv.address().port;
+const seeded = await dsrv.demoReady;
+assert.deepEqual(await (await fetch(durl + '/api/config')).json(), { registration: 'open', maxUpload: 200 * 1024 * 1024, demo: { user: 'demo', pass: 'demo', hours: 3 } });
+const dm = new Orto({ server: durl }); await dm.login('demo', 'demo');
+const count = async () => ({ notes: (await dm._readAll('vault')).length, tasks: (await dm.readTasks()).length, events: (await dm._readAll('calendar')).length, bookmarks: (await dm.readBookmarks()).length,
+  contacts: (await dm._readAll('contacts')).length, secrets: (await dm._readAll('secrets')).length, photos: (await dm.listFiles()).length });
+assert.deepEqual(await count(), seeded);
+assert(seeded.notes >= 8 && seeded.tasks >= 8 && seeded.events >= 6 && seeded.bookmarks >= 6 && seeded.contacts >= 6 && seeded.secrets >= 3 && seeded.photos === 8);
+const ph = (await dm.listFiles())[0];
+assert(ph.type === 'image/png' && ph.thumb.startsWith('data:image/png;base64,'));
+assert.deepEqual([...(await dm.downloadFile(ph.id)).slice(0, 4)], [0x89, 0x50, 0x4e, 0x47], 'a real PNG');
+assert(!fs.readFileSync(path.join(ddir, 'zenos.db').replace('zenos.db', 'orto.db')).includes('Welcome to the Orto demo'), 'demo data stored in clear');
+await assert.rejects(dm.changePassword('hijack'), (e) => e.status === 403); // would lock everyone out
+assert.deepEqual(await count(), seeded, 'refused before re-encrypting anything')
+await assert.rejects(dm._json('POST', '/password', { auth: 'x'.repeat(40), newAuth: 'y'.repeat(40) }), (e) => e.status === 403);
+await assert.rejects(dm.shareNote((await dm._readAll('vault'))[0].soul), (e) => e.status === 403);
+await assert.rejects(dm.publishBlogPost({ title: 'spam', content: 'x' }), (e) => e.status === 403);
+const normal = new Orto({ server: durl }); await normal.login('someone', 'pw', { create: true }); // real accounts on the same server are unaffected
+await normal.writeVaultNote({ title: 'mine', body: 'private' });
+await normal.publishBlogPost({ title: 'ok', content: 'x' });
+for (const n of await dm._readAll('vault')) await dm.deleteVaultNote(n.soul); // a visitor wipes the notes
+assert.equal((await count()).notes, 0);
+const again = await dsrv.resetDemo();
+await assert.rejects(dm._json('GET', '/c/vault'), (e) => e.status === 401); // visitors are signed out by the reset
+await dm.login('demo', 'demo');
+assert.deepEqual(await count(), again); assert(again.notes >= 8, 'reset refills');
+assert.equal((await normal._readAll('vault')).length, 1, 'reset leaves other users alone');
+dm.close(); normal.close(); dsrv.closeAllConnections(); dsrv.close();
+// a real account called "demo" is never wiped
+const rdir = path.join(dir, 'demo-real');
+const plain = createServer({ dataDir: rdir, webDir: dir });
+await new Promise((r) => plain.listen(0, '127.0.0.1', r));
+const real = new Orto({ server: 'http://127.0.0.1:' + plain.address().port }); await real.login('demo', 'not-the-demo-password', { create: true });
+await real.writeVaultNote({ title: 'precious', body: 'x' }); real.close(); plain.closeAllConnections(); plain.close();
+const guarded = createServer({ dataDir: rdir, webDir: dir, demo: true });
+await new Promise((r) => guarded.listen(0, '127.0.0.1', r));
+await assert.rejects(guarded.demoReady, /another password/);
+const real2 = new Orto({ server: 'http://127.0.0.1:' + guarded.address().port }); await real2.login('demo', 'not-the-demo-password');
+assert.equal((await real2._readAll('vault'))[0].title, 'precious'); real2.close(); guarded.closeAllConnections(); guarded.close();
 
 console.log('ok - all tests passed');
 clients.forEach(c => c.close());

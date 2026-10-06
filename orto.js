@@ -1,5 +1,5 @@
 /**
- * ZenOS Client SDK — talks to a self-hosted ZenOS server (server.js, SQLite + file uploads).
+ * Orto (formerly ZenOS) client SDK — talks to a self-hosted Orto server (server.js, SQLite + file uploads).
  * Works in Node >= 18 and in browsers: fetch + WebCrypto only, no dependencies.
  *
  * Everything private is AES-GCM encrypted on the client with a key derived from username + password
@@ -8,6 +8,7 @@
  */
 
 const env = (globalThis.process && globalThis.process.env) || {};
+// ponytail: still the pre-rename domain; switch to https://orto.scobrudot.dev once it exists
 export const DEFAULT_SERVER = 'https://zenos.scobrudot.dev';
 
 /** Normalize a server URL: trims it and drops the trailing slash. '' means same origin (browser). */
@@ -136,7 +137,7 @@ export async function deriveKeys(username, password) {
   if (!name || !password) throw new Error('Username and password are required');
   const enc = new TextEncoder();
   const base = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
-  const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', iterations: 210000, salt: enc.encode('zenos:v1:' + name) }, base, 512));
+  const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', iterations: 210000, salt: enc.encode('zenos:v1:' + name) /* the pre-rename name: part of the key derivation, never change it or every login stops opening its data */ }, base, 512));
   return { name, key: await crypto.subtle.importKey('raw', bits.slice(0, 32), 'AES-GCM', false, ['encrypt', 'decrypt']), auth: toB64(bits.slice(32)) };
 }
 
@@ -149,13 +150,45 @@ const checkLinks = (links) => {
   }
 };
 
-export class ZenOS {
+const COLLECTIONS = ['vault', 'calendar', 'tasks', 'bookmarks', 'contacts', 'secrets', 'files', 'shares']; // encrypted ones; `posts` is public
+const toB64u = (u8) => toB64(u8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const fromB64u = (b) => fromB64(b.replace(/-/g, '+').replace(/_/g, '/'));
+const aesKey = (raw) => crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+const seal = async (key, value) => {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(value))));
+  const out = new Uint8Array(12 + ct.length); out.set(iv); out.set(ct, 12);
+  return 'e1.' + toB64(out);
+};
+const unseal = async (key, cipher) => {
+  if (typeof cipher !== 'string' || !cipher.startsWith('e1.')) throw new Error('Not an Orto ciphertext');
+  const raw = fromB64(cipher.slice(3));
+  return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.subarray(0, 12) }, key, raw.subarray(12))));
+};
+const chunked = async (items, fn, n = 20) => { for (let i = 0; i < items.length; i += n) await Promise.all(items.slice(i, i + n).map(fn)); };
+
+/**
+ * Open a public share link (`<server>/s/<id>#<key>`), no login needed. The key is the part after `#`: it never reaches the server.
+ * @returns {Promise<{kind:'note', title, body, cat} | {kind:'file', name, type, data:Uint8Array}>}
+ */
+export async function readShare(link) {
+  const u = new URL(link);
+  const id = u.pathname.split('/').pop();
+  if (!/^[a-f0-9]{32}$/.test(id) || !u.hash.slice(1)) throw new Error('Not an Orto share link');
+  const r = await fetch(`${u.origin}/api/s/${id}`);
+  if (!r.ok) throw Object.assign(new Error((await r.json().catch(() => ({}))).error || 'HTTP ' + r.status), { status: r.status });
+  const cipher = String((r.headers.get('content-type') || '').startsWith('application/json') ? (await r.json()).data : await r.text());
+  const p = await unseal(await aesKey(fromB64u(u.hash.slice(1))), cipher);
+  return p.kind === 'file' ? { ...p, data: fromB64(p.data) } : p;
+}
+
+export class Orto {
   /**
-   * @param {{server?:string, token?:string}} options  server: ZenOS server URL (env ZENOS_SERVER; '' = same origin in a browser)
+   * @param {{server?:string, token?:string}} options  server: Orto server URL (env ORTO_SERVER; '' = same origin in a browser)
    */
   constructor(options = {}) {
     const fallback = globalThis.window ? '' : DEFAULT_SERVER;
-    this.server = normalizeServer(options.server ?? env.ZENOS_SERVER ?? fallback);
+    this.server = normalizeServer(options.server ?? env.ORTO_SERVER ?? env.ZENOS_SERVER ?? fallback);
     this.token = options.token || null;
     this.key = null;
     this.username = null;
@@ -172,7 +205,7 @@ export class ZenOS {
   async login(username, password, { create = false } = {}) {
     const { name, key, auth } = await deriveKeys(username, password);
     const { token } = await this._json('POST', create ? '/register' : '/login', { name, auth });
-    Object.assign(this, { key, token, username: name, pair: { pub: name } });
+    Object.assign(this, { key, token, username: name, pair: { pub: name }, _auth: auth });
     return this.pair;
   }
 
@@ -202,20 +235,9 @@ export class ZenOS {
   _needKey() { if (!this.key) throw new Error('Not authenticated. Call login() first.'); }
 
   /** Any JSON value -> "e1.<base64 iv+ciphertext>" (AES-GCM-256). */
-  async encrypt(value) {
-    this._needKey();
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, this.key, new TextEncoder().encode(JSON.stringify(value))));
-    const out = new Uint8Array(12 + ct.length); out.set(iv); out.set(ct, 12);
-    return 'e1.' + toB64(out);
-  }
+  async encrypt(value) { this._needKey(); return seal(this.key, value); }
 
-  async decrypt(cipher) {
-    this._needKey();
-    if (typeof cipher !== 'string' || !cipher.startsWith('e1.')) throw new Error('Not a ZenOS ciphertext');
-    const raw = fromB64(cipher.slice(3));
-    return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.subarray(0, 12) }, this.key, raw.subarray(12))));
-  }
+  async decrypt(cipher) { this._needKey(); return unseal(this.key, cipher); }
 
   // ─── generic encrypted collection ──────────────────────────────────
 
@@ -289,7 +311,7 @@ export class ZenOS {
     return () => this._subs.delete(sub);
   }
 
-  // ─── ZenVault (encrypted notes) ─────────────────────────────────────
+  // ─── Vault (encrypted notes) ─────────────────────────────────────
 
   async writeVaultNote({ title, body, cat = 'general', pinned = false, soul = null }) {
     this._needKey();
@@ -375,13 +397,14 @@ export class ZenOS {
    * Upload bytes. Encrypted by default (AES-GCM with your key); the server only sees a blob.
    * The whole file is held in memory while encrypting, so keep uploads to what a browser tab can handle.
    * An encrypted index entry (name, size) is kept in the `files` collection for listFiles().
+   * `type` (MIME) and `thumb` (small data: URL) are stored in the encrypted index entry; the web app's Photos view uses them.
    * @returns {Promise<{id:string, name:string, size:number, encrypted:boolean, addedAt:number}>}
    */
-  async uploadFile(data, name, { encrypt = true } = {}) {
+  async uploadFile(data, name, { encrypt = true, type, thumb, addedAt } = {}) {
     this._needKey();
     const body = encrypt ? new TextEncoder().encode(await this.encrypt(toB64(data))) : data;
     const { id } = await (await this._fetch('POST', '/files', body)).json();
-    const meta = { id, name, size: data.length, encrypted: encrypt, addedAt: Date.now() };
+    const meta = { id, name, size: data.length, encrypted: encrypt, addedAt: addedAt ?? Date.now(), ...(type && { type }), ...(thumb && { thumb }) };
     await this.put('files', id, meta);
     return meta;
   }
@@ -402,6 +425,112 @@ export class ZenOS {
     this._needKey();
     await this._json('DELETE', '/files/' + encodeURIComponent(id));
     return this._del('files', id);
+  }
+
+  // ─── Public share links ─────────────────────────────────────────────
+  // A random key per share encrypts the item; the link is <server>/s/<id>#<key>. The server stores ciphertext only and the
+  // #fragment is never sent to it. Revoke with unshare(). Your own list of links is an encrypted `shares` record.
+
+  async _share(kind, ref, title, payload, bytes) {
+    this._needKey();
+    const raw = crypto.getRandomValues(new Uint8Array(32)), key = toB64u(raw);
+    const cipher = await seal(await aesKey(raw), payload);
+    const { id } = await (await this._fetch('POST', '/s', bytes ? new TextEncoder().encode(cipher) : { data: cipher })).json();
+    await this.put('shares', id, { id, kind, ref, title, key, createdAt: Date.now() });
+    return { id, kind, title, url: this._shareUrl(id, key) };
+  }
+
+  _shareUrl(id, key) { return `${this.server || globalThis.location?.origin || ''}/s/${id}#${key}`; }
+
+  /** Public read-only link to one note. */
+  async shareNote(soul) {
+    const n = await this._get('vault', soul);
+    if (!n) throw new Error('Note not found: ' + soul);
+    return this._share('note', soul, n.title, { kind: 'note', title: n.title, body: n.body, cat: n.cat });
+  }
+
+  /** Public link to one file (re-encrypted with the share key; the original stays private). */
+  async shareFile(id) {
+    const f = await this._get('files', id);
+    if (!f) throw new Error('File not found: ' + id);
+    const data = await this.downloadFile(id);
+    return this._share('file', id, f.name, { kind: 'file', name: f.name, type: f.type || 'application/octet-stream', data: toB64(data) }, true);
+  }
+
+  async listShares() {
+    return (await this._readAll('shares')).filter(x => x.id && x.key)
+      .map(({ key, ...x }) => ({ ...x, url: this._shareUrl(x.id, key) })).sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  /** Revoke a link: the ciphertext is deleted from the server. */
+  async unshare(id) {
+    this._needKey();
+    await this._json('DELETE', '/s/' + encodeURIComponent(id)).catch((e) => { if (e.status !== 404) throw e; });
+    return this._del('shares', id);
+  }
+
+  // ─── Account: password, export, import ──────────────────────────────
+
+  /**
+   * Change the password. Your key comes from it, so every encrypted record and file is re-encrypted first, then the login secret
+   * is swapped and all other sessions are signed out. Safe to re-run with the same passwords if it was interrupted (already
+   * converted items are skipped, and the old password keeps working until the last step). Export first anyway.
+   */
+  async changePassword(newPassword) {
+    this._needKey();
+    const next = await deriveKeys(this.username, newPassword);
+    await this._json('POST', '/password', { auth: this._auth, newAuth: next.auth, check: true }); // fail now (wrong session, demo account...) rather than after re-encrypting
+    const open = async (cipher) => {
+      for (const [key, fresh] of [[this.key, false], [next.key, true]]) { try { return { v: await unseal(key, cipher), fresh }; } catch (_) {} }
+      return null;
+    };
+    const recs = async (coll) => (await this._json('GET', '/c/' + coll)).filter(r => typeof r.data === 'string');
+    await chunked(await recs('files'), async (r) => { // file contents first
+      const meta = await open(r.data);
+      if (!meta?.v.encrypted) return;
+      const blob = await open(new TextDecoder().decode(new Uint8Array(await (await this._fetch('GET', '/files/' + encodeURIComponent(r.soul))).arrayBuffer())));
+      if (blob && !blob.fresh) await this._fetch('PUT', '/files/' + encodeURIComponent(r.soul), new TextEncoder().encode(await seal(next.key, blob.v)));
+    }, 5);
+    for (const coll of COLLECTIONS) {
+      await chunked(await recs(coll), async (r) => {
+        const o = await open(r.data);
+        if (o && !o.fresh) await this._json('PUT', `/c/${coll}/${encodeURIComponent(r.soul)}`, { data: await seal(next.key, o.v), encrypted: true });
+      });
+    }
+    await this._json('POST', '/password', { auth: this._auth, newAuth: next.auth });
+    Object.assign(this, { key: next.key, _auth: next.auth });
+    return { status: 'changed' };
+  }
+
+  /**
+   * Everything decrypted as one JSON-able object (notes, events, tasks, bookmarks, contacts, secrets, file index, blog posts and,
+   * unless `files: false`, file contents as base64). Plain text: keep it somewhere safe. Share links are not included.
+   */
+  async exportAll({ files = true } = {}) {
+    this._needKey();
+    const out = { format: 'orto-export', version: 1, user: this.username, exportedAt: Date.now(), collections: {}, files: {}, posts: await this._json('GET', '/c/posts') };
+    for (const coll of COLLECTIONS.filter(c => c !== 'shares')) out.collections[coll] = await this._readAll(coll);
+    if (files) await chunked(out.collections.files.filter(f => f.id), async (f) => { try { out.files[f.id] = toB64(await this.downloadFile(f.id, { encrypted: f.encrypted })); } catch (_) {} }, 5);
+    return out; // ponytail: files go in memory as base64, stream to a ZIP if exports get huge
+  }
+
+  /** Load an exportAll() result into this account (same souls overwrite; files with the same name, size and date are skipped). */
+  async importAll(data) {
+    this._needKey();
+    if (!['orto-export', 'zenos-export'].includes(data?.format)) throw new Error('Not an Orto export');
+    const done = { records: 0, posts: 0, files: 0 };
+    for (const coll of COLLECTIONS.filter(c => c !== 'files' && c !== 'shares')) {
+      await chunked(data.collections?.[coll] || [], async ({ soul, updatedAt, ...rest }) => { await this.put(coll, soul, rest); done.records++; });
+    }
+    await chunked(data.posts || [], async ({ soul, updatedAt, ...rest }) => { await this._json('PUT', `/c/posts/${encodeURIComponent(soul)}`, rest); done.posts++; });
+    const sig = (f) => `${f.name}|${f.size}|${f.addedAt}`; // new ids are assigned on upload, so match files by content metadata
+    const have = new Set((await this.listFiles()).map(sig));
+    for (const f of data.collections?.files || []) {
+      if (!f.id || have.has(sig(f)) || !data.files?.[f.id]) continue;
+      await this.uploadFile(fromB64(data.files[f.id]), f.name, { encrypt: f.encrypted !== false, type: f.type, thumb: f.thumb, addedAt: f.addedAt });
+      done.files++;
+    }
+    return done;
   }
 
   // ─── Bookmarks ──────────────────────────────────────────────────────
@@ -461,7 +590,7 @@ export class ZenOS {
 
   // ─── Contacts ───────────────────────────────────────────────────────
 
-  /** `pub` is an optional ZenOS username, so a contact can be a ZenOS user too. */
+  /** `pub` is an optional Orto username, so a contact can be an Orto user too. */
   async writeContact({ soul = null, name, emails = [], phones = [], org = '', notes = '', tags = [], pub = '', addedAt = Date.now() }) {
     if (!name || !String(name).trim()) throw new Error('name is required.');
     return this.put('contacts', soul || this._newSoul('ct-'), { name: String(name).trim(), emails: asList(emails), phones: asList(phones), org, notes, tags: asList(tags).map(t => t.replace(/^#/, '')), pub, addedAt });
@@ -651,4 +780,5 @@ export class ZenOS {
   }
 }
 
-export default ZenOS;
+export { Orto as ZenOS }; // old name, for existing callers
+export default Orto;

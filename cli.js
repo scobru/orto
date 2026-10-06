@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 /**
- * ZenOS CLI Runner for Agents and Scripts
+ * Orto CLI Runner for Agents and Scripts
  */
 
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import ZenOS, { DEFAULT_SERVER, normalizeServer, bookmarkSoul, generatePassword } from './zenos.js';
+import Orto, { DEFAULT_SERVER, normalizeServer, bookmarkSoul, generatePassword, readShare } from './orto.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -93,11 +93,14 @@ if (process.cwd() !== __dirname) {
   loadEnvFile(path.join(process.cwd(), '.env.local'));
 }
 
+// ORTO_* settings; the old ZENOS_* names still work
+const ev = (name) => process.env['ORTO_' + name] || process.env['ZENOS_' + name];
+
 function requireCredentials() {
-  const user = flags.user || process.env.ZENOS_USER || process.env.ZENOS_USERNAME;
-  const pass = flags.pass || process.env.ZENOS_PASS || process.env.ZENOS_PASSWORD;
+  const user = flags.user || ev('USER') || ev('USERNAME');
+  const pass = flags.pass || ev('PASS') || ev('PASSWORD');
   if (!user || !pass) {
-    throw new Error('User and password required: provide --user and --pass flags, or set ZENOS_USER and ZENOS_PASS in .env file.');
+    throw new Error('User and password required: provide --user and --pass flags, or set ORTO_USER and ORTO_PASS in .env file.');
   }
   return { user, pass };
 }
@@ -169,11 +172,22 @@ function outputResults(items, flags) {
 async function main() {
   if (!cmd || cmd === '--help' || cmd === '-h') {
     console.log(`
-ZenOS CLI — Sovereign Agent Tools
+Orto CLI — tools for scripts and agents
 Usage:
   # Account
   node cli.js register [--user <user> --pass <pass>]   # create the account on the server (if registration is open)
   node cli.js identity [--user <user> --pass <pass>]   # check login, print username + server
+
+  node cli.js password-change [--user <user> --pass <pass>] --new <new password>   # re-encrypts everything; export first
+  node cli.js export [--user <user> --pass <pass>] --out <backup.json> [--no-files]    # everything decrypted, for backup/migration (keep it safe)
+  node cli.js import [--user <user> --pass <pass>] --file <backup.json>                # into this account, on this server
+
+  # Public share links (the key is in the #fragment, the server cannot read them)
+  node cli.js share-note   [--user <user> --pass <pass>] --soul <soul>
+  node cli.js share-file   [--user <user> --pass <pass>] --id <id>
+  node cli.js share-list   [--user <user> --pass <pass>]
+  node cli.js share-revoke [--user <user> --pass <pass>] --id <id>
+  node cli.js share-read   --url <link> [--out <path>]                                # no login needed
 
   # File storage (encrypted client-side unless --plain)
   node cli.js file-upload   [--user <user> --pass <pass>] --file <path> [--plain]
@@ -182,7 +196,7 @@ Usage:
   node cli.js file-delete   [--user <user> --pass <pass>] --id <id>
 
   # Contacts (Encrypted)
-  node cli.js contact-add    [--user <user> --pass <pass>] --name <name> [--email <a,b>] [--phone <a,b>] [--org <org>] [--notes <text>] [--tags <a,b>] [--pub <zenos username>] [--soul <soul>]
+  node cli.js contact-add    [--user <user> --pass <pass>] --name <name> [--email <a,b>] [--phone <a,b>] [--org <org>] [--notes <text>] [--tags <a,b>] [--pub <orto username>] [--soul <soul>]
   node cli.js contact-get    [--user <user> --pass <pass>] --soul <soul>
   node cli.js contact-read   [--user <user> --pass <pass>] [--query <q>] [--tag <tag>] [--table] [--count] [-n <limit> -p <page>]
   node cli.js contact-delete [--user <user> --pass <pass>] --soul <soul>
@@ -246,18 +260,18 @@ Pagination & formatting options (read commands):
 
 Credentials:
   Flags:     --user <user> --pass <pass> (or -u <user>)
-  Env vars:  ZENOS_USER and ZENOS_PASS (or ZENOS_USERNAME / ZENOS_PASSWORD)
+  Env vars:  ORTO_USER and ORTO_PASS (or ORTO_USERNAME / ORTO_PASSWORD)
   Files:     .env in skill directory or current working directory (or --env <path>)
 
 Server (all commands):
-  --server <url>          ZenOS server URL (or ZENOS_SERVER); default ${DEFAULT_SERVER}
+  --server <url>          Orto server URL (or ORTO_SERVER); default ${DEFAULT_SERVER}
   Run your own: node server.js   (see README.md)
 `);
     process.exit(0);
   }
 
-  const server = normalizeServer(typeof flags.server === 'string' ? flags.server : process.env.ZENOS_SERVER || DEFAULT_SERVER);
-  const os = new ZenOS({ server });
+  const server = normalizeServer(typeof flags.server === 'string' ? flags.server : ev('SERVER') || DEFAULT_SERVER);
+  const os = new Orto({ server });
 
   switch (cmd) {
     case 'register': {
@@ -273,6 +287,75 @@ Server (all commands):
       await os.login(user, pass);
       console.log(JSON.stringify({ username: os.username, blog: `${server}/blog/${os.pub}`, server }, null, 2));
       process.exit(0);
+      break;
+    }
+
+    case 'password-change': {
+      if (typeof flags.new !== 'string') throw new Error('--new <new password> is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      console.log(JSON.stringify(await os.changePassword(flags.new), null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'export': {
+      if (typeof flags.out !== 'string') throw new Error('--out <file.json> is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const dump = await os.exportAll({ files: !flags['no-files'] });
+      fs.writeFileSync(flags.out, JSON.stringify(dump), { mode: 0o600 }); // plaintext of everything: owner-only
+      console.log(JSON.stringify({ out: flags.out, records: Object.values(dump.collections).flat().length, posts: dump.posts.length, files: Object.keys(dump.files).length }, null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'import': {
+      if (typeof flags.file !== 'string') throw new Error('--file <backup.json> is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      console.log(JSON.stringify(await os.importAll(JSON.parse(fs.readFileSync(flags.file, 'utf8'))), null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'share-note':
+    case 'share-file': {
+      const k = cmd === 'share-note' ? 'soul' : 'id';
+      if (typeof flags[k] !== 'string') throw new Error(`--${k} is required.`);
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      console.log(JSON.stringify(await (cmd === 'share-note' ? os.shareNote(flags.soul) : os.shareFile(flags.id)), null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'share-list': {
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      console.log(JSON.stringify(await os.listShares(), null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'share-revoke': {
+      if (typeof flags.id !== 'string') throw new Error('--id is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      console.log(JSON.stringify(await os.unshare(flags.id), null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'share-read': {
+      if (typeof flags.url !== 'string') throw new Error('--url is required.');
+      const r = await readShare(flags.url);
+      if (r.kind === 'file') {
+        if (typeof flags.out !== 'string') throw new Error('--out <path> is required for a shared file.');
+        fs.writeFileSync(flags.out, r.data);
+        console.log(JSON.stringify({ kind: 'file', name: r.name, type: r.type, out: flags.out }, null, 2));
+      } else console.log(JSON.stringify(r, null, 2));
+      safeExit(0);
       break;
     }
 
@@ -829,13 +912,13 @@ Server (all commands):
     case 'blog-read': {
       if (cmd === 'blog-get' && !flags.id) throw new Error('--id is required.');
       let author = typeof flags.alias === 'string' ? flags.alias : null;
-      const envUser = flags.user || process.env.ZENOS_USER || process.env.ZENOS_USERNAME;
-      const envPass = flags.pass || process.env.ZENOS_PASS || process.env.ZENOS_PASSWORD;
+      const envUser = flags.user || ev('USER') || ev('USERNAME');
+      const envPass = flags.pass || ev('PASS') || ev('PASSWORD');
       if (!author && envUser && envPass) {
         await os.login(envUser, envPass);
         author = os.pub;
       }
-      if (!author) throw new Error('Must provide --alias <username>, or credentials (--user and --pass, or ZENOS_USER and ZENOS_PASS in .env).');
+      if (!author) throw new Error('Must provide --alias <username>, or credentials (--user and --pass, or ORTO_USER and ORTO_PASS in .env).');
 
       if (cmd === 'blog-read') {
         outputResults(await os.readBlogPosts(author), flags);

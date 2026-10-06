@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 /**
- * ZenOS server: SQLite + file uploads behind a small HTTP API.
+ * Orto server (formerly ZenOS): your personal workspace on a server you run.
  * One SQLite file (records, users, sessions) + a folder of uploaded blobs, zero npm dependencies.
  * Requires Node >= 22.5 (built-in node:sqlite).
  *
  * The server never sees plaintext of private collections: clients encrypt (AES-GCM) before PUT.
  * Only the `posts` collection (public blog) is stored and served in clear.
  *
- * Env: PORT (8787), HOST (127.0.0.1), ZENOS_DATA (./data), ZENOS_WEB (../zenos-web/app or ./web),
- *      ZENOS_REGISTRATION=open|closed (open), ZENOS_MAX_UPLOAD bytes (200MB), ZENOS_QUOTA bytes per user (5GB)
+ * Backup: node server.js backup <folder>  (database + uploads; restore by stopping the server and using the folder as ORTO_DATA).
+ * Env: PORT (8787), HOST (127.0.0.1), ORTO_DATA (./data), ORTO_WEB (./web),
+ *      ORTO_REGISTRATION=open|closed (open), ORTO_MAX_UPLOAD bytes (200MB), ORTO_QUOTA bytes per user (5GB)
+ *      ORTO_DEMO=1 turns on a public demo account (demo / demo) that is wiped and refilled with random fake data every
+ *      ORTO_DEMO_HOURS (3) hours; sharing, the public blog and password change are off for it.
+ *      (the old ZENOS_* names still work)
  */
 import http from 'node:http';
 import fs from 'node:fs';
@@ -17,12 +21,14 @@ import crypto from 'node:crypto';
 import { once } from 'node:events';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
+import { Orto, deriveKeys } from './orto.js';
+import { seedDemo } from './demo.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const NAME = /^[a-z0-9][a-z0-9_.-]{1,31}$/;
 const SEG = /^[\w.:-]{1,128}$/;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json' };
 
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 
@@ -37,23 +43,32 @@ async function readJson(req, limit = 8e6) {
   throw new HttpError(400, 'Body must be a JSON object');
 }
 
+// settings come from ORTO_*; the old ZENOS_* names still work
+const settings = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('ZENOS_')).map(([k, v]) => ['ORTO_' + k.slice(6), v])), ...process.env };
+
 export function createServer(opts = {}) {
-  const env = process.env;
-  const dataDir = path.resolve(opts.dataDir || env.ZENOS_DATA || path.join(process.cwd(), 'data'));
-  const webDir = path.resolve(opts.webDir || env.ZENOS_WEB || (fs.existsSync(path.join(here, '../zenos-web/app')) ? path.join(here, '../zenos-web/app') : path.join(here, 'web')));
-  const registration = opts.registration || env.ZENOS_REGISTRATION || 'open';
-  const maxUpload = Number(opts.maxUpload || env.ZENOS_MAX_UPLOAD || 200 * 1024 * 1024);
-  const quota = Number(opts.quota || env.ZENOS_QUOTA || 5 * 1024 ** 3);
+  const env = settings;
+  const dataDir = path.resolve(opts.dataDir || env.ORTO_DATA || path.join(process.cwd(), 'data'));
+  const webDir = path.resolve(opts.webDir || env.ORTO_WEB || path.join(here, 'web'));
+  const registration = opts.registration || env.ORTO_REGISTRATION || 'open';
+  const maxUpload = Number(opts.maxUpload || env.ORTO_MAX_UPLOAD || 200 * 1024 * 1024);
+  const quota = Number(opts.quota || env.ORTO_QUOTA || 5 * 1024 ** 3);
+  const demoOn = opts.demo ?? !['', '0', 'false', undefined].includes(env.ORTO_DEMO);
+  const demoHours = Number(opts.demoHours || env.ORTO_DEMO_HOURS || 3);
+  const DEMO = { user: 'demo', pass: 'demo', quota: 10 * 1024 ** 2, maxRecords: 1000, maxFiles: 40 };
   const filesDir = path.join(dataDir, 'files');
   fs.mkdirSync(filesDir, { recursive: true });
 
-  const db = new DatabaseSync(path.join(dataDir, 'zenos.db'));
+  // zenos.db is the file name from before the rename: keep using it if that is what is on disk
+  const dbFile = ['orto.db', 'zenos.db'].map(f => path.join(dataDir, f)).find(f => fs.existsSync(f)) || path.join(dataDir, 'orto.db');
+  const db = new DatabaseSync(dbFile);
   db.exec(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, auth_hash TEXT NOT NULL, created_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS records (user_id INTEGER NOT NULL REFERENCES users(id), coll TEXT NOT NULL, soul TEXT NOT NULL, data TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (user_id, coll, soul));
     CREATE TABLE IF NOT EXISTS files (user_id INTEGER NOT NULL REFERENCES users(id), id TEXT NOT NULL, size INTEGER NOT NULL, PRIMARY KEY (user_id, id));
+    CREATE TABLE IF NOT EXISTS shares (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), file_id TEXT, data TEXT, created_at INTEGER NOT NULL);
   `);
   db.prepare('DELETE FROM sessions WHERE expires < ?').run(Date.now());
   const q = {
@@ -68,6 +83,12 @@ export function createServer(opts = {}) {
     addFile: db.prepare('INSERT INTO files VALUES (?, ?, ?)'),
     file: db.prepare('SELECT size FROM files WHERE user_id = ? AND id = ?'),
     delFile: db.prepare('DELETE FROM files WHERE user_id = ? AND id = ?'),
+    setFileSize: db.prepare('UPDATE files SET size = ? WHERE user_id = ? AND id = ?'),
+    addShare: db.prepare('INSERT INTO shares VALUES (?, ?, ?, ?, ?)'),
+    share: db.prepare('SELECT user_id, file_id, data FROM shares WHERE id = ?'),
+    delShare: db.prepare('DELETE FROM shares WHERE id = ? AND user_id = ?'),
+    setAuth: db.prepare('UPDATE users SET auth_hash = ? WHERE id = ?'),
+    dropSessions: db.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?'),
     used: db.prepare('SELECT COALESCE(SUM(size), 0) AS n FROM files WHERE user_id = ?')
   };
 
@@ -92,15 +113,40 @@ export function createServer(opts = {}) {
     return token;
   };
 
+  // Stream the request body to disk (new file, or replace `id` in place). Written to a temp file first so a failed upload never damages the old blob.
+  async function saveUpload(u, req, id = null) {
+    const old = id && q.file.get(u.user_id, id);
+    const limit = demoOn && u.name === DEMO.user ? DEMO.quota : quota;
+    const used = q.used.get(u.user_id).n - (old ? old.size : 0);
+    if (used + Number(req.headers['content-length'] || 0) > limit) throw new HttpError(413, 'Storage quota exceeded');
+    id = id || crypto.randomBytes(12).toString('hex');
+    const dir = path.join(filesDir, String(u.user_id));
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, id), tmp = file + '.part', out = fs.createWriteStream(tmp);
+    let size = 0;
+    try {
+      for await (const chunk of req) {
+        size += chunk.length;
+        if (size > maxUpload || used + size > limit) throw new HttpError(413, 'File too large');
+        if (!out.write(chunk)) await once(out, 'drain');
+      }
+      out.end(); await once(out, 'finish');
+      fs.renameSync(tmp, file);
+    } catch (e) { out.destroy(); fs.rmSync(tmp, { force: true }); throw e; }
+    if (old) q.setFileSize.run(size, u.user_id, id); else q.addFile.run(u.user_id, id, size);
+    return { id, size };
+  }
+  const dropFile = (uid, id) => { q.delFile.run(uid, id); fs.rmSync(path.join(filesDir, String(uid), id), { force: true }); };
+
   async function api(req, res, url) {
     const parts = url.pathname.split('/').slice(2).map(decodeURIComponent); // after /api
     const [a, b, c] = parts;
     const json = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
     for (const p of parts) if (!SEG.test(p)) throw new HttpError(400, 'Bad path');
 
-    if (a === 'health') return json(200, { ok: true, name: 'zenos' });
+    if (a === 'health') return json(200, { ok: true, name: 'orto' });
 
-    if (a === 'config') return json(200, { registration, maxUpload });
+    if (a === 'config') return json(200, { registration, maxUpload, ...(demoOn && { demo: { user: DEMO.user, pass: DEMO.pass, hours: demoHours } }) });
 
     if ((a === 'register' || a === 'login') && req.method === 'POST') {
       const { name: raw, auth } = await readJson(req, 1e4);
@@ -131,7 +177,24 @@ export function createServer(opts = {}) {
       throw new HttpError(404, 'Not found');
     }
 
+    // public share: the server only holds ciphertext, the key lives in the link's #fragment
+    if (a === 's' && b && req.method === 'GET') {
+      const sh = /^[a-f0-9]{32}$/.test(b) && q.share.get(b);
+      if (!sh) throw new HttpError(404, 'Not found');
+      if (!sh.file_id) return json(200, { data: sh.data });
+      const file = path.join(filesDir, String(sh.user_id), sh.file_id);
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': fs.statSync(file).size });
+      return void fs.createReadStream(file).pipe(res);
+    }
+
     const u = authed(req);
+
+    if (demoOn && u.name === DEMO.user) { // the demo account is public: no sharing, no public posts, no password change, bounded size
+      const off = (a === 'password') || (a === 's' && req.method !== 'GET') || (a === 'c' && b === 'posts' && req.method !== 'GET');
+      const full = (a === 'c' && req.method === 'PUT' && db.prepare('SELECT COUNT(*) AS n FROM records WHERE user_id = ?').get(u.user_id).n >= DEMO.maxRecords)
+        || (a === 'files' && req.method === 'POST' && db.prepare('SELECT COUNT(*) AS n FROM files WHERE user_id = ?').get(u.user_id).n >= DEMO.maxFiles);
+      if (off || full) throw new HttpError(403, 'Not available in the demo');
+    }
 
     if (a === 'events') { // live updates of the user's own collections (SSE)
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
@@ -168,35 +231,52 @@ export function createServer(opts = {}) {
       }
     }
 
-    if (a === 'files') {
-      if (req.method === 'POST' && !b) {
-        const used = q.used.get(u.user_id).n;
-        if (used + Number(req.headers['content-length'] || 0) > quota) throw new HttpError(413, 'Storage quota exceeded');
-        const id = crypto.randomBytes(12).toString('hex');
-        const dir = path.join(filesDir, String(u.user_id));
-        fs.mkdirSync(dir, { recursive: true });
-        const file = path.join(dir, id), out = fs.createWriteStream(file);
-        let size = 0;
-        try {
-          for await (const chunk of req) {
-            size += chunk.length;
-            if (size > maxUpload || used + size > quota) throw new HttpError(413, 'File too large');
-            if (!out.write(chunk)) await once(out, 'drain');
-          }
-          out.end(); await once(out, 'finish');
-        } catch (e) { out.destroy(); fs.rmSync(file, { force: true }); throw e; }
-        q.addFile.run(u.user_id, id, size);
-        return json(200, { id, size });
+    if (a === 'password' && req.method === 'POST') { // the client re-encrypted everything first; this swaps the login secret and signs out every other session
+      const { auth, newAuth, check } = await readJson(req, 1e4);
+      for (const v of [auth, newAuth]) if (typeof v !== 'string' || v.length < 32 || v.length > 128) throw new HttpError(400, 'Bad auth key');
+      const key = req.socket.remoteAddress + '|' + u.name;
+      if (throttled(key)) throw new HttpError(429, 'Too many attempts, try again later');
+      const user = q.userByName.get(u.name);
+      if (!crypto.timingSafeEqual(Buffer.from(sha(sha(auth))), Buffer.from(sha(user.auth_hash)))) { failed(key); throw new HttpError(401, 'Wrong password'); }
+      if (check) return json(200, { ok: true, check: true }); // dry run: lets the client fail before it re-encrypts anything
+      q.setAuth.run(sha(newAuth), user.id);
+      q.dropSessions.run(user.id, sha((req.headers.authorization || '').replace(/^Bearer /, '')));
+      return json(200, { ok: true });
+    }
+
+    if (a === 's') {
+      if (req.method === 'POST' && !b) { // JSON {data:"e1..."} = text share, raw bytes = file share
+        const id = crypto.randomBytes(16).toString('hex');
+        if (String(req.headers['content-type'] || '').startsWith('application/json')) {
+          const { data } = await readJson(req);
+          if (typeof data !== 'string' || !data.startsWith('e1.')) throw new HttpError(400, 'data must be ciphertext');
+          q.addShare.run(id, u.user_id, null, data, Date.now());
+        } else {
+          const f = await saveUpload(u, req);
+          q.addShare.run(id, u.user_id, f.id, null, Date.now());
+        }
+        return json(200, { id });
       }
+      if (req.method === 'DELETE' && b) {
+        const sh = q.share.get(b);
+        if (!sh || sh.user_id !== u.user_id) throw new HttpError(404, 'Not found');
+        q.delShare.run(b, u.user_id);
+        if (sh.file_id) dropFile(u.user_id, sh.file_id);
+        return json(200, { id: b, deleted: true });
+      }
+    }
+
+    if (a === 'files') {
+      if (req.method === 'POST' && !b) return json(200, await saveUpload(u, req));
       const f = b && q.file.get(u.user_id, b);
       if (!f) throw new HttpError(404, 'Not found');
-      const file = path.join(filesDir, String(u.user_id), b);
       if (req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': f.size });
-        return void fs.createReadStream(file).pipe(res);
+        return void fs.createReadStream(path.join(filesDir, String(u.user_id), b)).pipe(res);
       }
+      if (req.method === 'PUT') return json(200, await saveUpload(u, req, b));
       if (req.method === 'DELETE') {
-        q.delFile.run(u.user_id, b); fs.rmSync(file, { force: true });
+        dropFile(u.user_id, b);
         return json(200, { id: b, deleted: true });
       }
     }
@@ -206,9 +286,11 @@ export function createServer(opts = {}) {
   function serveStatic(req, res, url) {
     let rel = decodeURIComponent(url.pathname);
     if (rel.startsWith('/blog/')) rel = '/blog.html';
+    else if (rel.startsWith('/s/')) rel = '/share.html';
     if (rel.endsWith('/')) rel += 'index.html';
-    const file = path.normalize(path.join(webDir, rel));
-    if (!file.startsWith(webDir + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
+    // the SDK lives next to this file (not in web/) so the CLI and the browser share one copy
+    const file = rel === '/orto.js' ? path.join(here, 'orto.js') : path.normalize(path.join(webDir, rel));
+    if ((rel !== '/orto.js' && !file.startsWith(webDir + path.sep)) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       return res.end('Not found');
     }
@@ -233,10 +315,49 @@ export function createServer(opts = {}) {
     }
   });
   server.on('close', () => db.close());
+  // Public demo: wipe the demo account and refill it with random fake data through the normal API (so it is encrypted like real data).
+  // Never touches a user named "demo" that has another password: that is a real account.
+  if (demoOn) {
+    let busy = null;
+    const reset = () => busy ||= (async () => {
+      const { name, auth } = await deriveKeys(DEMO.user, DEMO.pass);
+      let user = q.userByName.get(name);
+      if (user && user.auth_hash !== sha(auth)) throw new Error(`a user named "${name}" already exists with another password: not touching it, demo is off`);
+      if (!user) { q.addUser.run(name, sha(auth), Date.now()); user = q.userByName.get(name); }
+      for (const t of ['records', 'shares', 'files', 'sessions']) db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(user.id);
+      fs.rmSync(path.join(filesDir, String(user.id)), { recursive: true, force: true });
+      const os = new Orto({ server: 'http://127.0.0.1:' + server.address().port });
+      try { await os.login(DEMO.user, DEMO.pass); return await seedDemo(os, { hours: demoHours }); } finally { os.close(); }
+    })().finally(() => { busy = null; });
+    server.resetDemo = reset;
+    server.once('listening', () => {
+      server.demoReady = reset();
+      server.demoReady.catch((e) => console.error('demo:', e.message));
+      const t = setInterval(() => reset().catch((e) => console.error('demo:', e.message)), demoHours * 36e5);
+      t.unref(); server.on('close', () => clearInterval(t));
+    });
+  }
+  // Consistent copy of everything: the database (VACUUM INTO is safe while the server runs) plus the uploads folder.
+  // Restore = stop the server and put the copy back as the data folder.
+  server.backup = (out) => {
+    out = path.resolve(out);
+    fs.mkdirSync(out, { recursive: true });
+    const copy = path.join(out, 'orto.db');
+    if (fs.existsSync(copy)) throw new Error(copy + ' already exists');
+    db.prepare('VACUUM INTO ?').run(copy);
+    fs.cpSync(filesDir, path.join(out, 'files'), { recursive: true, filter: (f) => !f.endsWith('.part') });
+    return out;
+  };
   return server;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  if (process.argv[2] === 'backup') { // node server.js backup <folder>
+    if (!process.argv[3]) { console.error('Usage: node server.js backup <folder>'); process.exit(1); }
+    console.log('Backup written to ' + createServer().backup(process.argv[3]));
+    process.exit(0);
+  }
   const port = Number(process.env.PORT || 8787), host = process.env.HOST || '127.0.0.1';
-  createServer().listen(port, host, () => console.log(`ZenOS server on http://${host}:${port}`));
+  createServer().listen(port, host, () => console.log(`Orto server on http://${host}:${port}`));
+  if (!['', '0', 'false', undefined].includes(settings.ORTO_DEMO)) console.log('Demo account on: user demo, password demo (reset every ' + (settings.ORTO_DEMO_HOURS || 3) + ' h)');
 }
