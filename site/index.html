@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orto — Self-hosted Personal Workspace</title>
+  <meta name="description"
+    content="Orto: self-hosted, end-to-end encrypted notes, calendar, bookmarks, tasks, contacts, secrets, files and blog. One small server, one SQLite file, agent-ready.">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <style>
+    :root {
+      --bg: #fff;
+      --fg: #1c1f24;
+      --mut: #575c66;
+      --line: #e5e7eb;
+      --card: #f7f8fa;
+      --acc: #e04b4b;
+      --code: #16171c;
+      --codefg: #e6e8ec
+    }
+
+    @media(prefers-color-scheme:dark) {
+      :root {
+        --bg: #16171c;
+        --fg: #f2f4f7;
+        --mut: #9da3af;
+        --line: #2a2d36;
+        --card: #1d1f25;
+        --code: #0e0f13
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif
+    }
+
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 0 16px 64px
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 0
+    }
+
+    header a {
+      color: var(--mut);
+      text-decoration: none;
+      margin-left: 20px;
+      font-size: 14px
+    }
+
+    header a:first-child {
+      margin: 0;
+      color: var(--fg);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px
+    }
+
+    header img {
+      width: 24px
+    }
+
+    h1 {
+      font-size: clamp(32px, 7vw, 52px);
+      line-height: 1.1;
+      margin: 48px 0 16px;
+      letter-spacing: -.02em
+    }
+
+    h2 {
+      font-size: 22px;
+      margin: 56px 0 16px
+    }
+
+    p {
+      color: var(--mut)
+    }
+
+    .lead {
+      font-size: 19px;
+      max-width: 600px
+    }
+
+    .cta {
+      margin: 28px 0;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      color: var(--fg);
+      text-decoration: none;
+      font-weight: 600
+    }
+
+    .btn.p {
+      background: var(--acc);
+      border-color: var(--acc);
+      color: #fff
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px
+    }
+
+    .card b {
+      display: block;
+      color: var(--fg);
+      margin-bottom: 4px
+    }
+
+    .card code {
+      font-size: 12px;
+      color: var(--acc)
+    }
+
+    .card p {
+      font-size: 14px
+    }
+
+    pre {
+      background: var(--code);
+      color: var(--codefg);
+      border-radius: 10px;
+      padding: 16px;
+      overflow-x: auto;
+      font: 13px/1.6 ui-monospace, Menlo, Consolas, monospace;
+      margin: 12px 0
+    }
+
+    code {
+      font-family: ui-monospace, Menlo, Consolas, monospace
+    }
+
+    ol {
+      padding-left: 20px;
+      color: var(--mut)
+    }
+
+    li {
+      margin: 8px 0
+    }
+
+    li b,
+    ul b {
+      color: var(--fg)
+    }
+
+    .note {
+      border-left: 3px solid var(--acc);
+      padding: 4px 16px;
+      margin: 16px 0
+    }
+
+    footer {
+      border-top: 1px solid var(--line);
+      margin-top: 64px;
+      padding-top: 20px;
+      font-size: 14px;
+      color: var(--mut)
+    }
+
+    footer a {
+      color: var(--mut);
+      margin-right: 16px
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <header>
+      <a href="#"><img src="favicon.svg" alt="">Orto</a>
+      <nav><a href="#what">What</a><a href="#install">Install</a><a href="#use">Use</a><a href="#server">Server</a><a
+          href="https://github.com/scobru/orto">GitHub</a></nav>
+    </header>
+
+    <h1>Your workspace.<br>Your server. Your data.</h1>
+    <p class="lead">Orto is a self-hosted personal workspace: encrypted notes, calendar, bookmarks, tasks, contacts, secrets, files and a
+      public blog, on one small Node server with a single SQLite file. Everything private is encrypted in your browser
+      with a key derived from your username and password; the server only stores ciphertext.</p>
+    <div class="cta">
+      <a class="btn p" href="#install">Run your server</a>
+      <a class="btn" href="#install">Install CLI / SDK</a>
+    </div>
+
+    <h2 id="what">What it does</h2>
+    <div class="grid">
+      <div class="card"><b>🔒 Vault</b><code>vault</code>
+        <p>Markdown notes, tags, checklists. AES-GCM-256 encrypted in your browser; the server sees only ciphertext.</p>
+      </div>
+      <div class="card"><b>📋 Tasks</b><code>tasks</code>
+        <p>Encrypted Kanban board with columns, priorities, due dates, and note cross-links.</p>
+      </div>
+      <div class="card"><b>📅 Calendar</b><code>calendar</code>
+        <p>Encrypted events and agenda, linked to Vault notes.</p>
+      </div>
+      <div class="card"><b>🔖 Bookmarks</b><code>bookmarks</code>
+        <p>Private library with folders and tags. Import/export Brave, Chrome, Firefox HTML.</p>
+      </div>
+      <div class="card"><b>👥 Contacts</b><code>contacts</code>
+        <p>Encrypted address book with tags and an optional Orto username per contact. Import and export vCard (.vcf).</p>
+      </div>
+      <div class="card"><b>🔑 Secrets</b><code>secrets</code>
+        <p>Passwords, API keys and secure notes, encrypted before they leave your browser. Hidden by default, with a password generator.</p>
+      </div>
+      <div class="card"><b>📁 Files</b><code>files</code>
+        <p>Upload any file. Encrypted in the browser, stored on your server's disk, with a per-user quota.</p>
+      </div>
+      <div class="card"><b>🖼️ Photos</b><code>files</code>
+        <p>Thumbnail gallery of your images, encrypted like everything else. Upload from any device with a browser.</p>
+      </div>
+      <div class="card"><b>🔗 Public links</b><code>/s/&lt;id&gt;#key</code>
+        <p>Share a note or file with anyone. The key lives only in the link, so the server cannot read what you share. Revoke any time.</p>
+      </div>
+      <div class="card"><b>💾 Backup</b><code>export / import</code>
+        <p>Export everything in one file, import it anywhere: that is also how you move to another server. Plus <code>node server.js backup</code>.</p>
+      </div>
+      <div class="card"><b>🪶 Blog</b><code>posts</code>
+        <p>Public Markdown blog at <code>/blog/&lt;username&gt;</code>, e.g. <a href="https://zenos.scobrudot.dev/blog/scobru" style="color:var(--acc)">zenos.scobrudot.dev/blog/scobru</a>.</p>
+      </div>
+    </div>
+    <p style="margin-top:16px">One login works in the web app, the CLI and the SDK. AI agents can read and write the same
+      data through the SDK.</p>
+
+    <h2 id="install">Install</h2>
+    <p>Needs Node 22.5+ (built-in SQLite). No npm packages.</p>
+    <pre>git clone https://github.com/scobru/orto.git
+cd orto && npm start          # http://127.0.0.1:8787</pre>
+    <p>Open the URL, pick a username and password; the app offers to create the account on first login. Put it behind
+      HTTPS (Caddy, nginx) before exposing it.</p>
+    <div class="note">
+      <p>The password is the only key to your data. Lose it, lose the data. No recovery.</p>
+    </div>
+
+    <h2 id="use">Use</h2>
+    <ol>
+      <li><b>Log in</b> on your server's web app. Write notes, add events, import bookmarks and contacts, store passwords, upload files, publish posts.</li>
+      <li><b>Script it</b> with the CLI:</li>
+    </ol>
+    <pre>node cli.js vault-write --user alice --pass secret \
+  --title "Idea" --body "- [ ] ship it" --cat research
+node cli.js vault-read  --user alice --pass secret --query idea
+node cli.js bookmarks-import --user alice --pass secret --file bookmarks.html
+node cli.js contacts-import --user alice --pass secret --file contacts.vcf
+node cli.js secret-add --user alice --pass secret --name GitHub --generate
+node cli.js file-upload --user alice --pass secret --file photo.png
+node cli.js blog-publish --user alice --pass secret \
+  --title "Hello" --content "First post" --tags "orto,notes"
+node cli.js blog-read --alias alice</pre>
+    <p>Or the JavaScript SDK:</p>
+    <pre>import Orto from './orto.js';
+const os = new Orto();   // default server: https://zenos.scobrudot.dev
+await os.login('alice', 'secret');
+await os.writeVaultNote({ title: 'Hi', body: 'Encrypted.', cat: 'logs' });
+await os.writeCalendarEvent({ title: 'Standup', start: Date.now() + 36e5 });</pre>
+    <p>Agents: see <a href="https://github.com/scobru/orto/blob/main/llm.txt" style="color:var(--acc)">llm.txt</a> for the integration guide.</p>
+
+    <h2 id="server">Server</h2>
+    <p>One file, <code>server.js</code>: an HTTP API, live updates (SSE), SQLite storage and an uploads folder. Back up
+      the <code>data/</code> folder and you have backed up everything. Settings are environment variables
+      (<code>PORT</code>, <code>ORTO_DATA</code>, <code>ORTO_REGISTRATION=closed</code>, <code>ORTO_QUOTA</code>, ...), listed in the
+      <a href="https://github.com/scobru/orto#run-it" style="color:var(--acc)">README</a>.</p>
+    <p>The operator sees usernames, record ids, timestamps, sizes and IPs, never contents.</p>
+
+    <footer>
+      <a href="app/">Web app</a><a href="https://github.com/scobru/orto">GitHub</a><a
+        href="https://github.com/scobru/orto/blob/main/llm.txt">llm.txt</a>MIT License
+    </footer>
+  </main>
+</body>
+
+</html>

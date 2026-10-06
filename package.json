@@ -1,16 +1,16 @@
 {
-  "name": "zenos",
-  "version": "0.2.0",
-  "description": "Self-hosted ZenOS: encrypted notes, calendar, tasks, bookmarks, contacts, secrets, files and blog on a single SQLite file",
+  "name": "orto",
+  "version": "0.3.0",
+  "description": "Self-hosted Orto: encrypted notes, calendar, tasks, bookmarks, contacts, secrets, files and blog on a single SQLite file",
   "type": "module",
-  "main": "zenos.js",
-  "bin": { "zenos": "cli.js", "zenos-server": "server.js" },
+  "main": "orto.js",
+  "bin": { "orto": "cli.js", "orto-server": "server.js" },
   "engines": { "node": ">=22.5" },
   "scripts": {
     "start": "node --no-warnings server.js",
     "test": "node --no-warnings test.js"
   },
-  "keywords": ["self-hosted", "sqlite", "e2ee", "zenos", "agentic", "autonomous-agents"],
+  "keywords": ["self-hosted", "sqlite", "e2ee", "orto", "agentic", "autonomous-agents"],
   "author": "scobru",
   "license": "MIT"
 }

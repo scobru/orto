@@ -1,6 +1,6 @@
-# ZenOS (self-hosted) — LLM & agent integration guide
+# Orto (self-hosted) — LLM & agent integration guide
 
-ZenOS is a self-hosted personal workspace. One Node server (`server.js`: HTTP API + SQLite file + upload folder) and a dependency-free client SDK (`zenos.js`, Node >= 18 and browsers). No P2P network.
+Orto is a self-hosted personal workspace. One Node server (`server.js`: HTTP API + SQLite file + upload folder) and a dependency-free client SDK (`orto.js`, Node >= 18 and browsers). No P2P network.
 
 ## Architecture
 
@@ -8,7 +8,7 @@ ZenOS is a self-hosted personal workspace. One Node server (`server.js`: HTTP AP
 username + password --PBKDF2 (210k, SHA-256, salt "zenos:v1:<username lowercased>", 512 bits)--+
    first 256 bits -> AES-GCM key   (stays on the client, encrypts every private record)
    last  256 bits -> auth secret   (sent to the server, stored only as sha256 hash)
-client --HTTPS--> server.js --> data/zenos.db (users, sessions, records) + data/files/<user>/<id>
+client --HTTPS--> server.js --> data/orto.db (users, sessions, records) + data/files/<user>/<id>
 ```
 
 - Record = `(user, collection, soul)` -> JSON. Private collections store `{ data: "e1.<base64 iv+ciphertext>", encrypted: true }`; the whole object is inside `data`. The server adds `updatedAt`.
@@ -19,8 +19,8 @@ client --HTTPS--> server.js --> data/zenos.db (users, sessions, records) + data/
 ## SDK
 
 ```js
-import ZenOS from './zenos.js';
-const os = new ZenOS();   // server: option or env ZENOS_SERVER; default https://zenos.scobrudot.dev; '' = same origin in a browser
+import Orto from './orto.js';
+const os = new Orto();   // server: option or env ORTO_SERVER; default https://zenos.scobrudot.dev; '' = same origin in a browser
 await os.login(username, password, { create: false });        // create:true registers; error.status 404 = unknown user, 401 = wrong password
 os.pub                                                        // lowercase username = public handle
 ```
@@ -66,7 +66,7 @@ JSON everywhere; `Authorization: Bearer <token>`.
 
 ## CLI
 
-`node cli.js --help` lists everything. Credentials via `--user/--pass` or `ZENOS_USER/ZENOS_PASS`; server via `--server` or `ZENOS_SERVER`.
+`node cli.js --help` lists everything. Credentials via `--user/--pass` or `ORTO_USER/ORTO_PASS`; server via `--server` or `ORTO_SERVER`.
 
 ## Operating rules for agents
 

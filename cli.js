@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 /**
- * ZenOS CLI Runner for Agents and Scripts
+ * Orto CLI Runner for Agents and Scripts
  */
 
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import ZenOS, { DEFAULT_SERVER, normalizeServer, bookmarkSoul, generatePassword, readShare } from './zenos.js';
+import Orto, { DEFAULT_SERVER, normalizeServer, bookmarkSoul, generatePassword, readShare } from './orto.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -93,11 +93,14 @@ if (process.cwd() !== __dirname) {
   loadEnvFile(path.join(process.cwd(), '.env.local'));
 }
 
+// ORTO_* settings; the old ZENOS_* names still work
+const ev = (name) => process.env['ORTO_' + name] || process.env['ZENOS_' + name];
+
 function requireCredentials() {
-  const user = flags.user || process.env.ZENOS_USER || process.env.ZENOS_USERNAME;
-  const pass = flags.pass || process.env.ZENOS_PASS || process.env.ZENOS_PASSWORD;
+  const user = flags.user || ev('USER') || ev('USERNAME');
+  const pass = flags.pass || ev('PASS') || ev('PASSWORD');
   if (!user || !pass) {
-    throw new Error('User and password required: provide --user and --pass flags, or set ZENOS_USER and ZENOS_PASS in .env file.');
+    throw new Error('User and password required: provide --user and --pass flags, or set ORTO_USER and ORTO_PASS in .env file.');
   }
   return { user, pass };
 }
@@ -169,7 +172,7 @@ function outputResults(items, flags) {
 async function main() {
   if (!cmd || cmd === '--help' || cmd === '-h') {
     console.log(`
-ZenOS CLI — Sovereign Agent Tools
+Orto CLI — tools for scripts and agents
 Usage:
   # Account
   node cli.js register [--user <user> --pass <pass>]   # create the account on the server (if registration is open)
@@ -193,7 +196,7 @@ Usage:
   node cli.js file-delete   [--user <user> --pass <pass>] --id <id>
 
   # Contacts (Encrypted)
-  node cli.js contact-add    [--user <user> --pass <pass>] --name <name> [--email <a,b>] [--phone <a,b>] [--org <org>] [--notes <text>] [--tags <a,b>] [--pub <zenos username>] [--soul <soul>]
+  node cli.js contact-add    [--user <user> --pass <pass>] --name <name> [--email <a,b>] [--phone <a,b>] [--org <org>] [--notes <text>] [--tags <a,b>] [--pub <orto username>] [--soul <soul>]
   node cli.js contact-get    [--user <user> --pass <pass>] --soul <soul>
   node cli.js contact-read   [--user <user> --pass <pass>] [--query <q>] [--tag <tag>] [--table] [--count] [-n <limit> -p <page>]
   node cli.js contact-delete [--user <user> --pass <pass>] --soul <soul>
@@ -257,18 +260,18 @@ Pagination & formatting options (read commands):
 
 Credentials:
   Flags:     --user <user> --pass <pass> (or -u <user>)
-  Env vars:  ZENOS_USER and ZENOS_PASS (or ZENOS_USERNAME / ZENOS_PASSWORD)
+  Env vars:  ORTO_USER and ORTO_PASS (or ORTO_USERNAME / ORTO_PASSWORD)
   Files:     .env in skill directory or current working directory (or --env <path>)
 
 Server (all commands):
-  --server <url>          ZenOS server URL (or ZENOS_SERVER); default ${DEFAULT_SERVER}
+  --server <url>          Orto server URL (or ORTO_SERVER); default ${DEFAULT_SERVER}
   Run your own: node server.js   (see README.md)
 `);
     process.exit(0);
   }
 
-  const server = normalizeServer(typeof flags.server === 'string' ? flags.server : process.env.ZENOS_SERVER || DEFAULT_SERVER);
-  const os = new ZenOS({ server });
+  const server = normalizeServer(typeof flags.server === 'string' ? flags.server : ev('SERVER') || DEFAULT_SERVER);
+  const os = new Orto({ server });
 
   switch (cmd) {
     case 'register': {
@@ -909,13 +912,13 @@ Server (all commands):
     case 'blog-read': {
       if (cmd === 'blog-get' && !flags.id) throw new Error('--id is required.');
       let author = typeof flags.alias === 'string' ? flags.alias : null;
-      const envUser = flags.user || process.env.ZENOS_USER || process.env.ZENOS_USERNAME;
-      const envPass = flags.pass || process.env.ZENOS_PASS || process.env.ZENOS_PASSWORD;
+      const envUser = flags.user || ev('USER') || ev('USERNAME');
+      const envPass = flags.pass || ev('PASS') || ev('PASSWORD');
       if (!author && envUser && envPass) {
         await os.login(envUser, envPass);
         author = os.pub;
       }
-      if (!author) throw new Error('Must provide --alias <username>, or credentials (--user and --pass, or ZENOS_USER and ZENOS_PASS in .env).');
+      if (!author) throw new Error('Must provide --alias <username>, or credentials (--user and --pass, or ORTO_USER and ORTO_PASS in .env).');
 
       if (cmd === 'blog-read') {
         outputResults(await os.readBlogPosts(author), flags);
