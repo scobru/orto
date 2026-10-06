@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * ZenOS server: self-hosted replacement for the ZEN relay network.
+ * ZenOS server: SQLite + file uploads behind a small HTTP API.
  * One SQLite file (records, users, sessions) + a folder of uploaded blobs, zero npm dependencies.
  * Requires Node >= 22.5 (built-in node:sqlite).
  *

@@ -17,7 +17,7 @@ cd zenos && npm start                                 # http://127.0.0.1:8787
 
 Open the URL, type a username and password; the first time, the app offers to create the account.
 
-Docker (includes the web app, data in the `zenos-data` volume): `docker compose up -d`, then open http://localhost:8787. Or: `docker build -t zenos . && docker run -d -p 8787:8787 -v zenos-data:/data zenos`. Once zenos-web is merged: `--build-arg WEB_REF=main`.
+Docker (includes the web app, data in the `zenos-data` volume): `docker compose up -d`, then open http://localhost:8787. Or: `docker build -t zenos . && docker run -d -p 8787:8787 -v zenos-data:/data zenos`.
 
 Put it behind a reverse proxy with HTTPS (Caddy, nginx) before exposing it to the internet.
 
