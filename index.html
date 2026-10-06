@@ -270,7 +270,7 @@ node cli.js blog-publish --user alice --pass secret \
 node cli.js blog-read --alias alice</pre>
     <p>Or the JavaScript SDK:</p>
     <pre>import ZenOS from './zenos.js';
-const os = new ZenOS({ server: 'http://127.0.0.1:8787' });
+const os = new ZenOS();   // default server: https://zenos.scobrudot.dev
 await os.login('alice', 'secret');
 await os.writeVaultNote({ title: 'Hi', body: 'Encrypted.', cat: 'logs' });
 await os.writeCalendarEvent({ title: 'Standup', start: Date.now() + 36e5 });</pre>

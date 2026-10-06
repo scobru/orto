@@ -16,6 +16,8 @@ cd zenos && npm start          # http://127.0.0.1:8787
 
 Open the URL, enter a username and password. If the account does not exist yet the app offers to create it. There is no password recovery.
 
+The app picks its server like this: the one set with the **Server** link on the login screen; otherwise the site it is served from, if that runs a ZenOS server; otherwise `https://zenos.scobrudot.dev`.
+
 To host the app somewhere else (any static host), open it and use the **Server** link on the login screen to point it at your ZenOS server (the server allows cross-origin requests; tokens are sent as `Authorization` headers, not cookies).
 
 ## Apps
