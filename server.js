@@ -7,6 +7,7 @@
  * The server never sees plaintext of private collections: clients encrypt (AES-GCM) before PUT.
  * Only the `posts` collection (public blog) is stored and served in clear.
  *
+ * Backup: node server.js backup <folder>  (database + uploads; restore by stopping the server and using the folder as ZENOS_DATA).
  * Env: PORT (8787), HOST (127.0.0.1), ZENOS_DATA (./data), ZENOS_WEB (../zenos-web/app or ./web),
  *      ZENOS_REGISTRATION=open|closed (open), ZENOS_MAX_UPLOAD bytes (200MB), ZENOS_QUOTA bytes per user (5GB)
  */
@@ -22,7 +23,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const NAME = /^[a-z0-9][a-z0-9_.-]{1,31}$/;
 const SEG = /^[\w.:-]{1,128}$/;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json' };
 
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 
@@ -54,6 +55,7 @@ export function createServer(opts = {}) {
     CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS records (user_id INTEGER NOT NULL REFERENCES users(id), coll TEXT NOT NULL, soul TEXT NOT NULL, data TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (user_id, coll, soul));
     CREATE TABLE IF NOT EXISTS files (user_id INTEGER NOT NULL REFERENCES users(id), id TEXT NOT NULL, size INTEGER NOT NULL, PRIMARY KEY (user_id, id));
+    CREATE TABLE IF NOT EXISTS shares (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), file_id TEXT, data TEXT, created_at INTEGER NOT NULL);
   `);
   db.prepare('DELETE FROM sessions WHERE expires < ?').run(Date.now());
   const q = {
@@ -68,6 +70,12 @@ export function createServer(opts = {}) {
     addFile: db.prepare('INSERT INTO files VALUES (?, ?, ?)'),
     file: db.prepare('SELECT size FROM files WHERE user_id = ? AND id = ?'),
     delFile: db.prepare('DELETE FROM files WHERE user_id = ? AND id = ?'),
+    setFileSize: db.prepare('UPDATE files SET size = ? WHERE user_id = ? AND id = ?'),
+    addShare: db.prepare('INSERT INTO shares VALUES (?, ?, ?, ?, ?)'),
+    share: db.prepare('SELECT user_id, file_id, data FROM shares WHERE id = ?'),
+    delShare: db.prepare('DELETE FROM shares WHERE id = ? AND user_id = ?'),
+    setAuth: db.prepare('UPDATE users SET auth_hash = ? WHERE id = ?'),
+    dropSessions: db.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?'),
     used: db.prepare('SELECT COALESCE(SUM(size), 0) AS n FROM files WHERE user_id = ?')
   };
 
@@ -91,6 +99,30 @@ export function createServer(opts = {}) {
     q.addSession.run(sha(token), uid, Date.now() + 30 * 864e5);
     return token;
   };
+
+  // Stream the request body to disk (new file, or replace `id` in place). Written to a temp file first so a failed upload never damages the old blob.
+  async function saveUpload(u, req, id = null) {
+    const old = id && q.file.get(u.user_id, id);
+    const used = q.used.get(u.user_id).n - (old ? old.size : 0);
+    if (used + Number(req.headers['content-length'] || 0) > quota) throw new HttpError(413, 'Storage quota exceeded');
+    id = id || crypto.randomBytes(12).toString('hex');
+    const dir = path.join(filesDir, String(u.user_id));
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, id), tmp = file + '.part', out = fs.createWriteStream(tmp);
+    let size = 0;
+    try {
+      for await (const chunk of req) {
+        size += chunk.length;
+        if (size > maxUpload || used + size > quota) throw new HttpError(413, 'File too large');
+        if (!out.write(chunk)) await once(out, 'drain');
+      }
+      out.end(); await once(out, 'finish');
+      fs.renameSync(tmp, file);
+    } catch (e) { out.destroy(); fs.rmSync(tmp, { force: true }); throw e; }
+    if (old) q.setFileSize.run(size, u.user_id, id); else q.addFile.run(u.user_id, id, size);
+    return { id, size };
+  }
+  const dropFile = (uid, id) => { q.delFile.run(uid, id); fs.rmSync(path.join(filesDir, String(uid), id), { force: true }); };
 
   async function api(req, res, url) {
     const parts = url.pathname.split('/').slice(2).map(decodeURIComponent); // after /api
@@ -131,6 +163,16 @@ export function createServer(opts = {}) {
       throw new HttpError(404, 'Not found');
     }
 
+    // public share: the server only holds ciphertext, the key lives in the link's #fragment
+    if (a === 's' && b && req.method === 'GET') {
+      const sh = /^[a-f0-9]{32}$/.test(b) && q.share.get(b);
+      if (!sh) throw new HttpError(404, 'Not found');
+      if (!sh.file_id) return json(200, { data: sh.data });
+      const file = path.join(filesDir, String(sh.user_id), sh.file_id);
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': fs.statSync(file).size });
+      return void fs.createReadStream(file).pipe(res);
+    }
+
     const u = authed(req);
 
     if (a === 'events') { // live updates of the user's own collections (SSE)
@@ -168,35 +210,51 @@ export function createServer(opts = {}) {
       }
     }
 
-    if (a === 'files') {
-      if (req.method === 'POST' && !b) {
-        const used = q.used.get(u.user_id).n;
-        if (used + Number(req.headers['content-length'] || 0) > quota) throw new HttpError(413, 'Storage quota exceeded');
-        const id = crypto.randomBytes(12).toString('hex');
-        const dir = path.join(filesDir, String(u.user_id));
-        fs.mkdirSync(dir, { recursive: true });
-        const file = path.join(dir, id), out = fs.createWriteStream(file);
-        let size = 0;
-        try {
-          for await (const chunk of req) {
-            size += chunk.length;
-            if (size > maxUpload || used + size > quota) throw new HttpError(413, 'File too large');
-            if (!out.write(chunk)) await once(out, 'drain');
-          }
-          out.end(); await once(out, 'finish');
-        } catch (e) { out.destroy(); fs.rmSync(file, { force: true }); throw e; }
-        q.addFile.run(u.user_id, id, size);
-        return json(200, { id, size });
+    if (a === 'password' && req.method === 'POST') { // the client re-encrypted everything first; this swaps the login secret and signs out every other session
+      const { auth, newAuth } = await readJson(req, 1e4);
+      for (const v of [auth, newAuth]) if (typeof v !== 'string' || v.length < 32 || v.length > 128) throw new HttpError(400, 'Bad auth key');
+      const key = req.socket.remoteAddress + '|' + u.name;
+      if (throttled(key)) throw new HttpError(429, 'Too many attempts, try again later');
+      const user = q.userByName.get(u.name);
+      if (!crypto.timingSafeEqual(Buffer.from(sha(sha(auth))), Buffer.from(sha(user.auth_hash)))) { failed(key); throw new HttpError(401, 'Wrong password'); }
+      q.setAuth.run(sha(newAuth), user.id);
+      q.dropSessions.run(user.id, sha((req.headers.authorization || '').replace(/^Bearer /, '')));
+      return json(200, { ok: true });
+    }
+
+    if (a === 's') {
+      if (req.method === 'POST' && !b) { // JSON {data:"e1..."} = text share, raw bytes = file share
+        const id = crypto.randomBytes(16).toString('hex');
+        if (String(req.headers['content-type'] || '').startsWith('application/json')) {
+          const { data } = await readJson(req);
+          if (typeof data !== 'string' || !data.startsWith('e1.')) throw new HttpError(400, 'data must be ciphertext');
+          q.addShare.run(id, u.user_id, null, data, Date.now());
+        } else {
+          const f = await saveUpload(u, req);
+          q.addShare.run(id, u.user_id, f.id, null, Date.now());
+        }
+        return json(200, { id });
       }
+      if (req.method === 'DELETE' && b) {
+        const sh = q.share.get(b);
+        if (!sh || sh.user_id !== u.user_id) throw new HttpError(404, 'Not found');
+        q.delShare.run(b, u.user_id);
+        if (sh.file_id) dropFile(u.user_id, sh.file_id);
+        return json(200, { id: b, deleted: true });
+      }
+    }
+
+    if (a === 'files') {
+      if (req.method === 'POST' && !b) return json(200, await saveUpload(u, req));
       const f = b && q.file.get(u.user_id, b);
       if (!f) throw new HttpError(404, 'Not found');
-      const file = path.join(filesDir, String(u.user_id), b);
       if (req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': f.size });
-        return void fs.createReadStream(file).pipe(res);
+        return void fs.createReadStream(path.join(filesDir, String(u.user_id), b)).pipe(res);
       }
+      if (req.method === 'PUT') return json(200, await saveUpload(u, req, b));
       if (req.method === 'DELETE') {
-        q.delFile.run(u.user_id, b); fs.rmSync(file, { force: true });
+        dropFile(u.user_id, b);
         return json(200, { id: b, deleted: true });
       }
     }
@@ -206,6 +264,7 @@ export function createServer(opts = {}) {
   function serveStatic(req, res, url) {
     let rel = decodeURIComponent(url.pathname);
     if (rel.startsWith('/blog/')) rel = '/blog.html';
+    else if (rel.startsWith('/s/')) rel = '/share.html';
     if (rel.endsWith('/')) rel += 'index.html';
     const file = path.normalize(path.join(webDir, rel));
     if (!file.startsWith(webDir + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
@@ -233,10 +292,26 @@ export function createServer(opts = {}) {
     }
   });
   server.on('close', () => db.close());
+  // Consistent copy of everything: the database (VACUUM INTO is safe while the server runs) plus the uploads folder.
+  // Restore = stop the server and put the copy back as the data folder.
+  server.backup = (out) => {
+    out = path.resolve(out);
+    fs.mkdirSync(out, { recursive: true });
+    const dbFile = path.join(out, 'zenos.db');
+    if (fs.existsSync(dbFile)) throw new Error(dbFile + ' already exists');
+    db.prepare('VACUUM INTO ?').run(dbFile);
+    fs.cpSync(filesDir, path.join(out, 'files'), { recursive: true, filter: (f) => !f.endsWith('.part') });
+    return out;
+  };
   return server;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  if (process.argv[2] === 'backup') { // node server.js backup <folder>
+    if (!process.argv[3]) { console.error('Usage: node server.js backup <folder>'); process.exit(1); }
+    console.log('Backup written to ' + createServer().backup(process.argv[3]));
+    process.exit(0);
+  }
   const port = Number(process.env.PORT || 8787), host = process.env.HOST || '127.0.0.1';
   createServer().listen(port, host, () => console.log(`ZenOS server on http://${host}:${port}`));
 }

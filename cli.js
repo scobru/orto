@@ -7,7 +7,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import ZenOS, { DEFAULT_SERVER, normalizeServer, bookmarkSoul, generatePassword } from './zenos.js';
+import ZenOS, { DEFAULT_SERVER, normalizeServer, bookmarkSoul, generatePassword, readShare } from './zenos.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -175,6 +175,17 @@ Usage:
   node cli.js register [--user <user> --pass <pass>]   # create the account on the server (if registration is open)
   node cli.js identity [--user <user> --pass <pass>]   # check login, print username + server
 
+  node cli.js password-change [--user <user> --pass <pass>] --new <new password>   # re-encrypts everything; export first
+  node cli.js export [--user <user> --pass <pass>] --out <backup.json> [--no-files]    # everything decrypted, for backup/migration (keep it safe)
+  node cli.js import [--user <user> --pass <pass>] --file <backup.json>                # into this account, on this server
+
+  # Public share links (the key is in the #fragment, the server cannot read them)
+  node cli.js share-note   [--user <user> --pass <pass>] --soul <soul>
+  node cli.js share-file   [--user <user> --pass <pass>] --id <id>
+  node cli.js share-list   [--user <user> --pass <pass>]
+  node cli.js share-revoke [--user <user> --pass <pass>] --id <id>
+  node cli.js share-read   --url <link> [--out <path>]                                # no login needed
+
   # File storage (encrypted client-side unless --plain)
   node cli.js file-upload   [--user <user> --pass <pass>] --file <path> [--plain]
   node cli.js file-list     [--user <user> --pass <pass>]
@@ -273,6 +284,75 @@ Server (all commands):
       await os.login(user, pass);
       console.log(JSON.stringify({ username: os.username, blog: `${server}/blog/${os.pub}`, server }, null, 2));
       process.exit(0);
+      break;
+    }
+
+    case 'password-change': {
+      if (typeof flags.new !== 'string') throw new Error('--new <new password> is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      console.log(JSON.stringify(await os.changePassword(flags.new), null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'export': {
+      if (typeof flags.out !== 'string') throw new Error('--out <file.json> is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const dump = await os.exportAll({ files: !flags['no-files'] });
+      fs.writeFileSync(flags.out, JSON.stringify(dump), { mode: 0o600 }); // plaintext of everything: owner-only
+      console.log(JSON.stringify({ out: flags.out, records: Object.values(dump.collections).flat().length, posts: dump.posts.length, files: Object.keys(dump.files).length }, null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'import': {
+      if (typeof flags.file !== 'string') throw new Error('--file <backup.json> is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      console.log(JSON.stringify(await os.importAll(JSON.parse(fs.readFileSync(flags.file, 'utf8'))), null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'share-note':
+    case 'share-file': {
+      const k = cmd === 'share-note' ? 'soul' : 'id';
+      if (typeof flags[k] !== 'string') throw new Error(`--${k} is required.`);
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      console.log(JSON.stringify(await (cmd === 'share-note' ? os.shareNote(flags.soul) : os.shareFile(flags.id)), null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'share-list': {
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      console.log(JSON.stringify(await os.listShares(), null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'share-revoke': {
+      if (typeof flags.id !== 'string') throw new Error('--id is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      console.log(JSON.stringify(await os.unshare(flags.id), null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'share-read': {
+      if (typeof flags.url !== 'string') throw new Error('--url is required.');
+      const r = await readShare(flags.url);
+      if (r.kind === 'file') {
+        if (typeof flags.out !== 'string') throw new Error('--out <path> is required for a shared file.');
+        fs.writeFileSync(flags.out, r.data);
+        console.log(JSON.stringify({ kind: 'file', name: r.name, type: r.type, out: flags.out }, null, 2));
+      } else console.log(JSON.stringify(r, null, 2));
+      safeExit(0);
       break;
     }
 

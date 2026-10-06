@@ -24,11 +24,18 @@ Put it behind a reverse proxy with HTTPS (Caddy, nginx) before exposing it to th
 | Env var | Default | |
 |---|---|---|
 | `PORT` / `HOST` | `8787` / `127.0.0.1` | listen address (`0.0.0.0` in Docker) |
-| `ZENOS_DATA` | `./data` | holds `zenos.db` and `files/` — **back this folder up** |
+| `ZENOS_DATA` | `./data` | holds `zenos.db` and `files/` — **back it up** (see below) |
 | `ZENOS_WEB` | `../zenos-web/app` | static files to serve |
 | `ZENOS_REGISTRATION` | `open` | `closed` once your accounts exist |
 | `ZENOS_MAX_UPLOAD` | 200 MB | per file, bytes |
 | `ZENOS_QUOTA` | 5 GB | per user, bytes |
+
+## Backup, migration, sharing
+
+- **Server backup**: `node server.js backup <folder>` writes a consistent copy of the database and the uploads (safe while the server runs). Restore: stop the server and use that folder as `ZENOS_DATA`.
+- **Your own export**: `node cli.js export --out me.json` (or **Settings > Export** in the web app) saves everything decrypted; `node cli.js import --file me.json` loads it into any account on any server. That is also how you move to another server. The file is plain text: keep it safe.
+- **Public links**: `node cli.js share-note --soul <soul>` / `share-file --id <id>` (or **Share** in the web app) give `https://<server>/s/<id>#<key>`. The item is encrypted with a fresh key that lives only in the `#fragment`, so the server never sees it; anyone with the link can read it. `share-revoke` deletes it.
+- **Change password**: `node cli.js password-change --new '…'` (or Settings). It re-encrypts everything, then signs out your other sessions. Export first.
 
 ## How it stays private
 
@@ -66,7 +73,7 @@ const bytes = await os.downloadFile(up.id);
 os.onTask((task, soul, deleted) => console.log(task, deleted));             // live updates (SSE)
 ```
 
-Collections: `Vault`, `CalendarEvent`, `Task`, `Bookmark`, `Contact`, `Secret` each have `write*`, `get*`, `read*`, `delete*`, `on*`; plus `uploadFile/listFiles/downloadFile/deleteFile` and `publishBlogPost/readBlogPosts/getBlogPost/deleteBlogPost/onPost`. See [llm.txt](llm.txt).
+Collections: `Vault`, `CalendarEvent`, `Task`, `Bookmark`, `Contact`, `Secret` each have `write*`, `get*`, `read*`, `delete*`, `on*`; plus `uploadFile/listFiles/downloadFile/deleteFile`, `shareNote/shareFile/listShares/unshare` (+ `readShare(link)`), `exportAll/importAll/changePassword` and `publishBlogPost/readBlogPosts/getBlogPost/deleteBlogPost/onPost`. See [llm.txt](llm.txt).
 
 ## HTTP API
 
@@ -77,13 +84,16 @@ All JSON. `Authorization: Bearer <token>` from `POST /api/login` or `/api/regist
 | `GET /api/c/:collection` | list records |
 | `GET/PUT/DELETE /api/c/:collection/:soul` | one record (PUT body is stored as-is; clients send `{data: <ciphertext>}`) |
 | `GET /api/events` | server-sent events for your collections |
-| `POST /api/files` (raw body), `GET/DELETE /api/files/:id` | blobs |
+| `POST /api/files` (raw body), `GET/PUT/DELETE /api/files/:id` | blobs (PUT replaces in place) |
+| `POST /api/s` (`{data}` JSON or raw bytes), `DELETE /api/s/:id` | create / revoke a public share |
+| `GET /api/s/:id` | public ciphertext of a share, no auth (`/s/:id#key` is the page) |
+| `POST /api/password` (`{auth, newAuth}`) | swap the login secret after re-encrypting |
 | `GET /api/u/:name`, `GET /api/u/:name/posts` | public profile and blog, no auth |
 | `GET /blog/:name` | public blog page (e.g. https://zenos.scobrudot.dev/blog/scobru) |
 
 ## Tests
 
-`npm test` starts a throwaway server on a temp SQLite file and runs the whole SDK against it (encryption at rest, isolation between users, files, live events).
+`npm test` starts a throwaway server on a temp SQLite file and runs the whole SDK against it (encryption at rest, isolation between users, files, live events, share links, export/import, password change, backup).
 
 ## Coming from the ZEN version
 

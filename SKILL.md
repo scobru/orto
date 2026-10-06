@@ -88,6 +88,15 @@ Usage:
   node cli.js bookmarks-export [--user <user> --pass <pass>] [--folder <path>] [--file <out.html>]
   node cli.js bookmarks-update [--user <user> --pass <pass>] --file <changes.json>  # [{soul, title?, folder?, tags?}]
 
+  # Account, backup, sharing
+  node cli.js password-change [--user <user> --pass <pass>] --new <new password>   # re-encrypts everything; export first
+  node cli.js export [--user <user> --pass <pass>] --out <backup.json> [--no-files]   # plaintext of everything: store safely
+  node cli.js import [--user <user> --pass <pass>] --file <backup.json>
+  node cli.js share-note   [--user <user> --pass <pass>] --soul <soul>    # prints a public link; key is in the #fragment
+  node cli.js share-file   [--user <user> --pass <pass>] --id <id>
+  node cli.js share-list | share-revoke --id <id>  [--user <user> --pass <pass>]
+  node cli.js share-read   --url <link> [--out <path>]                      # no login needed
+
   # smollog (Public Verifiable Blog)
   node cli.js blog-publish [--user <user> --pass <pass>] --title <title> --content <content> [--tags <tags>] [--id <id>]
   node cli.js blog-get     --id <id> (--alias <username> | --user <user> --pass <pass>)
@@ -118,7 +127,7 @@ await os.readTasks({ status: 'todo' });
 await os.uploadFile(bytes, 'name.ext');           // encrypted client-side
 await os.publishBlogPost({ title, content, tags });
 ```
-Full method list: `llm.txt`. Live updates: `os.onVaultNote/onTask/...(cb)` (server-sent events); call `os.close()` to end the stream before exiting.
+Sharing, export/import and `changePassword` are in `llm.txt` too; server backup is `node server.js backup <folder>`. Full method list: `llm.txt`. Live updates: `os.onVaultNote/onTask/...(cb)` (server-sent events); call `os.close()` to end the stream before exiting.
 
 ## Public blog
 
