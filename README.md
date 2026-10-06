@@ -1,48 +1,43 @@
-# 🌌 ZenOS Web — Sovereign Decentralized Personal Workspace
+# ZenOS Web
 
-The official web desktop and graphical interface for **ZenOS** — a zero-backend, multi-app decentralized operating system powered by the **ZEN** P2P graph database and cryptographic sovereign identity.
+The browser front end of [ZenOS](https://github.com/scobru/zenos) (self-hosted): encrypted notes, tasks (Kanban), calendar, bookmarks, contacts, secrets, files and a public blog.
 
-ZenOS Web runs 100% serverless inside the browser with zero build steps and zero dependencies.
+It is a static page, `app/index.html`, plus the SDK `app/zenos.js`. It talks to a ZenOS server over HTTP; all encryption (AES-GCM-256, key derived from username + password with PBKDF2) happens in the browser, so the server only stores ciphertext.
 
----
+## Run
 
-## 🏛️ Integrated Apps & Modules
+The server hosts this app itself. Clone both repos side by side and start it:
 
-All applications within ZenOS are anchored under the user's sovereign cryptographic master keypair (`~{pub}`):
+```bash
+git clone https://github.com/scobru/zenos.git
+git clone https://github.com/scobru/zenos-web.git
+cd zenos && npm start          # http://127.0.0.1:8787
+```
 
-- 🔒 **Vault (`~{pub}/vault`)**: Zero-knowledge, Bear-style Markdown notes with client-side AES-GCM-256 encryption. Relays only see blind ciphertexts.
-- 📋 **Tasks & Kanban (`~{pub}/tasks`)**: End-to-end encrypted Kanban board with drag-and-drop columns (To Do, In Progress, Blocked, Done), priority badges, due dates, tags, and bidirectional linking to Vault notes.
-- 📅 **Calendar (`~{pub}/calendar`)**: Sovereign decentralized calendar with event scheduling, agenda views, and bidirectional linking to Vault notes.
-- 🔖 **Bookmarks (`~{pub}/bookmarks`)**: Private encrypted bookmark manager with browser Netscape HTML import and export.
-- 👥 **Contacts (`~{pub}/contacts`)**: Encrypted address book with tags and vCard import/export.
-- 🔑 **Secrets (`~{pub}/secrets`)**: Encrypted passwords, API keys and secure notes. Values are hidden until you press Show or Copy; the editor has a CSPRNG password generator.
-- 📁 **Files (`~{pub}/files`)**: Encrypted file storage on IPFS through a [Delay](https://github.com/scobru/delay) relay. The app checks that a configured relay is a Delay relay (plain ZEN relays have no IPFS); the relay token is kept in `localStorage` encrypted with your key.
-- 🪶 **Blog / smollog (`~{pub}/posts`)**: Public, cryptographically signed microblog and article publisher.
-- ✨ **Example entries**: an *Examples* button in Contacts, Secrets, Bookmarks, Tasks and Calendar adds a few fake entries to try things out (fixed ids, so clicking twice never duplicates; the blog is excluded because posts are public).
-- 🤖 **Agent Ready**: Fully interoperable with autonomous AI agents orchestrating via the [ZenOS Core SDK & CLI](https://github.com/scobru/zenos).
+Open the URL, enter a username and password. If the account does not exist yet the app offers to create it. There is no password recovery.
 
----
+To host the app somewhere else (any static host), open it and use the **Server** link on the login screen to point it at your ZenOS server (the server allows cross-origin requests; tokens are sent as `Authorization` headers, not cookies).
 
-## 🚀 Key Features
+## Apps
 
-- 🌐 **100% Serverless**: No backend, no SQL database, no configuration. Served strictly as static HTML, CSS, and JS.
-- ⚡ **Real-Time P2P Sync**: Automatically updates and syncs encrypted records across peers in real-time via ZEN relays.
-- 🔐 **End-to-End Encryption**: All private data (notes, events, bookmarks, contacts, secrets, files) is encrypted locally in-browser using standard Web Crypto API before touching the network.
-- 🎨 **Crafted Bear Aesthetics**: Curated light/dark themes, Outfit & IBM Plex Mono typography, responsive three-column grid, and fluid micro-animations.
-- 📦 **Zero Dependencies**: Zero build tools, zero npm packages. Loads everything instantly via CDN (Unpkg & Tabler Icons).
+- **Vault**: Markdown notes with tags and checklists
+- **Tasks**: Kanban board (To Do / In Progress / Blocked / Done), priorities, due dates, links to notes
+- **Calendar**: events and agenda, linked to notes
+- **Bookmarks**: folders, tags, Brave/Chrome/Firefox HTML import and export
+- **Contacts**: address book with vCard import and export
+- **Secrets**: passwords, API keys, secure notes, password generator
+- **Files**: upload and download, encrypted in the browser before they leave it
+- **Blog**: public Markdown posts at `/blog/<username>`
 
----
+Contacts, Secrets, Bookmarks, Tasks and Calendar have an *Examples* button that adds a few fake entries to try things out.
 
-## 🛠️ Setup & Deployment
+## Layout
 
-1. Clone or copy files to your static hosting directory:
-   ```bash
-   git clone https://github.com/scobru/zenvault.git
-   ```
-2. Open `index.html` directly in any modern browser, or deploy the folder to GitHub Pages, Netlify, Vercel, or any static host.
+- `app/index.html`: the app
+- `app/zenos.js`: SDK (a copy of `zenos/zenos.js`; keep them in sync)
+- `app/blog.html`: public blog page served at `/blog/<username>`
+- `index.html`: project landing page
 
----
+## License
 
-## 📄 License
-
-MIT License.
+MIT

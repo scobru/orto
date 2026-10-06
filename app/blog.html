@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Blog</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 17px/1.6 system-ui, sans-serif; max-width: 42rem; margin: 0 auto; padding: 24px 16px 64px; }
+  article { margin: 0 0 3rem; }
+  h1 { font-size: 1.4rem; margin-bottom: 2rem; }
+  h2 { margin-bottom: .2rem; }
+  small { opacity: .6; }
+  img { max-width: 100%; }
+</style>
+</head>
+<body>
+<h1 id="who"></h1>
+<main id="posts">Loading…</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<script>
+  // /blog/<username>[?post=<id>]: public posts of one user, markdown rendered and sanitized
+  const name = decodeURIComponent(location.pathname.split('/')[2] || '');
+  const only = new URLSearchParams(location.search).get('post');
+  document.getElementById('who').textContent = name;
+  document.title = name + ' · Blog';
+  fetch('/api/u/' + encodeURIComponent(name) + '/posts').then(r => r.ok ? r.json() : Promise.reject()).then(list => {
+    const posts = list.filter(p => !p.deleted && (!only || (p.id || p.soul) === only)).sort((a, b) => b.createdAt - a.createdAt);
+    const root = document.getElementById('posts');
+    root.textContent = posts.length ? '' : 'No posts.';
+    for (const p of posts) {
+      const el = document.createElement('article');
+      const h = document.createElement('h2'); h.textContent = p.title;
+      const d = document.createElement('small'); d.textContent = new Date(p.createdAt).toLocaleDateString();
+      const body = document.createElement('div'); body.innerHTML = DOMPurify.sanitize(marked.parse(p.content || ''));
+      el.append(h, d, body); root.append(el);
+    }
+  }).catch(() => { document.getElementById('posts').textContent = 'Not found.'; });
+</script>
+</body>
+</html>

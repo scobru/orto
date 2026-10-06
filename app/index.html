@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ZenOS — Sovereign Personal Workspace</title>
   <meta name="description"
-    content="ZenOS - Sovereign Decentralized Personal Workspace & Knowledge Base powered by ZEN P2P.">
+    content="ZenOS - self-hosted personal workspace: end-to-end encrypted notes, tasks, calendar, bookmarks, contacts, secrets, files and blog.">
   <link rel="icon" type="image/svg+xml" href="../favicon.svg">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1550,7 +1550,7 @@
 
 
     /* ════════════════════════════════════════════════════════════
-       Calendar view (encrypted events at ~pub/calendar)
+       Calendar view (encrypted events at calendar collection)
     ════════════════════════════════════════════════════════════ */
     .calendar-pane {
       flex: 1;
@@ -1906,7 +1906,7 @@
     }
 
 
-    /* ── Blog view (smollog posts at ~pub/posts) ── */
+    /* ── Blog view (public posts) ── */
     .blog-pane {
       flex: 1;
       display: none;
@@ -2036,7 +2036,7 @@
     }
 
 
-    /* ── Bookmarks view (encrypted, ~pub/bookmarks) ── */
+    /* ── Bookmarks view (encrypted, bookmarks collection) ── */
     .bm-pane {
       flex: 1;
       display: none;
@@ -2188,13 +2188,13 @@
     .bm-bar select { background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 7px; padding: 7px 10px; font: inherit; font-size: 14px; }
     .sec-val { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--text-secondary); max-width: 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-    /* ── Files view (IPFS via Delay relay) reuses the bookmarks layout ── */
+    /* ── Files view (encrypted uploads) reuses the bookmarks layout ── */
     body.files-mode #files-pane { display: flex; }
     body.files-mode .note-list-pane,
     body.files-mode .editor-pane { display: none !important; }
     .file-item small { display: block; color: var(--text-muted); }
 
-    /* ── Tasks & Kanban view (encrypted, ~pub/tasks) ── */
+    /* ── Tasks & Kanban view (encrypted, tasks collection) ── */
     .tasks-pane {
       flex: 1;
       display: none;
@@ -2676,7 +2676,7 @@
           <i class="ti ti-lock-open"></i> Unlock ZenOS
         </button>
       </div>
-      <p class="login-footer-desc"><a href="#" onclick="relaysConfig();return false" style="color:inherit">Relays</a></p>
+      <p class="login-footer-desc"><a href="#" onclick="serverConfig();return false" style="color:inherit">Server</a></p>
       <p class="login-footer-desc">
         <i class="ti ti-shield-check"></i> AES-GCM 256 keys derived locally in your browser. Master credentials never
         leave your device.
@@ -2810,7 +2810,7 @@
       <div class="sidebar-footer">
         <div class="sync-status-badge">
           <span class="status-dot" id="status-ping"></span>
-          <span id="status-footer-text">Connecting P2P...</span>
+          <span id="status-footer-text">Connecting...</span>
         </div>
         <div class="sidebar-actions-row">
           <button class="sidebar-btn" onclick="toggleTheme()" title="Switch Light/Dark Theme">
@@ -2914,11 +2914,10 @@
     <!-- Blog pane: the user's public smollog posts, with write support -->
     <section class="blog-pane" id="blog-pane">
       <div class="blog-list">
-        <div class="blog-list-head"><span>Blog</span><a id="blog-open-link" target="_blank" rel="noopener">Open in
-            smollog ↗</a></div>
+        <div class="blog-list-head"><span>Blog</span><a id="blog-open-link" target="_blank" rel="noopener">Open public
+            page ↗</a></div>
         <div style="display:flex;gap:8px;padding:8px 12px">
           <button class="cal-btn primary" onclick="blogEdit()"><i class="ti ti-plus"></i> New post</button>
-          <button class="cal-btn" onclick="blogAlias()" title="Make smollog.vercel.app/<alias> point to you">Alias</button>
         </div>
         <div id="blog-items"></div>
       </div>
@@ -2945,7 +2944,7 @@
       </div>
     </section>
 
-    <!-- Contacts pane: encrypted address book at ~pub/contacts, vCard import/export -->
+    <!-- Contacts pane: encrypted address book at contacts collection, vCard import/export -->
     <section class="bm-pane" id="contacts-pane">
       <div class="bm-main">
         <div class="bm-bar">
@@ -2960,7 +2959,7 @@
       </div>
     </section>
 
-    <!-- Secrets pane: encrypted passwords, API keys and notes at ~pub/secrets -->
+    <!-- Secrets pane: encrypted passwords, API keys and notes at secrets collection -->
     <section class="bm-pane" id="secrets-pane">
       <div class="bm-main">
         <div class="bm-bar">
@@ -2975,13 +2974,11 @@
       </div>
     </section>
 
-    <!-- Files pane: IPFS storage through a Delay relay (plain ZEN relays have none) -->
+    <!-- Files pane: uploads stored on the ZenOS server, encrypted in the browser -->
     <section class="bm-pane" id="files-pane">
       <div class="bm-main">
         <div class="bm-bar">
           <span id="files-status" style="flex:1;font-size:13px;color:var(--text-muted)"></span>
-          <button class="cal-btn" onclick="relaysConfig()" title="Choose which relays to sync with"><i class="ti ti-server"></i> Relays</button>
-          <button class="cal-btn" onclick="filesToken()" title="Delay admin token or API key"><i class="ti ti-key"></i> Token</button>
           <button class="cal-btn primary" onclick="document.getElementById('files-input').click()"><i class="ti ti-upload"></i> Upload</button>
           <input type="file" id="files-input" class="hidden" onchange="filesUpload(this)">
         </div>
@@ -2989,7 +2986,7 @@
       </div>
     </section>
 
-    <!-- Tasks pane: encrypted Kanban board at ~pub/tasks -->
+    <!-- Tasks pane: encrypted Kanban board at tasks collection -->
     <section class="tasks-pane" id="tasks-pane">
       <div class="tasks-bar">
         <input type="search" id="tasks-search" placeholder="Search tasks or #tag" oninput="taskSearch(this.value)">
@@ -3166,15 +3163,14 @@
     window.toggleTheme = toggleTheme;
   </script>
 
-  <!-- P2P and Encryption Module -->
+  <!-- App logic: talks to the ZenOS server; all encryption happens here -->
   <script type="module">
-    import { ZenOS, normalizeRelay, contactsToVcf, generatePassword } from './zenos.js';
-    import ZEN from './zen.min.js';
-    import { deriveMasterPair } from './identity.js';
+    import { ZenOS, normalizeServer, contactsToVcf, generatePassword } from './zenos.js';
 
     let os;
-    let zen;
     let pair;
+    // call sites written for ZEN's encrypt(value, pair) keep working on top of the SDK's AES-GCM
+    const ZEN = { encrypt: (v) => os.encrypt(v), decrypt: (c) => os.decrypt(c) };
     let isAuthenticated = false;
 
     // Local decrypted notes storage
@@ -3185,31 +3181,19 @@
     let searchQuery = '';
     let autoSaveTimeout = null;
 
-    // Relay list
-    // defaults, plus the user's own relays (Relays button), or only those when "only" is set
-    const DEFAULT_RELAYS = ["wss://delay.scobrudot.dev/zen"];
-    let relays = DEFAULT_RELAYS;
-    try {
-      const c = JSON.parse(localStorage.getItem('zenRelays') || 'null');
-      if (c && c.list && c.list.length) relays = [...new Set([...(c.only ? [] : DEFAULT_RELAYS), ...c.list.map(normalizeRelay)])];
-    } catch (_) { }
-    localStorage.removeItem('zenPeers');
-    function relaysConfig() {
-      let cur = {}; try { cur = JSON.parse(localStorage.getItem('zenRelays') || '{}') || {}; } catch (_) { }
-      const t = prompt('Your relays, comma separated (wss://host/zen). Empty = defaults only.\nCurrent: ' + relays.join(', '), (cur.list || []).join(', '));
+    // ZenOS server: this site's own origin by default (the server also serves this app); the login-screen link can point elsewhere
+    let serverUrl = '';
+    try { serverUrl = normalizeServer(localStorage.getItem('zenosServer') || ''); } catch (_) { }
+    function serverConfig() {
+      const t = prompt('ZenOS server URL (empty = this site).\nCurrent: ' + (serverUrl || location.origin), serverUrl);
       if (t === null) return;
       try {
-        const list = t.split(',').map(x => x.trim()).filter(Boolean).map(normalizeRelay);
-        const only = list.length > 0 && confirm('Use ONLY these relays and drop the default one?\n(Data on the default relay will not be seen.)');
-        if (list.length) localStorage.setItem('zenRelays', JSON.stringify({ list, only })); else localStorage.removeItem('zenRelays');
+        const u = normalizeServer(t);
+        if (u) localStorage.setItem('zenosServer', u); else localStorage.removeItem('zenosServer');
       } catch (e) { return alert(e.message); }
       location.reload();
     }
-    window.relaysConfig = relaysConfig;
-
-    zen = new ZEN({
-      peers: relays,
-    });
+    window.serverConfig = serverConfig;
 
     // Tag emoji mapping (Like Bear in the screenshot)
     const tagEmojiMap = {
@@ -3250,8 +3234,8 @@
     }
 
 
-    // ZEN has no "all loaded" signal. Nodes already in the local ZEN cache arrive within ms, so hide the overlay
-    // as soon as events go quiet for 400ms; relay updates keep streaming in and render progressively.
+    // There is no "all loaded" signal: records stream in as they are decrypted, so hide the overlay
+    // as soon as events go quiet for 400ms; later updates keep rendering progressively.
     let syncTimer = null, syncCap = null;
     function syncDone() {
       clearTimeout(syncTimer); clearTimeout(syncCap); syncTimer = syncCap = null;
@@ -3280,11 +3264,15 @@
         btn.innerHTML = '<i class="ti ti-loader animate-spin"></i> Decrypting...';
         btn.disabled = true;
 
-        os = new ZenOS({ peers: relays });
-        pair = await os.login(userInput, passInput);
-        zen = os.zen;
+        os = new ZenOS({ server: serverUrl });
+        try {
+          pair = await os.login(userInput, passInput);
+        } catch (e) {
+          if (e.status !== 404 || !confirm('No account "' + userInput + '" on this server. Create it?\n\nThere is no password recovery: if you forget it, your data cannot be read.')) throw e;
+          pair = await os.login(userInput, passInput, { create: true });
+        }
         isAuthenticated = true;
-        window.os = os; window.zen = zen; window.pair = pair;
+        window.os = os; window.pair = pair;
 
         sessionStorage.setItem('zen_user', userInput);
         sessionStorage.setItem('zen_pass', passInput);
@@ -3311,12 +3299,9 @@
         loadContacts();
         loadSecrets();
         loadTasks();
-        os.migrateLegacy().then(r => {
-          if (r && r.migrated > 0) showToast('Migrated ' + r.migrated + ' items from your previous identity');
-        }).catch(() => {});
       } catch (e) {
         console.error("Login Error:", e);
-        alert("Decryption failed: " + e.message);
+        alert("Login failed: " + e.message);
         const btn = document.getElementById('login-btn');
         if (btn) {
           btn.innerHTML = '<i class="ti ti-lock-open"></i> Unlock ZenOS';
@@ -3325,7 +3310,7 @@
       }
     }
 
-    // ── Load P2P Encrypted Notes ──
+    // ── Load encrypted notes ──
     async function loadNotes() {
       const cached = await notesCache.load();
       if (Object.keys(cached).length) {
@@ -4084,21 +4069,7 @@ print("Welcome to ZenOS!")
       showToast("Importing Bear demo notes...");
 
       for (const sample of samples) {
-        const soul = 'vault-' + Date.now() + '-' + Math.random().toString(36).substring(7);
-        const encTitle = await ZEN.encrypt(sample.title, pair);
-        const encBody = await ZEN.encrypt(sample.body, pair);
-        const encCat = await ZEN.encrypt(sample.cat, pair);
-
-        await new Promise(resolve => {
-          zen.get('~' + pair.pub).get('vault').get(soul).put({
-            title: encTitle,
-            body: encBody,
-            cat: encCat,
-            pinned: sample.title.includes("Polar"),
-            timestamp: Date.now(),
-            encrypted: true
-          }, resolve, { authenticator: pair });
-        });
+        await os.writeVaultNote({ title: sample.title, body: sample.body, cat: sample.cat, pinned: sample.title.includes("Polar") });
       }
 
       showToast("Bear demo notes loaded!");
@@ -4441,7 +4412,7 @@ print("Welcome to ZenOS!")
 
 
     // ═══════════════════════════════════════════════════════════════
-    // Calendar — events live at ~pub/calendar/<soul> as one encrypted
+    // Calendar — events live at calendar collection as one encrypted
     // object in `data` (same schema as ZenOS writeCalendarEvent).
     // ═══════════════════════════════════════════════════════════════
     const calEvents = {};
@@ -4686,8 +4657,8 @@ print("Welcome to ZenOS!")
 
 
     // ═══════════════════════════════════════════════════════════════
-    // Blog — the user's public smollog posts (read, publish, edit, delete).
-    // Posts are plaintext by design (published at ~pub/posts/<id>).
+    // Blog — the user's public posts (read, publish, edit, delete).
+    // Posts are plaintext by design (published in the `posts` collection).
     // ═══════════════════════════════════════════════════════════════
     const blogPosts = {};
     let blogMode = false, blogSelected = null;
@@ -4707,7 +4678,7 @@ print("Welcome to ZenOS!")
       document.body.classList.add('blog-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
       document.getElementById('nav-blog').classList.add('active');
-      document.getElementById('blog-open-link').href = 'https://smollog.vercel.app/' + pair.pub;
+      document.getElementById('blog-open-link').href = (serverUrl || location.origin) + '/blog/' + pair.pub;
       if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('open')) toggleSidebar();
       renderBlog();
     }
@@ -4722,7 +4693,7 @@ print("Welcome to ZenOS!")
       document.getElementById('blog-items').innerHTML = posts.length ? posts.map(p => `
         <div class="blog-item ${p.id === blogSelected ? 'active' : ''}" onclick="blogSelect('${escapeHtml(p.id)}')">
           <h4>${escapeHtml(p.title)}</h4><small>${p.createdAt ? new Date(p.createdAt).toLocaleDateString(navigator.language || 'en-US') : ''}${p.tags ? ' · ' + escapeHtml(String(p.tags)) : ''}</small>
-        </div>`).join('') : '<div class="blog-empty">No smollog posts yet.<br>Use New post to publish one.</div>';
+        </div>`).join('') : '<div class="blog-empty">No posts yet.<br>Use New post to publish one.</div>';
       const cur = blogPosts[blogSelected];
       document.getElementById('blog-reader').innerHTML = cur
         ? `<div style="display:flex;gap:8px;justify-content:flex-end;padding:8px 16px"><button class="cal-btn" onclick="blogEdit('${escapeHtml(cur.id)}')"><i class="ti ti-pencil"></i> Edit</button><button class="cal-btn" onclick="blogDelete('${escapeHtml(cur.id)}')"><i class="ti ti-trash"></i> Delete</button></div><article><h1>${escapeHtml(cur.title)}</h1>${window.marked ? window.marked.parse(cur.content) : escapeHtml(cur.content).replace(/\n/g, '<br>')}</article>`
@@ -4756,16 +4727,11 @@ print("Welcome to ZenOS!")
       if (!confirm('Delete this post?')) return;
       try { await os.deleteBlogPost(id); delete blogPosts[id]; renderBlog(); showToast('Post deleted'); } catch (e) { showToast(e.message); }
     }
-    async function blogAlias() {
-      const a = prompt('Blog alias (smollog.vercel.app/<alias>):', os.username || '');
-      if (!a) return;
-      try { const r = await os.registerAlias(a); showToast('Alias registered: ' + r.alias); } catch (e) { showToast(e.message); }
-    }
-    Object.assign(window, { openBlog, blogSelect, blogEdit, blogDelete, blogAlias });
+    Object.assign(window, { openBlog, blogSelect, blogEdit, blogDelete });
 
 
     // ═══════════════════════════════════════════════════════════════
-    // Bookmarks — events at ~pub/bookmarks/<soul>, one encrypted object
+    // Bookmarks — events at bookmarks collection, one encrypted object
     // in `data` (same schema as ZenOS writeBookmark). Soul = SHA-256(url),
     // so re-importing never duplicates.
     // ═══════════════════════════════════════════════════════════════
@@ -4928,15 +4894,12 @@ print("Welcome to ZenOS!")
       }).join('') : bmQuery.length ? '<div class="blog-empty">No bookmarks match.</div>' : '<div class="blog-empty">No bookmarks yet.<br>Use Import to load a Brave/Chrome/Firefox export (Bookmarks → Export), or Add.</div>';
     }
 
-    // resolve on ack, or after 10s so an offline relay can't hang an import
+    // resolves null on success, { err } on failure
     async function bmSave(b) {
       const soul = await bmSoul(b.url);
-      const data = await ZEN.encrypt({ url: b.url, title: b.title || b.url, folder: b.folder || '', tags: b.tags || [], addedAt: b.addedAt || Date.now() }, pair);
-      bookmarks[soul] = { url: b.url, title: b.title || b.url, folder: b.folder || '', tags: b.tags || [], addedAt: b.addedAt || Date.now() };
-      return new Promise((resolve) => {
-        const t = setTimeout(resolve, 10000);
-        zen.get('~' + pair.pub).get('bookmarks').get(soul).put({ data, updatedAt: Date.now(), encrypted: true }, (ack) => { clearTimeout(t); resolve(ack && ack.err ? ack : null); }, { authenticator: pair });
-      });
+      const rec = { url: b.url, title: b.title || b.url, folder: b.folder || '', tags: b.tags || [], addedAt: b.addedAt || Date.now() };
+      bookmarks[soul] = rec;
+      return os.put('bookmarks', soul, rec).then(() => null, (e) => ({ err: e.message }));
     }
     // thousands of bookmarks: encrypt and write 100 at a time instead of all at once
     async function bmSaveMany(list, label) {
@@ -5009,7 +4972,7 @@ print("Welcome to ZenOS!")
       }
     }
     // ═══════════════════════════════════════════════════════════════
-    // Contacts (~pub/contacts) and Secrets (~pub/secrets): whole records encrypted, see ZenOS.writeContact / writeSecret
+    // Contacts (contacts collection) and Secrets (secrets collection): whole records encrypted, see ZenOS.writeContact / writeSecret
     // ═══════════════════════════════════════════════════════════════
     const contacts = {}, secrets = {};
     let contactsMode = false, secretsMode = false, ctQuery = [], secQuery = [], secKindFilter = '';
@@ -5071,7 +5034,7 @@ print("Welcome to ZenOS!")
         <label>Phones (comma separated)<input type="text" id="ct-e-phones" value="${v('phones')}"></label>
         <label>Organization<input type="text" id="ct-e-org" value="${v('org')}"></label>
         <label>Tags (comma separated)<input type="text" id="ct-e-tags" value="${v('tags')}"></label>
-        <label>ZEN public key (optional, if they use ZenOS)<input type="text" id="ct-e-pub" value="${v('pub')}"></label>
+        <label>ZenOS username (optional, if they use ZenOS)<input type="text" id="ct-e-pub" value="${v('pub')}"></label>
         <label>Notes<textarea id="ct-e-notes" rows="4">${v('notes')}</textarea></label>
         <div class="cal-actions"><button class="cal-btn" id="ct-e-cancel">Cancel</button><button class="cal-btn primary" id="ct-e-save">Save</button></div>`);
       document.getElementById('ct-e-cancel').onclick = () => bg.remove();
@@ -5164,9 +5127,8 @@ print("Welcome to ZenOS!")
     });
     Object.assign(window, { openContacts, ctSearch, ctEdit, ctImport, ctExport, openSecrets, secSearch, secKind, secEdit });
 
-    // Files — encrypted IPFS uploads through a Delay relay; index at ~pub/files (see ZenOS.uploadFile)
+    // Files — encrypted uploads stored on the ZenOS server; index in the `files` collection (see ZenOS.uploadFile)
     let filesMode = false;
-    const FILES_TOKEN_KEY = 'zenStorageToken';
     const humanSize = (n) => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
 
     async function openFiles() {
@@ -5176,11 +5138,6 @@ print("Welcome to ZenOS!")
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
       document.getElementById('nav-files').classList.add('active');
       if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('open')) toggleSidebar();
-      // token is stored encrypted with the user key, so it is useless without the login
-      try {
-        const raw = localStorage.getItem(FILES_TOKEN_KEY);
-        if (!os.storageToken && raw) os.storageToken = await ZEN.decrypt(JSON.parse(raw), pair);
-      } catch (_) { }
       renderFiles();
     }
     function closeFiles() {
@@ -5188,34 +5145,24 @@ print("Welcome to ZenOS!")
       document.body.classList.remove('files-mode');
       document.getElementById('nav-files')?.classList.remove('active');
     }
-    async function filesToken() {
-      const t = prompt('Delay relay token (admin token or delay-api-… key):', os.storageToken || '');
-      if (t === null) return;
-      os.storageToken = t.trim() || null;
-      try {
-        if (os.storageToken) localStorage.setItem(FILES_TOKEN_KEY, JSON.stringify(await ZEN.encrypt(os.storageToken, pair)));
-        else localStorage.removeItem(FILES_TOKEN_KEY);
-      } catch (_) { }
-      renderFiles();
-    }
     async function renderFiles() {
       const status = document.getElementById('files-status'), items = document.getElementById('files-items');
-      status.textContent = 'Checking relay…';
-      try { await os.delayRelay(); } catch (e) {
+      status.textContent = 'Loading…';
+      let files;
+      try { files = await os.listFiles(); } catch (e) {
         status.textContent = '';
         items.innerHTML = '<div class="blog-empty">' + escapeHtml(e.message) + '</div>';
         return;
       }
-      status.textContent = os.storageToken ? 'Delay relay connected' : 'Delay relay connected — set a token to upload';
-      const files = await os.listFiles();
+      status.textContent = '';
       document.getElementById('count-files').textContent = files.length;
       items.innerHTML = files.length ? files.map(f => `<div class="bm-item file-item"><div style="flex:1;min-width:0"><b>${escapeHtml(f.name)}</b><small>${humanSize(f.size)} · ${new Date(f.addedAt).toLocaleString()}${f.encrypted ? ' · encrypted' : ''}</small></div>
-          <button class="bm-del" title="Download" onclick="filesDownload('${escapeHtml(f.cid)}','${encodeURIComponent(f.name)}')"><i class="ti ti-download"></i></button></div>`).join('') : '<div class="blog-empty">No files yet. Use Upload.</div>';
+          <button class="bm-del" title="Download" onclick="filesDownload('${escapeHtml(f.id)}','${encodeURIComponent(f.name)}')"><i class="ti ti-download"></i></button>
+          <button class="bm-del" title="Delete" onclick="filesDelete('${escapeHtml(f.id)}')"><i class="ti ti-trash"></i></button></div>`).join('') : '<div class="blog-empty">No files yet. Use Upload.</div>';
     }
     async function filesUpload(input) {
       const file = input.files[0]; input.value = '';
       if (!file) return;
-      if (!os.storageToken) return showToast('Set the relay token first');
       showToast('Encrypting & uploading…');
       try {
         await os.uploadFile(new Uint8Array(await file.arrayBuffer()), file.name);
@@ -5223,21 +5170,26 @@ print("Welcome to ZenOS!")
       } catch (e) { return showToast(e.message); }
       renderFiles();
     }
-    async function filesDownload(cid, name) {
+    async function filesDownload(id, name) {
       try {
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([await os.downloadFile(cid)]));
+        a.href = URL.createObjectURL(new Blob([await os.downloadFile(id)]));
         a.download = decodeURIComponent(name);
         a.click();
         URL.revokeObjectURL(a.href);
       } catch (e) { showToast(e.message); }
     }
-    Object.assign(window, { openFiles, filesToken, filesUpload, filesDownload });
+    async function filesDelete(id) {
+      if (!confirm('Delete this file?')) return;
+      try { await os.deleteFile(id); } catch (e) { return showToast(e.message); }
+      renderFiles();
+    }
+    Object.assign(window, { openFiles, filesUpload, filesDownload, filesDelete });
 
     Object.assign(window, { openBookmarks, bmSearch, bmPickFolder, bmAdd, bmImport, bmDelete, bmEdit, bmRenameFolder, bmExport });
 
     // ═══════════════════════════════════════════════════════════════
-    // Tasks & Kanban — E2EE Kanban board at ~pub/tasks
+    // Tasks & Kanban — E2EE Kanban board at tasks collection
     // ═══════════════════════════════════════════════════════════════
     const tasks = {};
     let tasksMode = false, taskQuery = '', taskPriorityFilter = '';
@@ -5416,12 +5368,9 @@ print("Welcome to ZenOS!")
         createdAt: t.createdAt || Date.now(),
         completedAt: t.completedAt || null
       };
-      const data = await ZEN.encrypt(payload, pair);
       tasks[soul] = { soul, ...payload, updatedAt: Date.now() };
-      tasksCache.set(soul, data, tasks[soul]);
-      zen.get('~' + pair.pub).get('tasks').get(soul).put({ data, updatedAt: Date.now(), encrypted: true }, (ack) => {
-        if (ack && ack.err) showToast('Task save error: ' + ack.err);
-      }, { authenticator: pair });
+      tasksCache.set(soul, payload.title, tasks[soul]);
+      os.put('tasks', soul, payload).catch((e) => showToast('Task save error: ' + e.message));
 
       document.getElementById('count-tasks').textContent = Object.keys(tasks).length;
       if (tasksMode) renderTasks();
