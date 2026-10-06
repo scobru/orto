@@ -440,6 +440,26 @@
       position: relative;
     }
 
+    /* menu button for the views that have no header of their own: phones only (the sidebar is a drawer there) */
+    .mobile-menu-btn {
+      display: none;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      width: 34px;
+      height: 34px;
+      border-radius: 7px;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 18px;
+      flex: none;
+    }
+
+    @media (max-width: 768px) {
+      .mobile-menu-btn { display: inline-flex; }
+    }
+
     .sidebar-toggle-btn {
       background: transparent;
       border: none;
@@ -2938,7 +2958,7 @@
     <!-- Blog pane: the user's public posts, with write support -->
     <section class="blog-pane" id="blog-pane">
       <div class="blog-list">
-        <div class="blog-list-head"><span>Blog</span><a id="blog-open-link" target="_blank" rel="noopener">Open public
+        <div class="blog-list-head"><span style="display:flex;align-items:center;gap:6px"><button class="mobile-menu-btn" onclick="toggleSidebar()" title="Menu" aria-label="Menu"><i class="ti ti-menu-2"></i></button>Blog</span><a id="blog-open-link" target="_blank" rel="noopener">Open public
             page ↗</a></div>
         <div style="display:flex;gap:8px;padding:8px 12px">
           <button class="cal-btn primary" onclick="blogEdit()"><i class="ti ti-plus"></i> New post</button>
@@ -2953,6 +2973,7 @@
       <div class="bm-folders" id="bm-folders"></div>
       <div class="bm-main">
         <div class="bm-bar">
+          <button class="mobile-menu-btn" onclick="toggleSidebar()" title="Menu" aria-label="Menu"><i class="ti ti-menu-2"></i></button>
           <input type="search" id="bm-search" placeholder="Search bookmarks" oninput="bmSearch(this.value)">
           <button class="cal-btn hidden" id="bm-rename" onclick="bmRenameFolder()"><i class="ti ti-folder"></i> Rename
             folder</button>
@@ -2972,6 +2993,7 @@
     <section class="bm-pane" id="contacts-pane">
       <div class="bm-main">
         <div class="bm-bar">
+          <button class="mobile-menu-btn" onclick="toggleSidebar()" title="Menu" aria-label="Menu"><i class="ti ti-menu-2"></i></button>
           <input type="search" id="ct-search" placeholder="Search contacts" oninput="ctSearch(this.value)">
 <button class="cal-btn" onclick="loadDemo('contacts')" title="Add a few example entries (safe to click twice)"><i class="ti ti-sparkles"></i> Examples</button>
           <button class="cal-btn" onclick="ctEdit()"><i class="ti ti-plus"></i> Add</button>
@@ -2987,6 +3009,7 @@
     <section class="bm-pane" id="secrets-pane">
       <div class="bm-main">
         <div class="bm-bar">
+          <button class="mobile-menu-btn" onclick="toggleSidebar()" title="Menu" aria-label="Menu"><i class="ti ti-menu-2"></i></button>
           <input type="search" id="sec-search" placeholder="Search secrets (name, user, url, tag)" oninput="secSearch(this.value)">
           <select id="sec-kind" onchange="secKind(this.value)">
             <option value="">All</option><option value="password">Passwords</option><option value="api">API keys</option><option value="note">Notes</option>
@@ -3002,6 +3025,7 @@
     <section class="bm-pane" id="files-pane">
       <div class="bm-main">
         <div class="bm-bar">
+          <button class="mobile-menu-btn" onclick="toggleSidebar()" title="Menu" aria-label="Menu"><i class="ti ti-menu-2"></i></button>
           <span id="files-status" style="flex:1;font-size:13px;color:var(--text-muted)"></span>
           <button class="cal-btn primary" onclick="document.getElementById('files-input').click()"><i class="ti ti-upload"></i> Upload</button>
           <input type="file" id="files-input" class="hidden" multiple onchange="filesUpload(this)">
@@ -3013,6 +3037,7 @@
     <!-- Tasks pane: encrypted Kanban board at tasks collection -->
     <section class="tasks-pane" id="tasks-pane">
       <div class="tasks-bar">
+        <button class="mobile-menu-btn" onclick="toggleSidebar()" title="Menu" aria-label="Menu"><i class="ti ti-menu-2"></i></button>
         <input type="search" id="tasks-search" placeholder="Search tasks or #tag" oninput="taskSearch(this.value)">
         <select id="tasks-filter-priority" onchange="taskFilterPriority(this.value)"
           style="background:var(--input-bg);color:var(--text-primary);border:1px solid var(--border-color);border-radius:7px;padding:7px 10px;font:inherit;font-size:14px;">
