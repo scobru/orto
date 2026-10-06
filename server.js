@@ -30,7 +30,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const NAME = /^[a-z0-9][a-z0-9_.-]{1,31}$/;
 const SEG = /^[\w.:-]{1,128}$/;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2' };
 
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 
