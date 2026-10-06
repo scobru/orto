@@ -8,7 +8,7 @@
  */
 
 const env = (globalThis.process && globalThis.process.env) || {};
-export const DEFAULT_SERVER = 'http://127.0.0.1:8787';
+export const DEFAULT_SERVER = 'https://zenos.scobrudot.dev';
 
 /** Normalize a server URL: trims it and drops the trailing slash. '' means same origin (browser). */
 export function normalizeServer(url) {
