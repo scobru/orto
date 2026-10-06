@@ -322,6 +322,8 @@ export function isSoulDeleted(allGraph, parentSoul, soul) {
 }
 
 export class ZenOS {
+  _settle(ms, timeoutMs) { return this.fullWait ? timeoutMs : Math.min(ms, timeoutMs); }
+
   constructor(options = {}) {
     this.peers = resolvePeers(options);
     this.zen = new ZEN({
@@ -331,6 +333,7 @@ export class ZenOS {
       ...(options.radisk !== undefined && { radisk: options.radisk }),
       axe: options.axe !== undefined ? options.axe : true
     });
+    this.fullWait = !!options.fullWait; // read* wait the whole timeout instead of settling after a quiet gap (big collections stream slowly)
     this.pair = null;
     this.username = null;
     this.storageToken = options.storageToken || env.ZENOS_STORAGE_TOKEN || null;
@@ -519,7 +522,7 @@ export class ZenOS {
       };
 
       const maxTimer = setTimeout(done, timeoutMs);
-      let settleTimer = setTimeout(done, notes.size > 0 ? Math.min(350, timeoutMs) : timeoutMs);
+      let settleTimer = setTimeout(done, notes.size > 0 ? this._settle(350, timeoutMs) : timeoutMs);
 
       let pending = 0;
       const kickSettle = (ms = 350) => {
@@ -530,7 +533,7 @@ export class ZenOS {
             return;
           }
           done();
-        }, Math.min(ms, timeoutMs));
+        }, this._settle(ms, timeoutMs));
       };
 
       try {
@@ -841,7 +844,7 @@ export class ZenOS {
       };
 
       const maxTimer = setTimeout(done, timeoutMs);
-      let settleTimer = setTimeout(done, events.size > 0 ? Math.min(350, timeoutMs) : timeoutMs);
+      let settleTimer = setTimeout(done, events.size > 0 ? this._settle(350, timeoutMs) : timeoutMs);
 
       let pending = 0;
       const kickSettle = (ms = 350) => {
@@ -852,7 +855,7 @@ export class ZenOS {
             return;
           }
           done();
-        }, Math.min(ms, timeoutMs));
+        }, this._settle(ms, timeoutMs));
       };
 
       try {
@@ -1095,7 +1098,7 @@ export class ZenOS {
       };
 
       const maxTimer = setTimeout(done, timeoutMs);
-      let settleTimer = setTimeout(done, marks.size > 0 ? Math.min(350, timeoutMs) : timeoutMs);
+      let settleTimer = setTimeout(done, marks.size > 0 ? this._settle(350, timeoutMs) : timeoutMs);
 
       let pending = 0;
       const kickSettle = (ms = 350) => {
@@ -1106,7 +1109,7 @@ export class ZenOS {
             return;
           }
           done();
-        }, Math.min(ms, timeoutMs));
+        }, this._settle(ms, timeoutMs));
       };
 
       try {
@@ -1623,7 +1626,7 @@ export class ZenOS {
       };
 
       const maxTimer = setTimeout(done, timeoutMs);
-      let settleTimer = setTimeout(done, tasks.size > 0 ? Math.min(350, timeoutMs) : timeoutMs);
+      let settleTimer = setTimeout(done, tasks.size > 0 ? this._settle(350, timeoutMs) : timeoutMs);
 
       let pending = 0;
       const kickSettle = (ms = 350) => {
@@ -1634,7 +1637,7 @@ export class ZenOS {
             return;
           }
           done();
-        }, Math.min(ms, timeoutMs));
+        }, this._settle(ms, timeoutMs));
       };
 
       try {
@@ -1842,7 +1845,7 @@ export class ZenOS {
       };
 
       const maxTimer = setTimeout(done, timeoutMs);
-      let settleTimer = setTimeout(done, posts.size > 0 ? Math.min(350, timeoutMs) : timeoutMs);
+      let settleTimer = setTimeout(done, posts.size > 0 ? this._settle(350, timeoutMs) : timeoutMs);
 
       const kickSettle = () => {
         clearTimeout(settleTimer);
