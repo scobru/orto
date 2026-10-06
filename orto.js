@@ -8,8 +8,7 @@
  */
 
 const env = (globalThis.process && globalThis.process.env) || {};
-// ponytail: still the pre-rename domain; switch to https://orto.scobrudot.dev once it exists
-export const DEFAULT_SERVER = 'https://zenos.scobrudot.dev';
+export const DEFAULT_SERVER = 'https://orto.scobrudot.dev';
 
 /** Normalize a server URL: trims it and drops the trailing slash. '' means same origin (browser). */
 export function normalizeServer(url) {
