@@ -192,7 +192,7 @@ export class Orto {
     this.token = options.token || null;
     this.key = null;
     this.username = null;
-    this.pair = null; // { pub }: kept so apps written for the ZEN build can read pair.pub
+    this.pair = null; // { pub }: kept so older callers can read pair.pub
   }
 
   /** Public handle of the user: the lowercase username (used in blog URLs). */
@@ -710,7 +710,7 @@ export class Orto {
     return (await this.readTasks()).filter(t => (t.links || []).some(l => l.kind === kind && l.soul === soul));
   }
 
-  // ─── smollog (public blog, plaintext) ───────────────────────────────
+  // ─── Blog (public, plaintext) ───────────────────────────────
 
   /** Publish (or edit, with the same `id`) a public markdown post. Readable by anyone at /api/u/<username>/posts. */
   async publishBlogPost({ title, content, tags = [], id = null, createdAt = Date.now() }) {

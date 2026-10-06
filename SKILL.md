@@ -97,7 +97,7 @@ Usage:
   node cli.js share-list | share-revoke --id <id>  [--user <user> --pass <pass>]
   node cli.js share-read   --url <link> [--out <path>]                      # no login needed
 
-  # smollog (Public Verifiable Blog)
+  # Blog (public posts)
   node cli.js blog-publish [--user <user> --pass <pass>] --title <title> --content <content> [--tags <tags>] [--id <id>]
   node cli.js blog-get     --id <id> (--alias <username> | --user <user> --pass <pass>)
   node cli.js blog-read    (--alias <username> | --user <user> --pass <pass>)     # public posts need no login

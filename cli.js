@@ -245,7 +245,7 @@ Usage:
   node cli.js bookmarks-export [--user <user> --pass <pass>] [--folder <path>] [--file <out.html>]
   node cli.js bookmarks-update [--user <user> --pass <pass>] --file <changes.json>  # [{soul, title?, folder?, tags?}]
 
-  # smollog (Public Verifiable Blog)
+  # Blog (public posts)
   node cli.js blog-publish [--user <user> --pass <pass>] --title <title> --content <content> [--tags <tags>] [--id <id>]
   node cli.js blog-get     --id <id> (--alias <username> | --user <user> --pass <pass>)
   node cli.js blog-read    (--alias <username> | --user <user> --pass <pass>)     # public posts need no login
@@ -881,7 +881,7 @@ Server (all commands):
       break;
     }
 
-    // ─── smollog (Blog) CRUD & Alias ──────────────────────────────────
+    // ─── Blog (public posts) ──────────────────────────────────
 
     case 'blog-publish':
     case 'blog-write': {
