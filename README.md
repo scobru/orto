@@ -29,7 +29,7 @@ To host the app somewhere else (any static host), open it and use the **Server**
 - **Contacts**: address book with vCard import and export
 - **Secrets**: passwords, API keys, secure notes, password generator
 - **Files**: upload and download, encrypted in the browser before they leave it
-- **Blog**: public Markdown posts at `/blog/<username>`
+- **Blog**: public Markdown posts at `/blog/<username>`  (e.g. https://zenos.scobrudot.dev/blog/scobru)
 
 Contacts, Secrets, Bookmarks, Tasks and Calendar have an *Examples* button that adds a few fake entries to try things out.
 
