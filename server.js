@@ -12,6 +12,8 @@
  *      ORTO_REGISTRATION=open|closed (open), ORTO_MAX_UPLOAD bytes (200MB), ORTO_QUOTA bytes per user (5GB)
  *      ORTO_DEMO=1 turns on a public demo account (demo / demo) that is wiped and refilled with random fake data every
  *      ORTO_DEMO_HOURS (3) hours; sharing, the public blog and password change are off for it.
+ *      ORTO_ADMIN_PASS (min 8 chars) turns on the admin panel at /admin: settings (registration, upload size, quota) edited
+ *      from the browser and saved in the database (they override the env values), user list/removal, backups. Off when unset.
  *      (the old ZENOS_* names still work)
  */
 import http from 'node:http';
@@ -50,9 +52,13 @@ export function createServer(opts = {}) {
   const env = settings;
   const dataDir = path.resolve(opts.dataDir || env.ORTO_DATA || path.join(process.cwd(), 'data'));
   const webDir = path.resolve(opts.webDir || env.ORTO_WEB || path.join(here, 'web'));
-  const registration = opts.registration || env.ORTO_REGISTRATION || 'open';
-  const maxUpload = Number(opts.maxUpload || env.ORTO_MAX_UPLOAD || 200 * 1024 * 1024);
-  const quota = Number(opts.quota || env.ORTO_QUOTA || 5 * 1024 ** 3);
+  const defaults = {
+    registration: opts.registration || env.ORTO_REGISTRATION || 'open',
+    maxUpload: Number(opts.maxUpload || env.ORTO_MAX_UPLOAD || 200 * 1024 * 1024),
+    quota: Number(opts.quota || env.ORTO_QUOTA || 5 * 1024 ** 3)
+  };
+  const adminPass = String(opts.adminPass || env.ORTO_ADMIN_PASS || '');
+  const adminOn = adminPass.length >= 8;
   const demoOn = opts.demo ?? !['', '0', 'false', undefined].includes(env.ORTO_DEMO);
   const demoHours = Number(opts.demoHours || env.ORTO_DEMO_HOURS || 3);
   const DEMO = { user: 'demo', pass: 'demo', quota: 10 * 1024 ** 2, maxRecords: 1000, maxFiles: 40 };
@@ -68,9 +74,13 @@ export function createServer(opts = {}) {
     CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS records (user_id INTEGER NOT NULL REFERENCES users(id), coll TEXT NOT NULL, soul TEXT NOT NULL, data TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (user_id, coll, soul));
     CREATE TABLE IF NOT EXISTS files (user_id INTEGER NOT NULL REFERENCES users(id), id TEXT NOT NULL, size INTEGER NOT NULL, PRIMARY KEY (user_id, id));
+    CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS shares (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), file_id TEXT, data TEXT, created_at INTEGER NOT NULL);
   `);
   db.prepare('DELETE FROM sessions WHERE expires < ?').run(Date.now());
+  // settings saved from the admin panel win over the env defaults
+  const cfg = { ...defaults };
+  for (const r of db.prepare('SELECT key, value FROM settings').all()) if (r.key in cfg) cfg[r.key] = r.key === 'registration' ? r.value : Number(r.value);
   const q = {
     userByName: db.prepare('SELECT * FROM users WHERE name = ?'),
     addUser: db.prepare('INSERT INTO users (name, auth_hash, created_at) VALUES (?, ?, ?)'),
@@ -116,7 +126,7 @@ export function createServer(opts = {}) {
   // Stream the request body to disk (new file, or replace `id` in place). Written to a temp file first so a failed upload never damages the old blob.
   async function saveUpload(u, req, id = null) {
     const old = id && q.file.get(u.user_id, id);
-    const limit = demoOn && u.name === DEMO.user ? DEMO.quota : quota;
+    const limit = demoOn && u.name === DEMO.user ? DEMO.quota : cfg.quota;
     const used = q.used.get(u.user_id).n - (old ? old.size : 0);
     if (used + Number(req.headers['content-length'] || 0) > limit) throw new HttpError(413, 'Storage quota exceeded');
     id = id || crypto.randomBytes(12).toString('hex');
@@ -127,7 +137,7 @@ export function createServer(opts = {}) {
     try {
       for await (const chunk of req) {
         size += chunk.length;
-        if (size > maxUpload || used + size > limit) throw new HttpError(413, 'File too large');
+        if (size > cfg.maxUpload || used + size > limit) throw new HttpError(413, 'File too large');
         if (!out.write(chunk)) await once(out, 'drain');
       }
       out.end(); await once(out, 'finish');
@@ -138,6 +148,64 @@ export function createServer(opts = {}) {
   }
   const dropFile = (uid, id) => { q.delFile.run(uid, id); fs.rmSync(path.join(filesDir, String(uid), id), { force: true }); };
 
+  // Admin panel API: separate in-memory bearer tokens (12 h), never a user session
+  const adminTokens = new Map();
+  async function admin(req, json, b, c, d) {
+    if (!adminOn) throw new HttpError(404, 'Admin panel is off: set ORTO_ADMIN_PASS (min 8 chars)');
+    if (b === 'login' && req.method === 'POST') {
+      const { pass } = await readJson(req, 1e4);
+      const key = req.socket.remoteAddress + '|admin';
+      if (throttled(key)) throw new HttpError(429, 'Too many attempts, try again later');
+      if (typeof pass !== 'string' || !crypto.timingSafeEqual(Buffer.from(sha(pass)), Buffer.from(sha(adminPass)))) { failed(key); throw new HttpError(401, 'Wrong admin password'); }
+      fails.delete(key);
+      const token = crypto.randomBytes(32).toString('hex');
+      adminTokens.set(sha(token), Date.now() + 12 * 36e5);
+      return json(200, { token });
+    }
+    const exp = adminTokens.get(sha((req.headers.authorization || '').replace(/^Bearer /, '')));
+    if (!exp || exp < Date.now()) throw new HttpError(401, 'Unauthorized');
+
+    if (b === 'settings') {
+      if (req.method === 'PUT') { // {key: value} sets, {key: null} goes back to the env default
+        const body = await readJson(req, 1e4);
+        for (const [k, v] of Object.entries(body)) {
+          if (!(k in defaults)) throw new HttpError(400, 'Unknown setting: ' + k);
+          if (v !== null && (k === 'registration' ? !['open', 'closed'].includes(v) : !(Number.isFinite(v) && v >= 1))) throw new HttpError(400, 'Bad value for ' + k);
+        }
+        for (const [k, v] of Object.entries(body)) {
+          if (v === null) { db.prepare('DELETE FROM settings WHERE key = ?').run(k); cfg[k] = defaults[k]; }
+          else { db.prepare('INSERT INTO settings VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value').run(k, String(v)); cfg[k] = v; }
+        }
+      }
+      return json(200, { settings: cfg, defaults, demo: demoOn, dataDir });
+    }
+    if (b === 'users' && !c && req.method === 'GET') {
+      return json(200, db.prepare(`SELECT u.name, u.created_at AS createdAt,
+        (SELECT COUNT(*) FROM records WHERE user_id = u.id) AS records,
+        (SELECT COUNT(*) FROM files WHERE user_id = u.id) AS files,
+        (SELECT COALESCE(SUM(size), 0) FROM files WHERE user_id = u.id) AS bytes,
+        (SELECT COUNT(*) FROM sessions WHERE user_id = u.id AND expires > ?) AS sessions
+        FROM users u ORDER BY u.id`).all(Date.now()));
+    }
+    if (b === 'users' && c) {
+      const user = q.userByName.get(c);
+      if (!user) throw new HttpError(404, 'Unknown user');
+      if (d === 'logout' && req.method === 'POST') { q.dropSessions.run(user.id, ''); return json(200, { name: c, loggedOut: true }); }
+      if (!d && req.method === 'DELETE') { // data is end-to-end encrypted: there is no password reset, only removal
+        for (const t of ['records', 'shares', 'files', 'sessions']) db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(user.id);
+        db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+        fs.rmSync(path.join(filesDir, String(user.id)), { recursive: true, force: true });
+        for (const r of listeners.get(user.id) || []) r.end();
+        return json(200, { name: c, deleted: true });
+      }
+    }
+    if (b === 'backup' && req.method === 'POST') {
+      const out = path.join(dataDir, 'backups', new Date().toISOString().replace(/[:.]/g, '-'));
+      return json(200, { path: server.backup(out) });
+    }
+    throw new HttpError(404, 'Not found');
+  }
+
   async function api(req, res, url) {
     const parts = url.pathname.split('/').slice(2).map(decodeURIComponent); // after /api
     const [a, b, c] = parts;
@@ -146,7 +214,7 @@ export function createServer(opts = {}) {
 
     if (a === 'health') return json(200, { ok: true, name: 'orto' });
 
-    if (a === 'config') return json(200, { registration, maxUpload, ...(demoOn && { demo: { user: DEMO.user, pass: DEMO.pass, hours: demoHours } }) });
+    if (a === 'config') return json(200, { registration: cfg.registration, maxUpload: cfg.maxUpload, ...(demoOn && { demo: { user: DEMO.user, pass: DEMO.pass, hours: demoHours } }) });
 
     if ((a === 'register' || a === 'login') && req.method === 'POST') {
       const { name: raw, auth } = await readJson(req, 1e4);
@@ -157,7 +225,7 @@ export function createServer(opts = {}) {
       if (throttled(key)) throw new HttpError(429, 'Too many attempts, try again later');
       const hash = sha(auth);
       if (a === 'register') {
-        if (registration !== 'open') throw new HttpError(403, 'Registration is closed');
+        if (cfg.registration !== 'open') throw new HttpError(403, 'Registration is closed');
         try { q.addUser.run(name, hash, Date.now()); } catch (_) { throw new HttpError(409, 'Username taken'); }
       }
       const user = q.userByName.get(name);
@@ -186,6 +254,8 @@ export function createServer(opts = {}) {
       res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': fs.statSync(file).size });
       return void fs.createReadStream(file).pipe(res);
     }
+
+    if (a === 'admin') return admin(req, json, b, c, parts[3]);
 
     const u = authed(req);
 
@@ -287,6 +357,7 @@ export function createServer(opts = {}) {
     let rel = decodeURIComponent(url.pathname);
     if (rel.startsWith('/blog/')) rel = '/blog.html';
     else if (rel.startsWith('/s/')) rel = '/share.html';
+    else if (rel === '/admin') rel = '/admin.html';
     if (rel.endsWith('/')) rel += 'index.html';
     // the SDK lives next to this file (not in web/) so the CLI and the browser share one copy
     const file = rel === '/orto.js' ? path.join(here, 'orto.js') : path.normalize(path.join(webDir, rel));
@@ -359,5 +430,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   }
   const port = Number(process.env.PORT || 8787), host = process.env.HOST || '127.0.0.1';
   createServer().listen(port, host, () => console.log(`Orto server on http://${host}:${port}`));
+  if (!(settings.ORTO_ADMIN_PASS || '').length) console.log('Admin panel off (set ORTO_ADMIN_PASS, min 8 chars, to use /admin)');
   if (!['', '0', 'false', undefined].includes(settings.ORTO_DEMO)) console.log('Demo account on: user demo, password demo (reset every ' + (settings.ORTO_DEMO_HOURS || 3) + ' h)');
 }

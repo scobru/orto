@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Orto admin</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#6b6b6b;--line:#e2e2e2;--card:#f7f7f7;--acc:#2f7d4f;--bad:#b3261e}
+@media(prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mut:#9a9a9a;--line:#333;--card:#1f1f1f;--acc:#5cc58a;--bad:#f2766e}}
+*{box-sizing:border-box}
+body{margin:0 auto;max-width:820px;padding:24px 16px;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}
+h1{font-size:20px;margin:0 0 16px}h2{font-size:15px;margin:28px 0 8px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px}
+label{display:block;margin:10px 0 4px;color:var(--mut);font-size:13px}
+input,select,button{font:inherit;padding:7px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+button{cursor:pointer}button.p{background:var(--acc);border-color:var(--acc);color:#fff}button.d{color:var(--bad)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);font-size:14px}
+.wrap{overflow-x:auto}.mut{color:var(--mut);font-size:13px}#msg{min-height:1.4em;margin-top:12px}.err{color:var(--bad)}
+</style>
+</head>
+<body>
+<h1>Orto admin</h1>
+<form id="login" class="card" hidden>
+  <label for="pass">Admin password (ORTO_ADMIN_PASS)</label>
+  <div class="row"><input id="pass" type="password" autocomplete="current-password" required><button class="p">Sign in</button></div>
+</form>
+<main id="app" hidden>
+  <h2>Settings</h2>
+  <div class="card">
+    <label for="registration">Registration</label>
+    <select id="registration"><option value="open">open</option><option value="closed">closed</option></select>
+    <label for="maxUpload">Max upload size (MB)</label><input id="maxUpload" type="number" min="1" step="any">
+    <label for="quota">Quota per user (MB)</label><input id="quota" type="number" min="1" step="any">
+    <p class="mut" id="info"></p>
+    <div class="row"><button class="p" id="save">Save</button><button id="reset">Back to env defaults</button></div>
+  </div>
+  <h2>Users</h2>
+  <div class="card wrap"><table><thead><tr><th>Name</th><th>Created</th><th>Records</th><th>Files</th><th>Used</th><th>Sessions</th><th></th></tr></thead><tbody id="users"></tbody></table>
+    <p class="mut">Data is end-to-end encrypted, so passwords cannot be reset: removing a user deletes all of their data.</p></div>
+  <h2>Backup</h2>
+  <div class="card row"><button id="backup">Back up now</button><span class="mut">Database + uploads, written on the server under the data folder.</span></div>
+  <p><button id="out">Sign out</button></p>
+</main>
+<div id="msg" role="status"></div>
+<script>
+const $ = (id) => document.getElementById(id), MB = 1048576;
+let token = ''; try { token = sessionStorage.getItem('orto-admin') || ''; } catch (_) {}
+const say = (t, bad) => { $('msg').textContent = t || ''; $('msg').className = bad ? 'err' : ''; };
+async function call(method, path, body) {
+  const r = await fetch('/api/admin/' + path, { method, headers: { 'Content-Type': 'application/json', ...(token && { Authorization: 'Bearer ' + token }) }, body: body && JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 401 && token) { out(); }
+  if (!r.ok) throw new Error(j.error || r.status);
+  return j;
+}
+const fmt = (n) => n >= MB * 1024 ? (n / MB / 1024).toFixed(1) + ' GB' : n >= MB ? (n / MB).toFixed(1) + ' MB' : (n / 1024).toFixed(0) + ' KB';
+function out() { token = ''; try { sessionStorage.removeItem('orto-admin'); } catch (_) {} $('app').hidden = true; $('login').hidden = false; }
+async function load() {
+  try {
+    const s = await call('GET', 'settings');
+    $('registration').value = s.settings.registration;
+    $('maxUpload').value = +(s.settings.maxUpload / MB).toFixed(2);
+    $('quota').value = +(s.settings.quota / MB).toFixed(2);
+    $('info').textContent = `Env defaults: registration ${s.defaults.registration}, upload ${s.defaults.maxUpload / MB} MB, quota ${s.defaults.quota / MB} MB. Demo account: ${s.demo ? 'on (set via ORTO_DEMO)' : 'off'}. Data folder: ${s.dataDir}`;
+    const body = $('users'); body.textContent = '';
+    for (const u of await call('GET', 'users')) {
+      const tr = body.insertRow();
+      for (const v of [u.name, new Date(u.createdAt).toISOString().slice(0, 10), u.records, u.files, fmt(u.bytes), u.sessions]) tr.insertCell().textContent = v;
+      const cell = tr.insertCell(); cell.className = 'row';
+      const lo = Object.assign(document.createElement('button'), { textContent: 'Sign out' });
+      lo.onclick = () => act(() => call('POST', `users/${u.name}/logout`), `${u.name} signed out everywhere`);
+      const del = Object.assign(document.createElement('button'), { textContent: 'Delete', className: 'd' });
+      del.onclick = () => { if (prompt(`Delete "${u.name}" and ALL their data? Type the name to confirm.`) === u.name) act(() => call('DELETE', `users/${u.name}`), `${u.name} deleted`); };
+      cell.append(lo, del);
+    }
+    $('login').hidden = true; $('app').hidden = false;
+  } catch (e) { say(e.message, true); }
+}
+async function act(fn, ok) { try { const r = await fn(); say(typeof ok === 'function' ? ok(r) : ok); await load(); } catch (e) { say(e.message, true); } }
+$('login').onsubmit = async (e) => {
+  e.preventDefault();
+  try { token = (await call('POST', 'login', { pass: $('pass').value })).token; try { sessionStorage.setItem('orto-admin', token); } catch (_) {} $('pass').value = ''; say(''); await load(); }
+  catch (e) { say(e.message, true); }
+};
+$('save').onclick = () => act(() => call('PUT', 'settings', { registration: $('registration').value, maxUpload: Math.round($('maxUpload').value * MB), quota: Math.round($('quota').value * MB) }), 'Saved');
+$('reset').onclick = () => act(() => call('PUT', 'settings', { registration: null, maxUpload: null, quota: null }), 'Back to env defaults');
+$('backup').onclick = () => act(() => call('POST', 'backup'), (r) => 'Backup written to ' + r.path);
+$('out').onclick = out;
+token ? load() : out();
+</script>
+</body>
+</html>
