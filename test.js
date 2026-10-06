@@ -1,39 +1,42 @@
-// Calendar roundtrip: encrypted at rest in graph, decrypts on read, range filter, delete.
+// End-to-end: in-process server on a temp SQLite DB + SDK. Checks round trips, encryption at rest, isolation, files, live events.
 import assert from 'assert';
-import http from 'http';
-import osmod from 'os';
+import fs from 'fs';
+import os_ from 'os';
 import path from 'path';
+import { createServer } from './server.js';
+import { ZenOS, parseBookmarksHtml, bookmarksToHtml, parseVcf, contactsToVcf, generatePassword, normalizeServer } from './zenos.js';
 
-process.env.ZENOS_CACHE_FILE = path.join(osmod.tmpdir(), `zenos-test-cache-${Date.now()}.json`);
+const dir = fs.mkdtempSync(path.join(os_.tmpdir(), 'zenos-test-'));
+const server = createServer({ dataDir: dir, webDir: dir });
+await new Promise((r) => server.listen(0, '127.0.0.1', r));
+const url = 'http://127.0.0.1:' + server.address().port;
+const clients = [];
+const client = async (user, pass, create = true) => { const c = new ZenOS({ server: url }); await c.login(user, pass, { create }); clients.push(c); return c; };
+const raw = (c, coll, soul) => c._json('GET', `/c/${coll}/${soul}`); // what the server stores
 
-const { ZenOS, parseBookmarksHtml, bookmarksToHtml, legacySmollogPair, parseVcf, contactsToVcf, generatePassword } = await import('./zenos.js');
-const { deriveMasterPair } = await import('./identity.js');
+assert.equal(normalizeServer('http://h:1/'), 'http://h:1');
 
-// local in-process relay so the test needs no network
-const ZEN = (await import('./zen.min.js')).default;
-new ZEN({ web: http.createServer().listen(8765) });
+console.log('1. Accounts');
+const os = await client('Test-User', 'test-pass');
+assert.equal(os.pub, 'test-user');
+await assert.rejects(client('test-user', 'wrong', false), (e) => e.status === 401);
+await assert.rejects(client('nobody', 'x', false), (e) => e.status === 404);
+await assert.rejects(client('test-user', 'x', true), (e) => e.status === 409);
+await assert.rejects(new ZenOS({ server: url })._json('GET', '/c/vault'), (e) => e.status === 401);
+const sameLogin = await client('test-user', 'test-pass', false);
+assert.equal((await os.encrypt({ a: 1 })).startsWith('e1.'), true);
+assert.deepEqual(await sameLogin.decrypt(await os.encrypt({ a: 1 })), { a: 1 }); // same login, same key
 
-console.log('1. Starting test...');
-const os = new ZenOS({ peers: ['ws://127.0.0.1:8765/zen'], localStorage: true, radisk: true });
-await os.login('test-user', 'test-pass');
-console.log('2. Logged in');
-
+console.log('2. Calendar');
 const { soul } = await os.writeCalendarEvent({ title: 'Dentist', start: '2026-10-05T10:00:00Z', end: '2026-10-05T11:00:00Z', notes: 'secret' });
-console.log('3. Wrote calendar event');
-const raw = await new Promise((r) => os.userRoot.get('calendar').get(soul).once(r));
-assert(!JSON.stringify(raw).includes('Dentist') && !JSON.stringify(raw).includes('secret'), 'plaintext leaked');
-
-let evs = await os.readCalendarEvents({ timeoutMs: 500 });
-console.log('4. Read calendar events:', evs.length);
-assert.equal(evs.length, 1);
-assert.equal(evs[0].title, 'Dentist');
-assert.equal((await os.readCalendarEvents({ from: '2026-11-01', timeoutMs: 500 })).length, 0);
-
+assert(!JSON.stringify(await raw(os, 'calendar', soul)).match(/Dentist|secret/), 'plaintext leaked');
+let evs = await os.readCalendarEvents();
+assert.equal(evs.length, 1); assert.equal(evs[0].title, 'Dentist');
+assert.equal((await os.readCalendarEvents({ from: '2026-11-01' })).length, 0);
 await os.deleteCalendarEvent(soul);
-console.log('5. Deleted calendar event');
-assert.equal((await os.readCalendarEvents({ timeoutMs: 500 })).length, 0);
+assert.equal((await os.readCalendarEvents()).length, 0);
 
-// Bookmarks: Brave-style export parse + encrypted import roundtrip + dedup + filters
+console.log('3. Bookmarks');
 const HTML = `<DL><p><DT><H3 ADD_DATE="1">Bookmarks bar</H3><DL><p>
 <DT><A HREF="https://example.com/a?x=1&amp;y=2" ADD_DATE="1700000000">Example &amp; A</A>
 <DT><H3>Dev</H3><DL><p><DT><A HREF="https://dev.example/b" ADD_DATE="1700000100">Dev B</A></DL><p>
@@ -42,189 +45,88 @@ const parsed = parseBookmarksHtml(HTML);
 assert.equal(parsed.length, 2, 'javascript: dropped');
 assert.deepEqual(parsed.map(b => b.folder), ['Bookmarks bar', 'Bookmarks bar/Dev']);
 assert.equal(parsed[0].url, 'https://example.com/a?x=1&y=2');
-assert.equal(parsed[0].title, 'Example & A');
 assert.equal(parsed[0].addedAt, 1700000000000);
-
 assert.deepEqual(await os.importBookmarksHtml(HTML), { imported: 2, failed: 0 });
-await os.importBookmarksHtml(HTML); // re-import must not duplicate
-const bms = await os.readBookmarks({ timeoutMs: 500 });
+await os.importBookmarksHtml(HTML); // no duplicates
+const bms = await os.readBookmarks();
 assert.equal(bms.length, 2);
-assert.equal((await os.readBookmarks({ folder: 'Bookmarks bar/Dev', timeoutMs: 500 })).length, 1);
-assert.equal((await os.readBookmarks({ query: 'example & a', timeoutMs: 500 })).length, 1);
-assert.equal((await os.readBookmarks({ query: 'EXAMPLE.com bar', timeoutMs: 500 })).length, 1); // multi-keyword, url + folder
-assert.equal((await os.readBookmarks({ query: 'example nope', timeoutMs: 500 })).length, 0);
-const braw = await new Promise((r) => os.userRoot.get('bookmarks').get(bms[0].soul).once(r));
-assert(!/example|Dev/.test(JSON.stringify(braw)), 'bookmark plaintext leaked');
-// agent-style reorganisation: move by soul, keep url/addedAt, report unknown souls
+assert(!/example|Dev/.test(JSON.stringify(await raw(os, 'bookmarks', bms[0].soul))), 'bookmark leaked');
+assert.equal((await os.readBookmarks({ folder: 'Bookmarks bar/Dev' })).length, 1);
+assert.equal((await os.readBookmarks({ query: 'EXAMPLE.com bar' })).length, 1);
+assert.equal((await os.readBookmarks({ query: 'example nope' })).length, 0);
 const dev = bms.find(b => b.title === 'Dev B');
 assert.deepEqual(await os.updateBookmarks([{ soul: dev.soul, folder: 'Work/Dev', tags: ['x'] }, { soul: 'bm-nope', folder: 'Z' }]), { updated: 1, missing: ['bm-nope'], failed: 0 });
-const moved = (await os.readBookmarks({ folder: 'Work', timeoutMs: 500 }))[0];
+const moved = (await os.readBookmarks({ folder: 'Work' }))[0];
 assert(moved.title === 'Dev B' && moved.url === dev.url && moved.addedAt === dev.addedAt && moved.tags[0] === 'x');
-// export is the inverse of import: parse(export(x)) gives x back, entities and tags included
-const exported = await os.exportBookmarksHtml({ timeoutMs: 500 });
-const back = parseBookmarksHtml(exported);
+const exported = await os.exportBookmarksHtml();
 const key = (b) => [b.url, b.title, b.folder, b.addedAt, (b.tags || []).join(',')].join('|');
-const now = await os.readBookmarks({ timeoutMs: 500 });
-assert.deepEqual(back.map(key).sort(), now.map(key).sort());
-assert(exported.includes('Example &amp; A') && exported.includes('TAGS="x"'));
-assert.equal(parseBookmarksHtml(bookmarksToHtml([{ url: 'https://a.example/?q="1"&r=<2>', title: 'T <b> "q"', folder: 'A/B', addedAt: 5000, tags: [] }]))[0].url, 'https://a.example/?q="1"&r=<2>');
-await os.deleteBookmark(bms[0].soul);
-assert.equal((await os.readBookmarks({ timeoutMs: 500 })).length, 1);
+assert.deepEqual(parseBookmarksHtml(exported).map(key).sort(), (await os.readBookmarks()).map(key).sort());
+assert.equal(parseBookmarksHtml(bookmarksToHtml([{ url: 'https://a.example/?q="1"&r=<2>', title: 'T <b>', folder: 'A/B', addedAt: 5000, tags: [] }]))[0].url, 'https://a.example/?q="1"&r=<2>');
+await os.deleteBookmark(bms[1].soul);
+assert.equal(await os.getBookmark(bms[1].soul), null);
 
-// Identity: FID derivation (identity.js), pinned vector shared with fid; the older schemes differ from it
-const ZENlib = (await import('./zen.min.js')).default;
-assert.equal((await deriveMasterPair(ZENlib, 'alice', 'correct horse battery staple')).pub, '0QVOEafmRes1AeAnUMav9avHzAf7OnW4yB0wwSMKBKCY0');
-assert.equal((await legacySmollogPair('Scobru', 'pw')).pub, '0Dxl7yX7XKZU5pbgBRpQaVCMeSZwNJsqypyQvo5Lu5dr0');
-assert.equal(os.legacyPairs.length, 2);
-assert(os.legacyPairs.every(p => p.pub !== os.pub));
-
-// Migration: data under either earlier identity (smollog PBKDF2, plain user+pass) shows up (re-encrypted) under the new pub, idempotently
-const [L, L2] = os.legacyPairs, lput = (path, soul, v, P = L) => new Promise((r) => os.zen.get('~' + P.pub).get(path).get(soul).put(v, r, { authenticator: P }));
-await lput('vault', 'vault-old', { title: await ZEN.encrypt('Old title', L), body: await ZEN.encrypt('Old body', L), cat: await ZEN.encrypt('c', L), pinned: true, trash: false, timestamp: 1, encrypted: true });
-await lput('calendar', 'cal-old', { data: await ZEN.encrypt({ title: 'Old ev', start: 5, end: 6 }, L2), updatedAt: 1, encrypted: true }, L2); // oldest scheme (user + pass)
-await lput('bookmarks', 'bm-old', { data: await ZEN.encrypt({ url: 'https://old.example', title: 'Old bm', folder: '', tags: [], addedAt: 1 }, L), updatedAt: 1, encrypted: true });
-assert.equal((await os.readVaultNotes(500)).length, 0, 'nothing under new pub yet');
-assert.deepEqual(await os.migrateLegacy(1000), { migrated: 3, skipped: 0, failed: 0 });
-assert.deepEqual(await os.migrateLegacy(1000), { migrated: 0, skipped: 3, failed: 0 });
-const [n] = await os.readVaultNotes(500);
-assert(n.title === 'Old title' && n.body === 'Old body' && n.pinned);
-assert.equal((await os.readCalendarEvents({ timeoutMs: 500 })).find(e => e.title === 'Old ev').soul, 'cal-old');
-assert((await os.readBookmarks({ timeoutMs: 500 })).some(b => b.title === 'Old bm'));
-// Links: note <-> event, stored in the encrypted event; idempotent, validated, dangling links skipped
+console.log('4. Vault + links');
 const note = await os.writeVaultNote({ title: 'Meeting prep', body: 'agenda', cat: 'work' });
+assert(!JSON.stringify(await raw(os, 'vault', note.soul)).match(/Meeting|agenda/), 'note leaked');
 const ev = await os.writeCalendarEvent({ title: 'Meeting', start: Date.now() + 3600000 });
 await os.linkToEvent(ev.soul, { soul: note.soul });
 await os.linkToEvent(ev.soul, { soul: note.soul });
 await os.linkToEvent(ev.soul, { kind: 'note', soul: 'vault-gone' });
 assert.deepEqual((await os.getCalendarEvent(ev.soul)).links, [{ kind: 'note', soul: note.soul }, { kind: 'note', soul: 'vault-gone' }]);
-assert.deepEqual((await os.eventsFor({ soul: note.soul }, 500)).map(e => e.soul), [ev.soul]);
-assert.deepEqual((await os.notesForEvent(ev.soul, 500)).map(n => n.title), ['Meeting prep']);
-const raw2 = await new Promise((r) => os.userRoot.get('calendar').get(ev.soul).once(r));
-assert(!JSON.stringify(raw2).includes(note.soul), 'link target leaked in clear');
+assert.deepEqual((await os.eventsFor({ soul: note.soul })).map(e => e.soul), [ev.soul]);
+assert.deepEqual((await os.notesForEvent(ev.soul)).map(n => n.title), ['Meeting prep']);
 await assert.rejects(os.writeCalendarEvent({ soul: ev.soul, title: 'x', start: 1, links: [{ kind: 'url', soul: 'a' }] }));
 await os.unlinkFromEvent(ev.soul, { soul: note.soul });
-assert.equal((await os.eventsFor({ soul: note.soul }, 500)).length, 0);
-
-// Vault single get & delete
-const singleNote = await os.getVaultNote(note.soul);
-assert.equal(singleNote.title, 'Meeting prep');
+assert.equal((await os.eventsFor({ soul: note.soul })).length, 0);
+await os.writeVaultNote({ title: 'Pinned', body: '', pinned: true });
+assert.equal((await os.readVaultNotes())[0].title, 'Pinned');
+assert.equal((await os.getVaultNote(note.soul)).title, 'Meeting prep');
 await os.deleteVaultNote(note.soul);
 assert.equal(await os.getVaultNote(note.soul), null);
 
-// Bookmarks single get & delete
-const singleBm = await os.getBookmark(bms[1].soul);
-assert.ok(singleBm && singleBm.url);
-await os.deleteBookmark(bms[1].soul);
-assert.equal(await os.getBookmark(bms[1].soul), null);
-
-// Blog / smollog CRUD & alias
-const blogRes = await os.publishBlogPost({ title: 'Hello Sovereign World', content: '# Welcome to ZenOS', tags: ['zen', 'os'], id: 'post-test-1' });
-assert.equal(blogRes.id, 'post-test-1');
-const singlePost = await os.getBlogPost('post-test-1', os.pub);
-assert.equal(singlePost.title, 'Hello Sovereign World');
-assert.deepEqual(singlePost.tags, ['zen', 'os']);
-
-const blogList = await os.readBlogPosts(os.pub, 500);
-assert.ok(blogList.some(p => p.id === 'post-test-1'));
-
-await os.registerAlias('tester');
-const resolvedPub = await os.resolveAlias('tester');
-assert.equal(resolvedPub, os.pub);
-
-await os.deleteBlogPost('post-test-1');
-const deletedPost = await os.getBlogPost('post-test-1', os.pub);
-assert.equal(deletedPost, null);
-
-// Tasks & Kanban CRUD, encryption check, and bidirectional links
-console.log('6. Testing Tasks & Kanban...');
-const { soul: taskSoul } = await os.writeTask({
-  title: 'Build Autonomous Agent Bridge',
-  status: 'todo',
-  priority: 'high',
-  desc: 'Top secret agent blueprints',
-  dueDate: '2026-12-01T00:00:00Z',
-  tags: ['ai', 'core'],
-  assignee: 'agent-007'
-});
-assert.ok(taskSoul.startsWith('task-'));
-
-// Ensure no plaintext leaks on relay/graph
-const taskRaw = await new Promise((r) => os.userRoot.get('tasks').get(taskSoul).once(r));
-assert(!JSON.stringify(taskRaw).includes('Autonomous Agent Bridge') && !JSON.stringify(taskRaw).includes('Top secret'), 'task plaintext leaked in graph');
-
-// Read task by soul
-const singleTask = await os.getTask(taskSoul);
-assert.equal(singleTask.title, 'Build Autonomous Agent Bridge');
-assert.equal(singleTask.status, 'todo');
-assert.equal(singleTask.priority, 'high');
-assert.equal(singleTask.assignee, 'agent-007');
-assert.deepEqual(singleTask.tags, ['ai', 'core']);
-
-// Read tasks list with filters
-let allTasks = await os.readTasks({ timeoutMs: 500 });
-assert.ok(allTasks.some(t => t.soul === taskSoul));
-let filteredTodo = await os.readTasks({ status: 'todo', timeoutMs: 500 });
-assert.ok(filteredTodo.some(t => t.soul === taskSoul));
-let filteredDone = await os.readTasks({ status: 'done', timeoutMs: 500 });
-assert.ok(!filteredDone.some(t => t.soul === taskSoul));
-
-// Update task to done (completedAt auto-stamped)
+console.log('5. Tasks');
+const { soul: taskSoul } = await os.writeTask({ title: 'Build Bridge', priority: 'high', desc: 'Top secret blueprints', dueDate: '2026-12-01T00:00:00Z', tags: ['ai', 'core'], assignee: 'agent-007' });
+assert(taskSoul.startsWith('task-'));
+assert(!JSON.stringify(await raw(os, 'tasks', taskSoul)).match(/Bridge|secret/), 'task leaked');
+const t = await os.getTask(taskSoul);
+assert.deepEqual([t.title, t.status, t.priority, t.assignee, t.tags], ['Build Bridge', 'todo', 'high', 'agent-007', ['ai', 'core']]);
+assert((await os.readTasks({ status: 'todo' })).some(x => x.soul === taskSoul));
+assert(!(await os.readTasks({ status: 'done' })).some(x => x.soul === taskSoul));
 await os.updateTask(taskSoul, { status: 'done' });
-const updatedTask = await os.getTask(taskSoul);
-assert.equal(updatedTask.status, 'done');
-assert.ok(updatedTask.completedAt > 0);
-
-// Graph links: link task to a vault note & link calendar event to task
-const taskNote = await os.writeVaultNote({ title: 'Task Specs', body: 'Spec details' });
-await os.linkToTask(taskSoul, { kind: 'note', soul: taskNote.soul });
-const taskWithLinks = await os.getTask(taskSoul);
-assert.ok(taskWithLinks.links.some(l => l.kind === 'note' && l.soul === taskNote.soul));
-
-const tasksFound = await os.tasksFor({ kind: 'note', soul: taskNote.soul }, 500);
-assert.equal(tasksFound.length, 1);
-assert.equal(tasksFound[0].soul, taskSoul);
-
-// Calendar event linking to task (via expanded LINK_KINDS)
-const calForTask = await os.writeCalendarEvent({ title: 'Task Deadline', start: Date.now() + 7200000 });
+const done = await os.getTask(taskSoul);
+assert.equal(done.status, 'done'); assert(done.completedAt > 0);
+const taskNote = await os.writeVaultNote({ title: 'Specs', body: 'x' });
+await os.linkToTask(taskSoul, { soul: taskNote.soul });
+assert.deepEqual((await os.tasksFor({ soul: taskNote.soul })).map(x => x.soul), [taskSoul]);
+const calForTask = await os.writeCalendarEvent({ title: 'Deadline', start: Date.now() + 7200000 });
 await os.linkToEvent(calForTask.soul, { kind: 'task', soul: taskSoul });
-const evsForTask = await os.eventsFor({ kind: 'task', soul: taskSoul }, 500);
-assert.equal(evsForTask.length, 1);
-assert.equal(evsForTask[0].soul, calForTask.soul);
-
-// Delete task
+assert.deepEqual((await os.eventsFor({ kind: 'task', soul: taskSoul })).map(e => e.soul), [calForTask.soul]);
 await os.deleteTask(taskSoul);
 assert.equal(await os.getTask(taskSoul), null);
-const afterDel = await os.readTasks({ timeoutMs: 500 });
-assert.ok(!afterDel.some(t => t.soul === taskSoul));
-console.log('7. Tasks & Kanban tests passed!');
 
-// Contacts: encrypted at rest, search, vCard roundtrip, delete
+console.log('6. Contacts');
 const ct = await os.writeContact({ name: 'Ada Lovelace', emails: 'ada@example.com', phones: ['+39 333 1234567'], org: 'Analytical', notes: 'met at ETHRome', tags: '#friends, math' });
-const craw = await new Promise((r) => os.userRoot.get('contacts').get(ct.soul).once(r));
-assert(!JSON.stringify(craw).includes('Ada') && !JSON.stringify(craw).includes('example.com'), 'contact leaked');
+assert(!JSON.stringify(await raw(os, 'contacts', ct.soul)).match(/Ada|example\.com/), 'contact leaked');
 await os.writeContact({ name: 'Bob', emails: ['bob@example.org'] });
-const cts = await os.readContacts({ timeoutMs: 500 });
+const cts = await os.readContacts();
 assert.deepEqual(cts.map(c => c.name), ['Ada Lovelace', 'Bob']);
 assert.deepEqual(cts[0].tags, ['friends', 'math']);
-assert.equal((await os.readContacts({ query: 'ethrome', timeoutMs: 0 })).length, 1);
-assert.equal((await os.readContacts({ tag: '#math', timeoutMs: 0 })).length, 1);
+assert.equal((await os.readContacts({ query: 'ethrome' })).length, 1);
+assert.equal((await os.readContacts({ tag: '#math' })).length, 1);
 const vcf = contactsToVcf([{ name: 'Smith, J; Jr', emails: ['j@x.io'], phones: ['1'], org: 'Org', notes: 'a\nb', tags: ['t1', 't2'] }]);
 const vback = parseVcf(vcf)[0];
 assert.equal(vback.name, 'Smith, J; Jr'); assert.equal(vback.notes, 'a\nb'); assert.deepEqual(vback.tags, ['t1', 't2']);
 assert.equal((await os.importContactsVcf(vcf)).imported, 1);
 await os.deleteContact(ct.soul);
 assert.equal(await os.getContact(ct.soul), null);
-assert.ok(!(await os.readContacts({ timeoutMs: 500 })).some(c => c.soul === ct.soul));
-console.log('8. Contacts tests passed!');
 
-// Secrets: everything encrypted at rest, search never matches the value, kind filter, update keeps soul, delete
+console.log('7. Secrets');
 const sc = await os.writeSecret({ name: 'GitHub', username: 'ada', secret: 'hunter2-XYZ', url: 'https://github.com', tags: 'dev' });
-const sraw = await new Promise((r) => os.userRoot.get('secrets').get(sc.soul).once(r));
-assert(!/GitHub|ada|hunter2/.test(JSON.stringify(sraw)), 'secret leaked');
+assert(!/GitHub|ada|hunter2/.test(JSON.stringify(await raw(os, 'secrets', sc.soul))), 'secret leaked');
 await os.writeSecret({ name: 'Stripe key', kind: 'api', secret: 'sk_live_abc' });
-assert.equal((await os.readSecrets({ timeoutMs: 500 })).length, 2);
-assert.equal((await os.readSecrets({ kind: 'api', timeoutMs: 0 }))[0].name, 'Stripe key');
-assert.equal((await os.readSecrets({ query: 'hunter2', timeoutMs: 0 })).length, 0);
+assert.equal((await os.readSecrets()).length, 2);
+assert.equal((await os.readSecrets({ kind: 'api' }))[0].name, 'Stripe key');
+assert.equal((await os.readSecrets({ query: 'hunter2' })).length, 0);
 await os.writeSecret({ soul: sc.soul, name: 'GitHub', username: 'ada', secret: 'new-pass', url: 'https://github.com' });
 assert.equal((await os.getSecret(sc.soul)).secret, 'new-pass');
 await assert.rejects(() => os.writeSecret({ name: 'x', secret: '' }));
@@ -232,8 +134,52 @@ await os.deleteSecret(sc.soul);
 assert.equal(await os.getSecret(sc.soul), null);
 const pw = generatePassword(24); assert.equal(pw.length, 24); assert.notEqual(pw, generatePassword(24));
 assert.match(generatePassword(40, { symbols: false }), /^[A-Za-z0-9]+$/);
-console.log('9. Secrets tests passed!');
 
-console.log('ok - all CRUD tests passed');
-process.exit(0);
+console.log('8. Files');
+const bytes = Uint8Array.from({ length: 5000 }, (_, i) => i % 251);
+const up = await os.uploadFile(bytes, 'photo.bin');
+assert.equal(up.size, 5000); assert(up.encrypted);
+const onDisk = fs.readFileSync(path.join(dir, 'files', '1', up.id));
+assert(onDisk.length > 5000 && !onDisk.includes(Buffer.from(bytes.slice(0, 64))), 'file stored in clear');
+assert.deepEqual(await os.downloadFile(up.id), bytes);
+const pub = await os.uploadFile(new TextEncoder().encode('hello'), 'hello.txt', { encrypt: false });
+assert.equal(new TextDecoder().decode(await os.downloadFile(pub.id)), 'hello');
+assert.deepEqual((await os.listFiles()).map(f => f.name).sort(), ['hello.txt', 'photo.bin']);
+const other = await client('mallory', 'pw');
+await assert.rejects(other._fetch('GET', '/files/' + up.id), (e) => e.status === 404);
+assert.deepEqual(await other.listFiles(), []);
+await os.deleteFile(up.id);
+assert.equal((await os.listFiles()).length, 1);
+await assert.rejects(os._fetch('GET', '/files/' + up.id), (e) => e.status === 404);
 
+console.log('9. Blog + isolation');
+const post = await os.publishBlogPost({ title: 'Hello', content: '# Welcome', tags: ['zen', 'os'], id: 'post-1' });
+assert.equal(post.id, 'post-1');
+const anon = new ZenOS({ server: url }); // no login: public read
+const read = await anon.readBlogPosts('Test-User');
+assert.deepEqual([read[0].title, read[0].tags, read[0].authorAlias], ['Hello', ['zen', 'os'], 'test-user']);
+assert.equal((await anon.getBlogPost('post-1', 'test-user')).content, '# Welcome');
+assert.equal(await anon.resolveAlias('TEST-user'), 'test-user');
+assert.equal(await anon.resolveAlias('ghost'), null);
+assert.deepEqual(await other.readBlogPosts('mallory'), []);
+assert.deepEqual(await other.readSecrets(), []); // other users see nothing of mine
+await os.publishBlogPost({ title: 'Hello 2', content: 'x', id: 'post-1', createdAt: read[0].createdAt });
+assert.equal((await os.getBlogPost('post-1')).title, 'Hello 2');
+await os.deleteBlogPost('post-1');
+assert.equal(await os.getBlogPost('post-1'), null);
+
+console.log('10. Live events');
+const seen = [];
+const stop = sameLogin.onTask((tk, soul, deleted) => seen.push([tk?.title, deleted]));
+await new Promise(r => setTimeout(r, 200));
+const lt = await os.writeTask({ title: 'live one' });
+await os.deleteTask(lt.soul);
+for (let i = 0; i < 50 && seen.length < 2; i++) await new Promise(r => setTimeout(r, 50));
+assert.deepEqual(seen, [['live one', false], [undefined, true]]);
+stop();
+
+console.log('ok - all tests passed');
+clients.forEach(c => c.close());
+server.closeAllConnections();
+server.close();
+fs.rmSync(dir, { recursive: true, force: true });

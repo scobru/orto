@@ -1,214 +1,92 @@
-# 🌌 ZenOS — The Sovereign Decentralized Agentic OS
+# ZenOS (self-hosted)
 
-> A zero-backend, multi-app decentralized operating system powered by **ZEN** P2P graph database & cryptographic identity.
+Encrypted notes, calendar, tasks, bookmarks, contacts, secrets, files and a public blog, on **one small server you run yourself**: a Node script, one SQLite file and a folder of uploads. No ZEN/P2P network, no npm dependencies.
 
-ZenOS reimagines personal computing in the decentralized AI era. Instead of siloed databases and centralized accounts, your entire digital life lives on a sovereign cryptographic overlay under your personal master keypair:
+- **Server** (`server.js`): HTTP API + static hosting of the web app, SQLite via Node's built-in `node:sqlite` (Node ≥ 22.5).
+- **SDK** (`zenos.js`): works in Node and browsers (`fetch` + WebCrypto).
+- **CLI** (`cli.js`): every app from the terminal, for scripts and AI agents.
+- **Web app**: [zenos-web](https://github.com/scobru/zenos-web) (served by the server itself).
 
-- 🖥️ **Web Desktop / Workspace**: Zero-backend graphical user interface ([ZenOS Web](https://github.com/scobru/zenvault))
-- 🔒 **Private Knowledge Base**: End-to-end AES-GCM encrypted notes (Vault: `~{pub}/vault`)
-- 📅 **Calendar**: E2EE event scheduling, agenda, and bidirectional note linking (`~{pub}/calendar`)
-- 🔖 **Bookmarks**: Private encrypted web library with browser Netscape HTML import/export (`~{pub}/bookmarks`)
-- 👥 **Contacts**: Encrypted address book with vCard import/export (`~{pub}/contacts`)
-- 🔑 **Secrets**: Encrypted passwords, API keys and secure notes with a password generator (`~{pub}/secrets`)
-- 📁 **File Storage**: Encrypted files on IPFS through a Delay relay (`~{pub}/files` index)
-- 🪶 **Public Publishing**: Verifiable, signed decentralized blog ([smollog](https://github.com/scobru/smollog): `~{pub}/posts`)
-- 🤖 **Autonomous AI Agent Ready**: Autonomous LLMs and agents can read, write, and orchestrate across your apps with zero configuration
-- 🌐 **100% Serverless & P2P**: No SQL, no servers, no vendor lock-in. Powered by GunDB/ZEN relays
+## Run it
 
----
-
-## 🏛️ System Architecture
-
-```
-                                 ┌───────────────────────────────┐
-                                 │     Master Credentials        │
-                                 │    (username + password)      │
-                                 └──────────────┬────────────────┘
-                                                │
-                                                ▼
-                                 ┌───────────────────────────────┐
-                                 │      Sovereign Identity       │
-                                 │    0oQit1EicIMg... (secp256k1)│
-                                 └──────────────┬────────────────┘
-                                                │
-                 ┌──────────────────────────────┼──────────────────────────────┐
-                 │                              │                              │
-                 ▼                              ▼                              ▼
-         ┌──────────────┐               ┌──────────────┐               ┌──────────────┐
-         │    Vault     │               │   Calendar   │               │   smollog    │
-         │ ~{pub}/vault │               │~{pub}/calenda│               │ ~{pub}/posts │
-         │  [AES-GCM]   │               │  [AES-GCM]   │               │   [Signed]   │
-         └──────────────┘               └──────────────┘               └──────────────┘
-                 ▲                              ▲                              ▲
-                 │                              │                              │
-                 └──────────────────────────────┼──────────────────────────────┘
-                                                │
-                                                ▼
-                               ┌─────────────────────────────────┐
-                               │  ZenOS Web / Autonomous Agents  │
-                               │    (GUI Workspace & Scripts)    │
-                               └─────────────────────────────────┘
+```bash
+git clone https://github.com/scobru/zenos.git
+git clone https://github.com/scobru/zenos-web.git     # next to zenos/: the server serves zenos-web/app
+cd zenos && npm start                                 # http://127.0.0.1:8787
 ```
 
----
+Open the URL, type a username and password; the first time, the app offers to create the account.
 
-## 📂 Active Application Nodes
+Docker (includes the web app, data in the `zenos-data` volume): `docker compose up -d`, then open http://localhost:8787. Or: `docker build -t zenos . && docker run -d -p 8787:8787 -v zenos-data:/data zenos`. Once zenos-web is merged: `--build-arg WEB_REF=main`.
 
-### 1. Vault (`~{pub}/vault`)
-- **Status**: Live (Web GUI: [ZenOS Web](https://github.com/scobru/zenvault))
-- **Security**: Client-side AES-GCM-256 encryption. Relays only see blind ciphertexts.
-- **Data Model**: Bear-style Markdown notes, tags (`#tag`), tasks (`- [ ]`), images, and bidirectional calendar event links.
+Put it behind a reverse proxy with HTTPS (Caddy, nginx) before exposing it to the internet.
 
-### 2. Calendar (`~{pub}/calendar`)
-- **Status**: Live
-- **Security**: Client-side AES-GCM-256 encryption.
-- **Data Model**: Events, dates, reminders, and links to Vault notes.
+| Env var | Default | |
+|---|---|---|
+| `PORT` / `HOST` | `8787` / `127.0.0.1` | listen address (`0.0.0.0` in Docker) |
+| `ZENOS_DATA` | `./data` | holds `zenos.db` and `files/` — **back this folder up** |
+| `ZENOS_WEB` | `../zenos-web/app` | static files to serve |
+| `ZENOS_REGISTRATION` | `open` | `closed` once your accounts exist |
+| `ZENOS_MAX_UPLOAD` | 200 MB | per file, bytes |
+| `ZENOS_QUOTA` | 5 GB | per user, bytes |
 
-### 3. Bookmarks (`~{pub}/bookmarks`)
-- **Status**: Live
-- **Security**: Client-side AES-GCM-256 encryption.
-- **Data Model**: URLs, titles, tags, folder hierarchy, Netscape HTML bookmark format import/export.
+## How it stays private
 
-### 4. smollog (`~{pub}/posts`)
-- **Status**: Live
-- **Security**: Signed public posts authenticated with `{ authenticator: pair }`.
-- **Data Model**: Clean Markdown journal entries, reading time estimation, tags, and custom author aliases.
+Your login derives two independent keys with PBKDF2 (210k rounds): an **AES-GCM key** that never leaves the client, and an **auth secret** the server stores only as a hash. Notes, events, tasks, bookmarks, contacts, secrets, file contents *and* file names are encrypted before upload; the server (and anyone with the SQLite file) sees ciphertext, usernames, record ids and timestamps. The blog is the one public part.
 
-### 5. Tasks & Kanban (`~{pub}/tasks`)
-- **Status**: Live
-- **Security**: Client-side AES-GCM-256 encryption.
-- **Data Model**: Task title, status (`todo`, `in_progress`, `done`, `blocked`), priority (`low`, `medium`, `high`, `urgent`), markdown descriptions, due dates, tags, assignees, custom kanban columns, and bidirectional links to Vault notes, calendar events, bookmarks or other tasks.
+Forget the password and the data is gone: there is no recovery, by design. Usernames are case-insensitive; the password is case-sensitive.
 
-### 6. Files (`~{pub}/files`)
-- **Status**: Live (needs a Delay relay + token)
-- **Security**: File bytes AES-GCM encrypted client-side by default; encrypted index entry per CID.
-- **Data Model**: `{ cid, name, size, encrypted, addedAt }`; content lives on IPFS behind the Delay relay.
+## CLI
 
-### 7. Contacts (`~{pub}/contacts`)
-- **Status**: Live
-- **Security**: Whole record AES-GCM encrypted client-side; relays see only that a record exists.
-- **Data Model**: `{ name, emails[], phones[], org, notes, tags[], pub, addedAt }` (`pub` = optional ZEN key of a ZenOS user); vCard 3.0 import/export.
+```bash
+export ZENOS_SERVER=http://127.0.0.1:8787     # or --server
+node cli.js register --user alice --pass 'long passphrase'
+node cli.js vault-write --user alice --pass '…' --title "Hello" --body "First note"
+node cli.js vault-read  --user alice --pass '…'
+node cli.js file-upload --user alice --pass '…' --file photo.png
+node cli.js blog-publish --user alice --pass '…' --title Hi --content "Public post"
+node cli.js blog-read --alias alice            # public, no login
+node cli.js --help                             # every command
+```
 
-### 8. Secrets (`~{pub}/secrets`)
-- **Status**: Live
-- **Security**: Name, username, value, URL and notes are all inside the ciphertext. Values are masked by default in the CLI (`--reveal` or `secret-get` to show) and in the web app (Show / Copy per entry).
-- **Data Model**: `{ name, kind: password|api|note, username, secret, url, notes, tags[], createdAt }`. Anyone with the username + password (or an agent holding them) can read every secret, so give agents only what they need.
+Put `ZENOS_USER` / `ZENOS_PASS` in `.env` (see `.env.example`) to drop the flags.
 
-### 9. Future Nodes
-- 📬 **P2P Inbox (`~{pub}/inbox`)**: Direct asymmetric encrypted agent-to-agent messaging.
-- 🤖 **Agents Registry (`~{pub}/agents`)**: Delegation of scoped PEN certificates and permissions.
+## SDK
 
----
-
-## 🤖 For AI Agents & Automation Scripts
-
-Read the complete AI integration guide in [llm.txt](file:///d:/shogun-2/zenos/llm.txt).
-
-### Quickstart Example (JavaScript SDK)
-```javascript
+```js
 import ZenOS from './zenos.js';
-
-const os = new ZenOS();
-await os.login('scobru', 'your_password');
-
-// 1. Vault Notes CRUD
-const note = await os.writeVaultNote({ title: 'Research', body: 'Agent notes', cat: 'ai' });
-const myNote = await os.getVaultNote(note.soul);
-
-// 2. Calendar Events CRUD & Linking
-const ev = await os.writeCalendarEvent({ title: 'Team Sync', start: Date.now() + 3600000 });
-await os.linkToEvent(ev.soul, { soul: note.soul });
-
-// 3. Bookmarks CRUD
-await os.writeBookmark({ url: 'https://github.com/scobru/zenos', title: 'ZenOS', folder: 'Dev' });
-
-// 4. Tasks & Kanban CRUD
-const task = await os.writeTask({ title: 'Deploy Relays', priority: 'high', status: 'todo' });
-await os.linkToTask(task.soul, { kind: 'note', soul: note.soul });
-
-// 5. smollog Blog CRUD
-await os.publishBlogPost({
-  title: '🚀 Dispatches from ZenOS',
-  content: 'Automated dispatch synchronized directly to the decentralized P2P graph.',
-  tags: ['zenos', 'agents', 'p2p']
-});
+const os = new ZenOS({ server: 'http://127.0.0.1:8787' });
+await os.login('alice', 'long passphrase', { create: true }); // create only the first time
+await os.writeVaultNote({ title: 'Hello', body: 'First note' });
+await os.writeTask({ title: 'Ship it', priority: 'high' });
+const up = await os.uploadFile(new Uint8Array([1, 2, 3]), 'tiny.bin');      // encrypted client-side
+const bytes = await os.downloadFile(up.id);
+os.onTask((task, soul, deleted) => console.log(task, deleted));             // live updates (SSE)
 ```
 
-### CLI Quickstart (Full CRUD)
-```bash
-# Vault (Notes) CRUD
-node cli.js vault-write --title "Sprint Plan" --body "Tasks..." --cat "work"
-node cli.js vault-get   --soul <soul>
-node cli.js vault-read  --table
-node cli.js vault-delete --soul <soul>
+Collections: `Vault`, `CalendarEvent`, `Task`, `Bookmark`, `Contact`, `Secret` each have `write*`, `get*`, `read*`, `delete*`, `on*`; plus `uploadFile/listFiles/downloadFile/deleteFile` and `publishBlogPost/readBlogPosts/getBlogPost/deleteBlogPost/onPost`. See [llm.txt](llm.txt).
 
-# Calendar Events CRUD & Graph Links
-node cli.js calendar-write --title "Demo" --start "2026-10-10T15:00:00Z"
-node cli.js calendar-get   --soul <soul>
-node cli.js calendar-read  --table
-node cli.js event-link     --event <ev-soul> --note <note-soul>
-node cli.js calendar-delete --soul <soul>
+## HTTP API
 
-# Tasks & Kanban CRUD & Graph Links
-node cli.js task-write  --title "Sprint Task" --priority "high" --status "todo"
-node cli.js task-get    --soul <soul>
-node cli.js task-read   --table
-node cli.js task-update --soul <soul> --status "done"
-node cli.js task-link   --task <task-soul> --note <note-soul>
-node cli.js task-delete --soul <soul>
+All JSON. `Authorization: Bearer <token>` from `POST /api/login` or `/api/register` (`{name, auth}`).
 
-# Bookmarks CRUD & Netscape HTML
-node cli.js bookmarks-write --url "https://github.com/scobru/zenos" --title "ZenOS"
-node cli.js bookmarks-get   --url "https://github.com/scobru/zenos"
-node cli.js bookmarks-read  --table
-node cli.js bookmarks-delete --url "https://github.com/scobru/zenos"
+| | |
+|---|---|
+| `GET /api/c/:collection` | list records |
+| `GET/PUT/DELETE /api/c/:collection/:soul` | one record (PUT body is stored as-is; clients send `{data: <ciphertext>}`) |
+| `GET /api/events` | server-sent events for your collections |
+| `POST /api/files` (raw body), `GET/DELETE /api/files/:id` | blobs |
+| `GET /api/u/:name`, `GET /api/u/:name/posts` | public profile and blog, no auth |
+| `GET /blog/:name` | public blog page |
 
-# smollog Blog CRUD
-node cli.js blog-publish --title "Hello World" --content "My post..."
-node cli.js blog-get     --id <id>
-node cli.js blog-read    --table
-node cli.js blog-delete  --id <id>
-```
+## Tests
 
----
+`npm test` starts a throwaway server on a temp SQLite file and runs the whole SDK against it (encryption at rest, isolation between users, files, live events).
 
-## 🛰️ Relays
+## Coming from the ZEN version
 
-ZenOS is serverless, but data syncs through **ZEN relays**. By default it connects to:
+The old build kept data in the ZEN graph under a secp256k1 identity; this one uses a different identity and storage, so the two do not share data. To move over: export bookmarks / contacts (HTML / vCard) from the old app and import them here; copy notes by hand or with a script using both SDKs. The `main` branch keeps the ZEN build.
 
-- `wss://delay.scobrudot.dev/zen` — **the author's personal [Delay](file:///d:/shogun-2/shogun-relay) relay** (best-effort, no SLA)
-- `wss://zen.akao.io:8420/zen` — public upstream [ZEN](file:///d:/shogun-2/zen) network relay
+## License
 
-> ⚠️ The system works out of the box **because it uses the author's relay**. For production or full sovereignty, run your own and point ZenOS to it.
-
-```bash
-# add a custom relay to the defaults
-node cli.js vault-read --user u --pass p --relay "wss://relay.example.com/zen"
-# use only your relay
-ZENOS_RELAYS="wss://relay.example.com/zen" ZENOS_ONLY_CUSTOM_RELAYS=true node cli.js vault-read --user u --pass p
-```
-
-```javascript
-const os = new ZenOS({ extraPeers: ['wss://relay.example.com/zen'] });            // defaults + custom
-const own = new ZenOS({ extraPeers: ['ws://localhost:8420/zen'], useDefaultRelays: false }); // custom only
-```
-
-Full guide (custom relays + self-hosting with `zen` or `shogun-relay`): **[RELAYS.md](file:///d:/shogun-2/zenOS/RELAYS.md)**.
-
-## File storage (Delay relay + IPFS)
-
-Files go to IPFS through a [Delay](https://github.com/scobru/delay) relay. Plain ZEN relays have no IPFS, so ZenOS probes each relay (`GET /api/v1/system/health`) and uses the first Delay one; it errors if none is configured. Upload needs the relay's admin token or `delay-api-*` key, passed as `--token` / `storageToken` or `ZENOS_STORAGE_TOKEN`.
-
-```bash
-export ZENOS_STORAGE_TOKEN=...
-node cli.js file-upload   --file ./photo.png          # encrypted by default (--plain to skip)
-node cli.js file-list
-node cli.js file-download --cid <cid> --out ./photo.png
-```
-
-SDK: `os.uploadFile(bytes, name, { encrypt })`, `os.listFiles()`, `os.downloadFile(cid)`. Encrypted files are base64'd before AES-GCM, so they are ~1.4x bigger on IPFS; an encrypted index lives at `~pub/files/<cid>`.
-
----
-
-## 📜 License
-MIT License.
+MIT

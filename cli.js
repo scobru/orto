@@ -7,7 +7,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import ZenOS, { DEFAULT_RELAYS, resolvePeers, getGraphSnapshot, flushStorage, bookmarkSoul, generatePassword } from './zenos.js';
+import ZenOS, { DEFAULT_SERVER, normalizeServer, bookmarkSoul, generatePassword } from './zenos.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -20,7 +20,6 @@ const SHORT_ALIASES = {
   u: 'user',
   h: 'help',
   f: 'file',
-  F: 'fast',
   s: 'soul'
 };
 
@@ -103,9 +102,8 @@ function requireCredentials() {
   return { user, pass };
 }
 
-function safeExit(code = 0, delay = 1500) {
-  flushStorage();
-  setTimeout(() => process.exit(code), delay);
+function safeExit(code = 0) {
+  process.exit(code);
 }
 
 function outputResults(items, flags) {
@@ -173,20 +171,20 @@ async function main() {
     console.log(`
 ZenOS CLI — Sovereign Agent Tools
 Usage:
-  # Identity & Relays
-  node cli.js identity [--user <user> --pass <pass>]
-  node cli.js migrate  [--user <user> --pass <pass>]   # copy vault/calendar/bookmarks from earlier identities
-  node cli.js relays                                 # print effective relay list
+  # Account
+  node cli.js register [--user <user> --pass <pass>]   # create the account on the server (if registration is open)
+  node cli.js identity [--user <user> --pass <pass>]   # check login, print username + server
 
-  # File storage (needs a Delay relay + token: --token or ZENOS_STORAGE_TOKEN)
-  node cli.js file-upload   [--user <user> --pass <pass>] --file <path> [--token <t>] [--plain]
+  # File storage (encrypted client-side unless --plain)
+  node cli.js file-upload   [--user <user> --pass <pass>] --file <path> [--plain]
   node cli.js file-list     [--user <user> --pass <pass>]
-  node cli.js file-download [--user <user> --pass <pass>] --cid <cid> --out <path>
+  node cli.js file-download [--user <user> --pass <pass>] --id <id> --out <path>
+  node cli.js file-delete   [--user <user> --pass <pass>] --id <id>
 
   # Contacts (Encrypted)
-  node cli.js contact-add    [--user <user> --pass <pass>] --name <name> [--email <a,b>] [--phone <a,b>] [--org <org>] [--notes <text>] [--tags <a,b>] [--pub <zen pub>] [--soul <soul>]
+  node cli.js contact-add    [--user <user> --pass <pass>] --name <name> [--email <a,b>] [--phone <a,b>] [--org <org>] [--notes <text>] [--tags <a,b>] [--pub <zenos username>] [--soul <soul>]
   node cli.js contact-get    [--user <user> --pass <pass>] --soul <soul>
-  node cli.js contact-read   [--user <user> --pass <pass>] [--query <q>] [--tag <tag>] [--table] [--count] [-n <limit> -p <page>] [--fast]
+  node cli.js contact-read   [--user <user> --pass <pass>] [--query <q>] [--tag <tag>] [--table] [--count] [-n <limit> -p <page>]
   node cli.js contact-delete [--user <user> --pass <pass>] --soul <soul>
   node cli.js contacts-import [--user <user> --pass <pass>] --file <contacts.vcf>
   node cli.js contacts-export [--user <user> --pass <pass>] [--file <out.vcf>] [--query <q>] [--tag <tag>]
@@ -194,20 +192,20 @@ Usage:
   # Secrets: passwords, API keys, notes (Encrypted; values hidden unless --reveal / secret-get)
   node cli.js secret-add      [--user <user> --pass <pass>] --name <name> (--secret <value> | --secret-stdin | --generate [--length 24] [--no-symbols]) [--kind password|api|note] [--username <u>] [--url <url>] [--notes <text>] [--tags <a,b>] [--soul <soul>]
   node cli.js secret-get      [--user <user> --pass <pass>] --soul <soul>        # prints the secret value
-  node cli.js secret-read     [--user <user> --pass <pass>] [--query <q>] [--kind <kind>] [--tag <tag>] [--reveal] [--table] [--count] [--fast]
+  node cli.js secret-read     [--user <user> --pass <pass>] [--query <q>] [--kind <kind>] [--tag <tag>] [--reveal] [--table] [--count]
   node cli.js secret-delete   [--user <user> --pass <pass>] --soul <soul>
   node cli.js secret-generate [--length 24] [--no-symbols]                        # no login needed
 
   # Vault (Encrypted Notes)
   node cli.js vault-write  [--user <user> --pass <pass>] --title <title> --body <body> [--cat <cat>] [--pinned] [--soul <soul>]
   node cli.js vault-get    [--user <user> --pass <pass>] --soul <soul>
-  node cli.js vault-read   [--user <user> --pass <pass>] [--cat <cat>] [--query <q>] [--pinned] [--timeout <ms>] [--fast]
+  node cli.js vault-read   [--user <user> --pass <pass>] [--cat <cat>] [--query <q>] [--pinned]
   node cli.js vault-delete [--user <user> --pass <pass>] --soul <soul>
 
   # Calendar (Encrypted Events & Graph Links)
   node cli.js calendar-write      [--user <user> --pass <pass>] --title <title> --start <date> [--end <date>] [--allDay] [--notes <text>] [--location <loc>] [--soul <soul>]
   node cli.js calendar-get        [--user <user> --pass <pass>] --soul <soul>
-  node cli.js calendar-read       [--user <user> --pass <pass>] [--from <date>] [--to <date>] [--timeout <ms>] [--fast]
+  node cli.js calendar-read       [--user <user> --pass <pass>] [--from <date>] [--to <date>]
   node cli.js calendar-delete     [--user <user> --pass <pass>] --soul <soul>
   node cli.js calendar-events-for [--user <user> --pass <pass>] (--note <soul> | --bookmark <soul>)
   node cli.js calendar-notes-for  [--user <user> --pass <pass>] --event <soul>
@@ -217,7 +215,7 @@ Usage:
   # Tasks & Kanban (Encrypted Projects & Tasks)
   node cli.js task-write   [--user <user> --pass <pass>] --title <title> [--status <todo|in_progress|done|blocked>] [--priority <low|medium|high|urgent>] [--desc <desc>] [--due <date>] [--tags <t1,t2>] [--assignee <who>] [--column <col>] [--soul <soul>]
   node cli.js task-get     [--user <user> --pass <pass>] --soul <soul>
-  node cli.js task-read    [--user <user> --pass <pass>] [--status <s>] [--priority <p>] [--tag <t>] [--query <q>] [--timeout <ms>] [--fast]
+  node cli.js task-read    [--user <user> --pass <pass>] [--status <s>] [--priority <p>] [--tag <t>] [--query <q>]
   node cli.js task-update  [--user <user> --pass <pass>] --soul <soul> [--title <title>] [--status <s>] [--priority <p>] [--desc <desc>] [--due <date>] [--tags <tags>] [--assignee <who>]
   node cli.js task-delete  [--user <user> --pass <pass>] --soul <soul>
   node cli.js task-link    [--user <user> --pass <pass>] --task <soul> (--note <soul> | --event <soul> | --bookmark <soul> | --linked-task <soul>)
@@ -227,7 +225,7 @@ Usage:
   # Bookmarks (Encrypted & Deduplicated)
   node cli.js bookmarks-write  [--user <user> --pass <pass>] --url <url> [--title <title>] [--folder <path>] [--tags <t1,t2>]
   node cli.js bookmarks-get    [--user <user> --pass <pass>] (--soul <soul> | --url <url>)
-  node cli.js bookmarks-read   [--user <user> --pass <pass>] [--folder <path>] [--query <q>] [--timeout <ms>] [--fast]
+  node cli.js bookmarks-read   [--user <user> --pass <pass>] [--folder <path>] [--query <q>]
   node cli.js bookmarks-delete [--user <user> --pass <pass>] (--soul <soul> | --url <url>)
   node cli.js bookmarks-import [--user <user> --pass <pass>] --file <export.html>   # Brave/Chrome/Firefox export
   node cli.js bookmarks-export [--user <user> --pass <pass>] [--folder <path>] [--file <out.html>]
@@ -235,10 +233,9 @@ Usage:
 
   # smollog (Public Verifiable Blog)
   node cli.js blog-publish [--user <user> --pass <pass>] --title <title> --content <content> [--tags <tags>] [--id <id>]
-  node cli.js blog-get     --id <id> [--pub <pub>] [--alias <alias>] [--user <user> --pass <pass>]
-  node cli.js blog-read    [--pub <pub>] [--alias <alias>] [--user <user> --pass <pass>] [--timeout <ms>] [--fast]
+  node cli.js blog-get     --id <id> (--alias <username> | --user <user> --pass <pass>)
+  node cli.js blog-read    (--alias <username> | --user <user> --pass <pass>)     # public posts need no login
   node cli.js blog-delete  [--user <user> --pass <pass>] --id <id>
-  node cli.js blog-alias   [--user <user> --pass <pass>] [--alias <alias>]
 
 Pagination & formatting options (read commands):
   --limit <n>, -n <n>     limit number of returned records (default 20 when paginating)
@@ -246,61 +243,36 @@ Pagination & formatting options (read commands):
   --offset <n>            record offset (alternative to --page)
   --count, -c             return total count only (e.g. {"total": 1704})
   --table, -t             format results as an easy-to-read console table
-  --fast, -F              read immediately from local cache (timeout 0ms)
-  --wait                  read commands wait the full --timeout instead of stopping at the first quiet gap (use with --timeout on big collections)
 
 Credentials:
   Flags:     --user <user> --pass <pass> (or -u <user>)
   Env vars:  ZENOS_USER and ZENOS_PASS (or ZENOS_USERNAME / ZENOS_PASSWORD)
   Files:     .env in skill directory or current working directory (or --env <path>)
 
-Relay options (all commands):
-  --relay <url[,url]>     add custom relay(s) on top of the defaults
-  --no-default-relays     use only custom relays (--relay / ZENOS_RELAYS)
-  --peers <url[,url]>     replace the relay list entirely
-
-Env vars:
-  ZENOS_RELAYS=<url[,url]>        custom relays, always added
-  ZENOS_ONLY_CUSTOM_RELAYS=true   same as --no-default-relays
-
-Default relays: ${DEFAULT_RELAYS.join(', ')}
-(delay.scobrudot.dev is the author's personal relay — run your own, see RELAYS.md)
+Server (all commands):
+  --server <url>          ZenOS server URL (or ZENOS_SERVER); default ${DEFAULT_SERVER}
+  Run your own: node server.js   (see README.md)
 `);
     process.exit(0);
   }
 
-  const peers = resolvePeers({
-    peers: typeof flags.peers === 'string' ? flags.peers : undefined,
-    extraPeers: typeof flags.relay === 'string' ? flags.relay : undefined,
-    useDefaultRelays: flags['no-default-relays'] ? false : undefined
-  });
-
-  if (cmd === 'relays') {
-    console.log(JSON.stringify({ peers }, null, 2));
-    process.exit(0);
-  }
-
-  const os = new ZenOS({ peers, fullWait: !!flags.wait, storageToken: typeof flags.token === 'string' ? flags.token : undefined });
+  const server = normalizeServer(typeof flags.server === 'string' ? flags.server : process.env.ZENOS_SERVER || DEFAULT_SERVER);
+  const os = new ZenOS({ server });
 
   switch (cmd) {
-    case 'identity': {
+    case 'register': {
       const { user, pass } = requireCredentials();
-      const pair = await os.login(user, pass);
-      console.log(JSON.stringify({
-        pub: pair.pub,
-        priv: pair.priv,
-        address: pair.address,
-        curve: pair.curve
-      }, null, 2));
+      await os.login(user, pass, { create: true });
+      console.log(JSON.stringify({ username: os.username, server }, null, 2));
       process.exit(0);
       break;
     }
 
-    case 'migrate': {
+    case 'identity': {
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      console.log(JSON.stringify({ pub: os.pub, legacyPubs: os.legacyPairs.map(p => p.pub), ...await os.migrateLegacy() }, null, 2));
-      safeExit(0);
+      console.log(JSON.stringify({ username: os.username, blog: `${server}/blog/${os.pub}`, server }, null, 2));
+      process.exit(0);
       break;
     }
 
@@ -325,11 +297,20 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     }
 
     case 'file-download': {
-      if (typeof flags.cid !== 'string' || typeof flags.out !== 'string') throw new Error('--cid and --out are required.');
+      if (typeof flags.id !== 'string' || typeof flags.out !== 'string') throw new Error('--id and --out are required.');
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      fs.writeFileSync(flags.out, await os.downloadFile(flags.cid));
-      console.log(JSON.stringify({ cid: flags.cid, out: flags.out }, null, 2));
+      fs.writeFileSync(flags.out, await os.downloadFile(flags.id));
+      console.log(JSON.stringify({ id: flags.id, out: flags.out }, null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'file-delete': {
+      if (typeof flags.id !== 'string') throw new Error('--id is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      console.log(JSON.stringify(await os.deleteFile(flags.id), null, 2));
       safeExit(0);
       break;
     }
@@ -371,8 +352,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     case 'vault-read': {
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
-      let notes = await os.readVaultNotes(timeoutMs);
+      let notes = await os.readVaultNotes();
 
       if (flags.cat) {
         notes = notes.filter(n => n.cat === flags.cat);
@@ -441,8 +421,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     case 'calendar-read': {
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
-      const evs = await os.readCalendarEvents({ from: flags.from, to: flags.to, timeoutMs });
+      const evs = await os.readCalendarEvents({ from: flags.from, to: flags.to });
       outputResults(evs, flags);
       process.exit(0);
       break;
@@ -466,8 +445,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       const target = noteSoul ? { kind: 'note', soul: noteSoul } : (bmSoul ? { kind: 'bookmark', soul: bmSoul } : { kind: 'task', soul: taskSoul });
-      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
-      const evs = await os.eventsFor(target, timeoutMs);
+      const evs = await os.eventsFor(target);
       outputResults(evs, flags);
       process.exit(0);
       break;
@@ -477,8 +455,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       if (!flags.event) throw new Error('--event soul is required.');
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
-      const notes = await os.notesForEvent(flags.event, timeoutMs);
+      const notes = await os.notesForEvent(flags.event);
       outputResults(notes, flags);
       process.exit(0);
       break;
@@ -494,7 +471,6 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       const fn = cmd === 'event-link' ? 'linkToEvent' : 'unlinkFromEvent';
       const target = flags.note ? { kind: 'note', soul: flags.note } : (flags.bookmark ? { kind: 'bookmark', soul: flags.bookmark } : { kind: 'task', soul: flags.task });
       console.log(JSON.stringify(await os[fn](flags.event, target), null, 2));
-      flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -507,7 +483,6 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       await os.login(user, pass);
       const res = await os.writeContact({ soul: flags.soul || null, name: flags.name, emails: flags.email || '', phones: flags.phone || '', org: flags.org || '', notes: flags.notes || '', tags: flags.tags || '', pub: flags.pub || '' });
       console.log(JSON.stringify(res, null, 2));
-      flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -529,8 +504,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     case 'contact-read': {
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
-      outputResults(await os.readContacts({ query: flags.query, tag: flags.tag, timeoutMs }), flags);
+      outputResults(await os.readContacts({ query: flags.query, tag: flags.tag }), flags);
       process.exit(0);
       break;
     }
@@ -540,7 +514,6 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       console.log(JSON.stringify(await os.deleteContact(flags.soul), null, 2));
-      flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -550,7 +523,6 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       console.log(JSON.stringify(await os.importContactsVcf(fs.readFileSync(flags.file, 'utf8')), null, 2));
-      flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -558,8 +530,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     case 'contacts-export': {
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
-      const vcf = await os.exportContactsVcf({ query: flags.query, tag: flags.tag, timeoutMs });
+      const vcf = await os.exportContactsVcf({ query: flags.query, tag: flags.tag });
       if (flags.file) fs.writeFileSync(flags.file, vcf); else process.stdout.write(vcf);
       process.exit(0);
       break;
@@ -584,7 +555,6 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       await os.login(user, pass);
       const res = await os.writeSecret({ soul: flags.soul || null, name: flags.name, kind: flags.kind || 'password', username: flags.username || '', secret, url: flags.url || '', notes: flags.notes || '', tags: flags.tags || '' });
       console.log(JSON.stringify(flags.generate ? { ...res, generated: secret } : res, null, 2));
-      flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -606,8 +576,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     case 'secret-read': {
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
-      const list = await os.readSecrets({ query: flags.query, kind: flags.kind, tag: flags.tag, timeoutMs });
+      const list = await os.readSecrets({ query: flags.query, kind: flags.kind, tag: flags.tag });
       outputResults(flags.reveal ? list : list.map(({ secret, ...rest }) => ({ ...rest, secret: '••••••' })), flags);
       process.exit(0);
       break;
@@ -618,7 +587,6 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       console.log(JSON.stringify(await os.deleteSecret(flags.soul), null, 2));
-      flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -638,7 +606,6 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
         tags
       });
       console.log(JSON.stringify(res, null, 2));
-      flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -662,8 +629,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     case 'bookmarks-read': {
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
-      const marks = await os.readBookmarks({ folder: flags.folder, query: flags.query, timeoutMs });
+      const marks = await os.readBookmarks({ folder: flags.folder, query: flags.query });
       outputResults(marks, flags);
       process.exit(0);
       break;
@@ -677,7 +643,6 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       await os.login(user, pass);
       const res = await os.deleteBookmark(soul);
       console.log(JSON.stringify(res, null, 2));
-      flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -687,7 +652,6 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       console.log(JSON.stringify(await os.importBookmarksHtml(fs.readFileSync(flags.file, 'utf8')), null, 2));
-      flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -695,8 +659,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     case 'bookmarks-export': {
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
-      const html = await os.exportBookmarksHtml({ folder: flags.folder, timeoutMs });
+      const html = await os.exportBookmarksHtml({ folder: flags.folder });
       if (flags.file) fs.writeFileSync(flags.file, html); else process.stdout.write(html);
       process.exit(0);
       break;
@@ -707,7 +670,6 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       console.log(JSON.stringify(await os.updateBookmarks(JSON.parse(fs.readFileSync(flags.file, 'utf8'))), null, 2));
-      flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -733,7 +695,6 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
         soul: flags.soul
       });
       console.log(JSON.stringify(res, null, 2));
-      flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -769,7 +730,6 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       if (flags.column !== undefined) patch.column = flags.column;
       const res = await os.updateTask(flags.soul, patch);
       console.log(JSON.stringify(res, null, 2));
-      flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -777,13 +737,11 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
     case 'task-read': {
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
       const tasks = await os.readTasks({
         status: flags.status,
         priority: flags.priority,
         tag: flags.tag,
-        query: flags.query,
-        timeoutMs
+        query: flags.query
       });
       outputResults(tasks, flags);
       process.exit(0);
@@ -796,7 +754,6 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       await os.login(user, pass);
       const res = await os.deleteTask(flags.soul);
       console.log(JSON.stringify(res, null, 2));
-      flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -817,7 +774,6 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
             ? { kind: 'bookmark', soul: flags.bookmark }
             : { kind: 'task', soul: flags['linked-task'] }));
       console.log(JSON.stringify(await os[fn](flags.task, target), null, 2));
-      flushStorage();
       setTimeout(() => process.exit(0), 500);
       break;
     }
@@ -836,8 +792,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
           : (flags.bookmark
             ? { kind: 'bookmark', soul: flags.bookmark }
             : { kind: 'task', soul: flags.task }));
-      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
-      const tsks = await os.tasksFor(target, timeoutMs);
+      const tsks = await os.tasksFor(target);
       outputResults(tsks, flags);
       process.exit(0);
       break;
@@ -861,58 +816,37 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
         id: flags.id
       });
 
-      // Register alias
-      await os.registerAlias(user);
-      flushStorage();
-
       console.log(JSON.stringify({
         ...res,
-        url: `https://smollog.vercel.app/${os.pub}?post=${res.id}`
+        url: `${server}/blog/${os.pub}?post=${res.id}`
       }, null, 2));
-      setTimeout(() => process.exit(0), 500);
+      process.exit(0);
       break;
     }
 
-    case 'blog-get': {
-      if (!flags.id) throw new Error('--id is required.');
-      let targetPub = flags.pub;
-      if (!targetPub && flags.alias) {
-        targetPub = await os.resolveAlias(flags.alias);
-      }
+    // public posts need no login: pass --alias <username>, or credentials for your own
+    case 'blog-get':
+    case 'blog-read': {
+      if (cmd === 'blog-get' && !flags.id) throw new Error('--id is required.');
+      let author = typeof flags.alias === 'string' ? flags.alias : null;
       const envUser = flags.user || process.env.ZENOS_USER || process.env.ZENOS_USERNAME;
       const envPass = flags.pass || process.env.ZENOS_PASS || process.env.ZENOS_PASSWORD;
-      if (!targetPub && envUser && envPass) {
-        const pair = await os.login(envUser, envPass);
-        targetPub = pair.pub;
+      if (!author && envUser && envPass) {
+        await os.login(envUser, envPass);
+        author = os.pub;
       }
-      if (!targetPub) throw new Error('Must provide --pub, --alias, or credentials (--user and --pass, or ZENOS_USER and ZENOS_PASS in .env).');
+      if (!author) throw new Error('Must provide --alias <username>, or credentials (--user and --pass, or ZENOS_USER and ZENOS_PASS in .env).');
 
-      const post = await os.getBlogPost(flags.id, targetPub);
+      if (cmd === 'blog-read') {
+        outputResults(await os.readBlogPosts(author), flags);
+        process.exit(0);
+      }
+      const post = await os.getBlogPost(flags.id, author);
       if (!post) {
         console.error(JSON.stringify({ error: 'Blog post not found: ' + flags.id }));
         process.exit(1);
       }
       console.log(JSON.stringify(post, null, 2));
-      process.exit(0);
-      break;
-    }
-
-    case 'blog-read': {
-      let targetPub = flags.pub;
-      if (!targetPub && flags.alias) {
-        targetPub = await os.resolveAlias(flags.alias);
-      }
-      const envUser = flags.user || process.env.ZENOS_USER || process.env.ZENOS_USERNAME;
-      const envPass = flags.pass || process.env.ZENOS_PASS || process.env.ZENOS_PASSWORD;
-      if (!targetPub && envUser && envPass) {
-        const pair = await os.login(envUser, envPass);
-        targetPub = pair.pub;
-      }
-      if (!targetPub) throw new Error('Must provide --pub, --alias, or credentials (--user and --pass, or ZENOS_USER and ZENOS_PASS in .env).');
-
-      const timeoutMs = flags.timeout !== undefined ? Number(flags.timeout) : (flags.fast ? 0 : 8000);
-      const posts = await os.readBlogPosts(targetPub, timeoutMs);
-      outputResults(posts, flags);
       process.exit(0);
       break;
     }
@@ -923,18 +857,7 @@ Default relays: ${DEFAULT_RELAYS.join(', ')}
       await os.login(user, pass);
       const res = await os.deleteBlogPost(flags.id);
       console.log(JSON.stringify(res, null, 2));
-      flushStorage();
-      setTimeout(() => process.exit(0), 500);
-      break;
-    }
-
-    case 'blog-alias': {
-      const { user, pass } = requireCredentials();
-      await os.login(user, pass);
-      const res = await os.registerAlias(flags.alias || user);
-      console.log(JSON.stringify(res, null, 2));
-      flushStorage();
-      setTimeout(() => process.exit(0), 500);
+      process.exit(0);
       break;
     }
 
