@@ -47,7 +47,7 @@ const entry = (p) => {
   return './node_modules/' + p + '/' + String(e).replace(/^\.\//, '');
 };
 const imports = {
-  '#platform': './node_modules/@desert-ant-labs/gist/platform-browser.js', // identical in gist and emo (checked below)
+  '#platform': './node_modules/@desert-ant-labs/gist/platform-browser.js',
   '@desert-ant-labs/gist': entry('@desert-ant-labs/gist'),
   '@desert-ant-labs/emo': entry('@desert-ant-labs/emo'),
   '@desert-ant-labs/core': entry('@desert-ant-labs/core'),
@@ -56,9 +56,9 @@ const imports = {
   '@litertjs/wasm-utils': entry('@litertjs/wasm-utils'),
 };
 for (const [k, v] of Object.entries(imports)) if (!fs.existsSync(path.join(out, v))) { console.error('entry not found for', k, v); process.exit(1); }
-const same = (f) => fs.readFileSync(path.join(out, 'node_modules/@desert-ant-labs/gist', f), 'utf8') === fs.readFileSync(path.join(out, 'node_modules/@desert-ant-labs/emo', f), 'utf8');
-if (!same('platform-browser.js')) { console.error('gist and emo ship different #platform files: one import map cannot serve both'); process.exit(1); }
-const importMap = JSON.stringify({ imports }, null, 2);
+// '#platform' pulls in the package's own wasm runtime and model name, so emo needs its own (a scope, not the shared import)
+const scopes = { './node_modules/@desert-ant-labs/emo/': { '#platform': './node_modules/@desert-ant-labs/emo/platform-browser.js' } };
+const importMap = JSON.stringify({ imports, scopes }, null, 2);
 const hash = crypto.createHash('sha256').update('\n' + importMap + '\n').digest('base64');
 
 // The page the app embeds in a sandboxed iframe. The CSP is the second lock: whatever the SDK tries (it reports usage to
