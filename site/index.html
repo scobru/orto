@@ -298,7 +298,7 @@ const os = new Orto();   // default server: https://orto.scobrudot.dev
 await os.login('alice', 'secret');
 await os.writeVaultNote({ title: 'Hi', body: 'Encrypted.', cat: 'logs' });
 await os.writeCalendarEvent({ title: 'Standup', start: Date.now() + 36e5 });</pre>
-    <p>Agents: see <a href="https://github.com/scobru/orto/blob/main/llm.txt" style="color:var(--acc)">llm.txt</a> for the integration guide.</p>
+    <p>Agents: see <a href="https://github.com/scobru/orto/blob/main/llm.txt" style="color:var(--acc)">llm.txt</a> for the integration guide. Claude Desktop and other MCP clients: <code>orto-mcp</code>, a local MCP server (see the README).</p>
 
     <h2 id="server">Server</h2>
     <p>One file, <code>server.js</code>: an HTTP API, live updates (SSE), SQLite storage and an uploads folder. Back up
