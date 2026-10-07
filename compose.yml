@@ -3,7 +3,7 @@ services:
     build:
       context: .
       args:
-        ORTO_GIST: "${ORTO_GIST:-1}"   # 1 = include the optional on-device tag suggestions (Gist, ~80 MB in the image); ORTO_GIST=0 to leave it out
+        ORTO_GIST: "${ORTO_GIST:-1}"   # 1 = include the optional on-device tag and emoji suggestions (Gist + Emo, ~130 MB in the image); ORTO_GIST=0 to leave it out
     ports: ["8787:8787"]
     volumes: ["zenos-data:/data"]
     restart: unless-stopped
