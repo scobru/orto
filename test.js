@@ -470,7 +470,7 @@ console.log('Feeds (reader + blog RSS)');
 console.log('MCP server (stdio)');
 {
   const { spawn } = await import('node:child_process');
-  await client('mcp-user', 'mcp-pass');
+  const os_mcp = await client('mcp-user', 'mcp-pass');
   const run = async (extraEnv, steps) => {
     const p = spawn(process.execPath, ['mcp.js'], { env: { ...process.env, ORTO_SERVER: url, ORTO_USER: 'mcp-user', ORTO_PASS: 'mcp-pass', ...extraEnv } });
     let buf = ''; const waiting = new Map();
@@ -498,10 +498,52 @@ console.log('MCP server (stdio)');
     assert.equal(JSON.parse((await tool(rpc, 'bookmark_list', {})).text).length, 1);
     await tool(rpc, 'event_write', { title: 'E', start: '2026-10-05T10:00:00Z' });
     assert.equal(JSON.parse((await tool(rpc, 'calendar_list', {})).text).length, 1);
-    assert(!JSON.stringify(await raw(os, 'vault', soul).catch(() => '')).includes('hello #mcp'));
+    assert(!JSON.stringify(await raw(os_mcp, 'vault', soul)).includes('hello #mcp'), 'agent notes are encrypted at rest');
     assert((await tool(rpc, 'delete', { kind: 'bogus', id: 'x' })).err);
     assert((await tool(rpc, 'note_get', {})).text !== undefined);
     assert((await tool(rpc, 'nope_tool', {})).err);
+    const J = async (name, args) => { const r = await tool(rpc, name, args); assert(!r.err, name + ': ' + r.text); try { return JSON.parse(r.text); } catch (_) { return r.text; } };
+    // partial updates keep the other fields
+    await J('note_update', { soul, pinned: true });
+    assert.deepEqual([(await J('note_get', { soul })).title, (await J('note_get', { soul })).pinned], ['From an agent', true]);
+    const evSoul = (await J('calendar_list', {}))[0].soul;
+    await J('event_update', { soul: evSoul, notes: 'bring ID' });
+    const ev = await J('event_get', { soul: evSoul }); assert.equal(ev.title, 'E'); assert.equal(ev.notes, 'bring ID');
+    const ct = (await J('contact_write', { name: 'Ada', emails: ['a@x.org'] })).soul;
+    await J('contact_update', { soul: ct, org: 'Lab' });
+    const c2 = await J('contact_get', { soul: ct }); assert.deepEqual([c2.name, c2.org, c2.emails], ['Ada', 'Lab', ['a@x.org']]);
+    const bm = (await J('bookmark_list', {}))[0].soul;
+    await J('bookmark_update', { soul: bm, folder: 'Dev', tags: ['t'] });
+    assert.equal((await J('bookmark_list', { folder: 'Dev' }))[0].title, 'A');
+    // links
+    await J('link_add', { owner: 'task', ownerSoul: tk, kind: 'note', soul });
+    await J('link_add', { owner: 'event', ownerSoul: evSoul, kind: 'note', soul });
+    const lk = await J('linked_list', { kind: 'note', soul }); assert.equal(lk.tasks.length, 1); assert.equal(lk.events.length, 1);
+    await J('link_remove', { owner: 'task', ownerSoul: tk, kind: 'note', soul });
+    assert.equal((await J('linked_list', { kind: 'note', soul })).tasks.length, 0);
+    // files: text in, text out, moved, listed in groups; binary is not dumped
+    const up = await J('file_write', { name: 'todo.txt', content: 'milk\neggs', folder: 'Home' });
+    assert.equal((await J('file_read', { id: up.id })).content, 'milk\neggs');
+    await J('file_move', { id: up.id, folder: 'Home/Lists' });
+    assert.equal((await J('file_list', {}))[0].folder, 'Home/Lists');
+    await J('file_group_add', { kind: 'playlist', name: 'Road' });
+    assert((await J('file_groups', {})).playlists.includes('Road'));
+    const bin = await J('file_write', { name: 'x.bin', content_base64: Buffer.from([0, 255, 1, 2]).toString('base64'), type: 'application/octet-stream' });
+    assert(/Binary/.test((await J('file_read', { id: bin.id })).note));
+    assert((await tool(rpc, 'file_write', { name: 'x', content: 'a', content_base64: 'YQ==' })).err);
+    // public links: create, list (with url), revoke
+    const sh = await J('share_note', { soul });
+    assert(sh.url.includes('#'), 'share url carries the key');
+    assert.equal((await J('share_list', {})).length, 1);
+    await J('share_revoke', { id: sh.id });
+    assert.equal((await J('share_list', {})).length, 0);
+    // feeds (no network: added through the SDK)
+    const fsoul = (await os_mcp.addFeed('https://feeds.example/a.xml', { title: 'A' })).soul;
+    await J('feed_update', { soul: fsoul, title: 'Alpha', folder: 'News' });
+    assert.deepEqual((await J('feed_list', {})).map((f) => [f.title, f.folder]), [['Alpha', 'News']]);
+    assert.equal((await J('feed_mark_read', {})).marked, 1);
+    const opml = await J('feed_export_opml', {}); assert(opml.includes('xmlUrl="https://feeds.example/a.xml"'));
+    assert.deepEqual(await J('feed_import_opml', { opml: opml.replace('feeds.example/a', 'feeds.example/b') }), { imported: 1, failed: 0 });
     await tool(rpc, 'delete', { kind: 'note', id: soul });
     assert.equal((await tool(rpc, 'note_get', { soul })).text, 'null');
   });

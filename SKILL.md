@@ -127,7 +127,7 @@ Credentials:
 
 ## MCP (clients without a shell)
 
-This skill needs a shell. For Claude Desktop and other MCP clients run the local MCP server instead: `npx -y -p github:scobru/orto orto-mcp` with `ORTO_SERVER`, `ORTO_USER`, `ORTO_PASS` in its environment (on Windows put `cmd /c` before `npx`; with `claude mcp add` pass `-s user` to have it in every folder; same data and encryption as the CLI; `ORTO_MCP_READONLY=1` for read-only, `ORTO_MCP_SECRETS=1` to expose secrets). Tool names mirror the commands above (`note_write`, `task_update`, `feed_read`, `delete`, ...).
+This skill needs a shell. For Claude Desktop and other MCP clients run the local MCP server instead: `npx -y -p github:scobru/orto orto-mcp` with `ORTO_SERVER`, `ORTO_USER`, `ORTO_PASS` in its environment (on Windows put `cmd /c` before `npx`; with `claude mcp add` pass `-s user` to have it in every folder; same data and encryption as the CLI; `ORTO_MCP_READONLY=1` for read-only, `ORTO_MCP_SECRETS=1` to expose secrets). Tool names mirror the commands above (`note_write`, `task_update`, `feed_read`, `file_read`, `share_note`, `delete`, ...); `README.md` lists them all.
 
 ## SDK
 
