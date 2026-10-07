@@ -74,6 +74,10 @@ JSON everywhere; `Authorization: Bearer <token>`.
 
 `node cli.js --help` lists everything. Credentials via `--user/--pass` or `ORTO_USER/ORTO_PASS`; server via `--server` or `ORTO_SERVER`.
 
+## MCP
+
+`mcp.js` (bin `orto-mcp`) is a stdio MCP server over the SDK: run it locally with `ORTO_SERVER`, `ORTO_USER`, `ORTO_PASS`. It decrypts on the user's machine; never host it for other people (it would hold their password). Tools: `note_list|get|write`, `calendar_list`, `event_write`, `task_list|write|update`, `bookmark_list|add`, `contact_list|write`, `feed_list|add|read`, `blog_list|publish`, `file_list`, `delete {kind, id}`. `ORTO_MCP_READONLY=1` hides the writing tools; `ORTO_MCP_SECRETS=1` adds `secret_list|get`.
+
 ## Operating rules for agents
 
 1. Never log or store the user's password; the same login always derives the same keys, and there is no recovery.

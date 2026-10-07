@@ -467,6 +467,53 @@ console.log('Feeds (reader + blog RSS)');
   c.close(); ps.close();
 }
 
+console.log('MCP server (stdio)');
+{
+  const { spawn } = await import('node:child_process');
+  await client('mcp-user', 'mcp-pass');
+  const run = async (extraEnv, steps) => {
+    const p = spawn(process.execPath, ['mcp.js'], { env: { ...process.env, ORTO_SERVER: url, ORTO_USER: 'mcp-user', ORTO_PASS: 'mcp-pass', ...extraEnv } });
+    let buf = ''; const waiting = new Map();
+    p.stdout.on('data', (d) => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { const m = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1); waiting.get(m.id)?.(m); } });
+    let n = 0;
+    const rpc = (method, params) => new Promise((res) => { const id = ++n; waiting.set(id, res); p.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n'); });
+    try { return await steps(rpc, (m, params) => p.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: m, params }) + '\n')); } finally { p.stdin.end(); }
+  };
+  const tool = async (rpc, name, args) => { const r = await rpc('tools/call', { name, arguments: args }); return { err: !!r.result.isError, text: r.result.content[0].text }; };
+  await run({}, async (rpc, notify) => {
+    const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } });
+    assert.equal(init.result.protocolVersion, '2025-06-18'); assert.equal(init.result.serverInfo.name, 'orto');
+    notify('notifications/initialized');
+    const names = (await rpc('tools/list')).result.tools.map((x) => x.name);
+    assert(names.includes('note_write') && names.includes('delete') && !names.includes('secret_get'), 'secrets are off by default');
+    assert.equal((await rpc('nope')).error.code, -32601);
+    const w = await tool(rpc, 'note_write', { title: 'From an agent', body: 'hello #mcp' });
+    const soul = JSON.parse(w.text).soul;
+    assert(JSON.parse((await tool(rpc, 'note_list', { query: 'agent' })).text)[0].soul === soul);
+    assert.equal(JSON.parse((await tool(rpc, 'note_get', { soul })).text).body, 'hello #mcp');
+    const tk = JSON.parse((await tool(rpc, 'task_write', { title: 'T1', priority: 'high', tags: ['x'] })).text).soul;
+    await tool(rpc, 'task_update', { soul: tk, status: 'done' });
+    assert.equal(JSON.parse((await tool(rpc, 'task_list', { status: 'done' })).text)[0].title, 'T1');
+    await tool(rpc, 'bookmark_add', { url: 'https://example.com/a', title: 'A' });
+    assert.equal(JSON.parse((await tool(rpc, 'bookmark_list', {})).text).length, 1);
+    await tool(rpc, 'event_write', { title: 'E', start: '2026-10-05T10:00:00Z' });
+    assert.equal(JSON.parse((await tool(rpc, 'calendar_list', {})).text).length, 1);
+    assert(!JSON.stringify(await raw(os, 'vault', soul).catch(() => '')).includes('hello #mcp'));
+    assert((await tool(rpc, 'delete', { kind: 'bogus', id: 'x' })).err);
+    assert((await tool(rpc, 'note_get', {})).text !== undefined);
+    assert((await tool(rpc, 'nope_tool', {})).err);
+    await tool(rpc, 'delete', { kind: 'note', id: soul });
+    assert.equal((await tool(rpc, 'note_get', { soul })).text, 'null');
+  });
+  await run({ ORTO_MCP_READONLY: '1', ORTO_MCP_SECRETS: '1' }, async (rpc) => {
+    const names = (await rpc('tools/list')).result.tools.map((x) => x.name);
+    assert(names.includes('note_list') && names.includes('secret_get') && !names.includes('note_write') && !names.includes('delete'), 'read-only hides writes');
+  });
+  await run({ ORTO_PASS: 'wrong' }, async (rpc) => { // a bad login is a tool error, not a crash
+    const r = await tool(rpc, 'note_list', {}); assert(r.err && /password/i.test(r.text), r.text);
+  });
+}
+
 console.log('Docs in step with the CLI');
 {
   const { execFileSync } = await import('node:child_process');
