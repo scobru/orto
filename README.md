@@ -13,6 +13,7 @@ Encrypted notes, calendar, tasks, bookmarks, contacts, secrets, files and a publ
 - **Server** (`server.js`): HTTP API + static hosting of the web app, SQLite via Node's built-in `node:sqlite` (Node ≥ 22.5).
 - **SDK** (`orto.js`): works in Node and browsers (`fetch` + WebCrypto).
 - **CLI** (`cli.js`): every app from the terminal, for scripts and AI agents.
+- **MCP server** (`mcp.js`, `orto-mcp`): the same data for Claude Desktop, Claude Code and other MCP clients (see below).
 - **Web app** (`web/`): served by the server itself, and also installable as a PWA.
 - **Landing page** (`site/`).
 
@@ -49,6 +50,13 @@ Put it behind a reverse proxy with HTTPS (Caddy, nginx) before exposing it to th
 | `ORTO_ADMIN_PASS` | off | min 8 chars: turns on the admin panel at `/admin` (see below) |
 | `ORTO_PUBLIC_URL` | from the request | base of the links in the blog's RSS feed (set it behind a proxy that does not pass `Host`) |
 | `ORTO_FEEDS_PRIVATE` | off | `1` lets the feed reader fetch private/LAN addresses (refused by default) |
+
+**AI agents.** With a shell (Claude Code, Cowork, scripts), `SKILL.md` + `cli.js` is enough. For clients without a shell (Claude Desktop, other MCP apps) there is a small MCP server over stdio, `mcp.js`. It must run **on your machine**, not in a hosted service: it holds your password and does the encryption, so the Orto server still only sees ciphertext. Tools: notes, calendar, tasks, bookmarks, contacts, feeds (list/read/add), blog (list/publish), file list, and one `delete`. The model sees whatever you let it read: you are sending that text to your AI provider.
+
+```bash
+claude mcp add orto -e ORTO_SERVER=https://your-server -e ORTO_USER=you -e ORTO_PASS=... -- npx -y -p github:scobru/orto orto-mcp
+```
+Claude Desktop (`claude_desktop_config.json`): `"mcpServers": {"orto": {"command": "npx", "args": ["-y", "-p", "github:scobru/orto", "orto-mcp"], "env": {"ORTO_SERVER": "https://your-server", "ORTO_USER": "you", "ORTO_PASS": "..."}}}`. Safer defaults: `ORTO_MCP_READONLY=1` hides every tool that writes or deletes; secrets are not exposed unless you set `ORTO_MCP_SECRETS=1` (a secret you read is sent to the model). Use a dedicated account if you want to limit what an agent can see.
 
 **Feeds (RSS/Atom).** *Feeds* in the sidebar follows blogs and news: paste a feed or a site address (the feed is found for you), import or export OPML, read articles inside Orto and save one as a bookmark. Your list of feeds is encrypted like everything else; articles are fetched live and never stored. Browsers cannot read other sites' feeds directly, so the server fetches them for you (`/api/feed`, only for signed-in users, never to private addresses unless `ORTO_FEEDS_PRIVATE=1`): it therefore sees which feed addresses you fetch, and the sites see your server's IP. Article HTML is sanitized and images are loaded without a referrer. Your own blog has a feed too: `/blog/<username>/feed.xml` (the Blog view has an RSS link). From the CLI: `feed-add`, `feed-list`, `feed-read`, `feed-delete`, `feed-import`, `feed-export`.
 
