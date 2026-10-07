@@ -1,7 +1,7 @@
-// Optional on-device tag suggestions with Gist by Desert Ant Labs (https://desertant.com/models/gist/).
+// Optional on-device suggestions with Gist (tags) and Emo (emoji) by Desert Ant Labs (https://desertant.com/models/gist/).
 // The model code is not part of Orto: the admin installs it (scripts/install-gist.mjs) into <data>/models/gist, which the server
 // serves at /models/gist/. It runs inside a sandboxed iframe with no access to the app's storage or keys; this file only talks to
-// it with postMessage. The text never leaves the browser; the model files (about 75 MB) come from huggingface.co on first use.
+// it with postMessage. The text never leaves the browser; the model files (Gist about 75 MB) come from huggingface.co on first use.
 const FLAG = 'orto_ai_tags';
 
 export function aiEnabled() { try { return localStorage.getItem(FLAG) === '1'; } catch (_) { return false; } }
@@ -12,7 +12,13 @@ export async function aiInstalled(base = '') {
   try { return (await fetch(base + '/models/gist/manifest.json', { cache: 'no-store' })).ok; } catch (_) { return false; }
 }
 
-// A classifier is { classify(text, topK) -> [{ slug, name, score }] }. loadClassifier() makes the iframe one; tests plug their own.
+/** Does the installed add-on include this model ('gist' | 'emo')? Installs from before Emo only have Gist. */
+export async function aiHas(name, base = '') {
+  try { const m = await (await fetch(base + '/models/gist/manifest.json', { cache: 'no-store' })).json(); return (m.models || ['gist']).includes(name); } catch (_) { return false; }
+}
+
+// A classifier is { classify(text, topK) -> [{ slug, name, score }], emoji(text, limit) -> [{ emoji, confidence }] }. loadClassifier() makes
+// the iframe one (each model is loaded on its first use); tests plug their own.
 let current = null, loading = null;
 export function setClassifier(c) { current = c; loading = null; }
 
@@ -39,12 +45,20 @@ export function loadClassifier({ base = '', onProgress } = {}) {
       await isReady;
       return new Promise((res, rej) => { const id = ++seq; pending.set(id, { res, rej }); frame.contentWindow.postMessage({ id, op, ...extra }, '*'); });
     };
-    try { await Promise.race([isReady, new Promise((_, rej) => setTimeout(() => rej(new Error('The tagging page did not start')), 15000))]); await call('load'); }
-    catch (err) {
-      frame.remove();
-      throw new Error(/download|fetch/i.test(err.message) ? 'Could not download the model from huggingface.co. Check the connection and try again.' : String(err.message).split('\n')[0].slice(0, 160));
-    }
-    return (current = { classify: async (text, topK = 4) => (await call('classify', { text, topK })).topics });
+    try { await Promise.race([isReady, new Promise((_, rej) => setTimeout(() => rej(new Error('The tagging page did not start')), 15000))]); }
+    catch (err) { frame.remove(); throw err; }
+    const loaded = {};
+    const use = async (op, extra) => {
+      try { await (loaded[op] ||= call(op)); return await call(op === 'load' ? 'classify' : 'emoji', extra); }
+      catch (err) {
+        delete loaded[op];
+        throw new Error(/download|fetch/i.test(err.message) ? 'Could not download the model from huggingface.co. Check the connection and try again.' : String(err.message).split('\n')[0].slice(0, 160));
+      }
+    };
+    return (current = {
+      classify: async (text, topK = 4) => (await use('load', { text, topK })).topics,
+      emoji: async (text, limit = 5) => (await use('loadEmo', { text, topK: limit })).emoji,
+    });
   })().catch((err) => { loading = null; throw err; });
 }
 
@@ -75,4 +89,13 @@ export async function suggestTags(text, opts = {}) {
   if (clean.length < 3) return [];
   const c = await loadClassifier(opts);
   return (await c.classify(clean, opts.topK || 4)).map((t) => ({ tag: tagFor(t), label: t.name || t.slug, emoji: emojiFor(t), score: t.score })).filter((s) => s.tag);
+}
+
+/** Emoji for a text (a note's title, say): [{ emoji, confidence }], best first. Needs the Emo model from the same add-on (reinstall if it is missing). */
+export async function suggestEmoji(text, opts = {}) {
+  const clean = String(text || '').replace(/https?:\/\/\S+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (clean.length < 2) return [];
+  if (!current && !(await aiHas('emo', opts.base))) throw new Error('Emoji suggestions are not installed on this server (run scripts/install-gist.mjs again).');
+  const c = await loadClassifier(opts);
+  return (await c.emoji(clean, opts.limit || 5)).filter((e) => e.emoji);
 }

@@ -3251,6 +3251,9 @@
               <button class="popover-item hidden" id="menu-suggest-tags" onclick="suggestTagsForNote()">
                 <span><i class="ti ti-tags"></i> Suggest tags</span>
               </button>
+              <button class="popover-item hidden" id="menu-suggest-emoji" onclick="suggestEmojiForNote()">
+                <span><i class="ti ti-mood-smile"></i> Suggest emoji</span>
+              </button>
               <button class="popover-item" onclick="copyNoteMarkdown()">
                 <span><i class="ti ti-copy"></i> Copy Markdown</span>
               </button>
@@ -4491,7 +4494,7 @@ print("Welcome to Orto!")
       infoPopover.classList.add('hidden');
       if (filterDropdown) filterDropdown.classList.add('hidden');
       popover.classList.toggle('hidden');
-      aiMod().then(ai => document.getElementById('menu-suggest-tags')?.classList.toggle('hidden', !ai.aiEnabled())); // only when switched on in Settings
+      aiMod().then(ai => ['menu-suggest-tags', 'menu-suggest-emoji'].forEach(id => document.getElementById(id)?.classList.toggle('hidden', !ai.aiEnabled()))); // only when switched on in Settings
     }
 
     function closePopovers() {
@@ -5815,7 +5818,7 @@ print("Welcome to Orto!")
       const ai = await aiMod();
       const installed = await ai.aiInstalled(serverUrl || '');
       box.checked = installed && ai.aiEnabled(); box.disabled = !installed;
-      status.textContent = installed ? 'Installed on this server. Credit: Gist by Desert Ant Labs.' : 'Not installed on this server. Admin: run scripts/install-gist.mjs, or rebuild the Docker image (docker compose up -d --build).';
+      status.textContent = installed ? 'Installed on this server. Credit: Gist and Emo by Desert Ant Labs.' : 'Not installed on this server. Admin: run scripts/install-gist.mjs, or rebuild the Docker image (docker compose up -d --build).';
       box.onchange = () => {
         if (box.checked && !confirm('The first suggestion downloads about 75 MB from huggingface.co (then it is cached). The text you tag never leaves this browser. Turn it on?')) { box.checked = false; return; }
         ai.setAiEnabled(box.checked);
@@ -5849,6 +5852,27 @@ print("Welcome to Orto!")
         showToast('Added ' + tags.map(t => '#' + t).join(' '));
       } });
     }
+    async function suggestEmojiForNote() {
+      document.getElementById('more-menu-popover')?.classList.add('hidden');
+      const ta = document.getElementById('editor-textarea'), ti = document.getElementById('editor-title');
+      if (!selectedNoteId || !ta) return showToast('Open a note first');
+      const ai = await aiMod();
+      const bg = openModal(`<b>Suggest emoji</b><p class="hint" id="ai-body">Loading the on-device model…</p>
+        <div class="cal-actions"><button class="cal-btn" id="ai-cancel">Close</button></div>`, 'ai-modal-bg');
+      const body = bg.querySelector('#ai-body');
+      bg.querySelector('#ai-cancel').onclick = () => closeModal('ai-modal-bg');
+      try {
+        const found = await ai.suggestEmoji(ti.value + '\n' + ta.value.slice(0, 500), { base: serverUrl || '', onProgress: (p) => { if (typeof p === 'number' && p > 0 && p < 1) body.textContent = 'Downloading the model… ' + Math.round(p * 100) + '%'; } });
+        if (!found.length) { body.textContent = 'No emoji to suggest.'; return; }
+        body.className = ''; body.removeAttribute('id');
+        body.innerHTML = '<p class="hint">Tap one to put it at the start of the title.</p><div style="display:flex;gap:8px;flex-wrap:wrap">'
+          + found.map(e => `<button class="cal-btn" data-emoji="${escapeHtml(e.emoji)}" title="${Math.round(e.confidence * 100)}%" style="font-size:1.6em">${escapeHtml(e.emoji)}</button>`).join('') + '</div><p class="hint">Emo by Desert Ant Labs</p>';
+        body.querySelectorAll('[data-emoji]').forEach(b => b.onclick = () => {
+          ti.value = b.dataset.emoji + ' ' + ti.value.replace(/^\p{Extended_Pictographic}\uFE0F?\s*/u, '');
+          handleTitleInput(ti.value); closeModal('ai-modal-bg');
+        });
+      } catch (e) { body.textContent = e.message; }
+    }
     async function suggestTagsForBookmark(input, title, url) {
       const existing = input.value.split(',').map(t => t.trim().replace(/^#/, '').toLowerCase()).filter(Boolean);
       let host = ''; try { host = new URL(url).hostname.replace(/^www\./, ''); } catch (_) { }
@@ -5863,9 +5887,9 @@ print("Welcome to Orto!")
         <p class="hint">Export saves everything decrypted as one file (plain text: keep it safe). Import it into any account on any server.</p>
         <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="st-files" checked> Include file contents</label>
         <div class="cal-actions" style="justify-content:flex-start"><button class="cal-btn" id="st-export">Export everything</button><button class="cal-btn" id="st-import">Import…</button><input type="file" id="st-import-file" accept=".json,application/json" class="hidden"></div>
-        <h4>Tag suggestions</h4>
-        <p class="hint">Suggests tags (with an emoji) for notes and bookmarks using <b>Gist</b> by <a href="https://desertant.com/models/gist/" target="_blank" rel="noopener">Desert Ant Labs</a>, a small model that runs in this browser: your text is not sent anywhere. The first time, the browser downloads about 75 MB from huggingface.co. The server admin installs it once (<code>scripts/install-gist.mjs</code>).</p>
-        <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="st-ai"> Suggest tags on this device</label>
+        <h4>Tag and emoji suggestions</h4>
+        <p class="hint">Suggests tags for notes and bookmarks (<b>Gist</b>) and an emoji for a note's title (<b>Emo</b>), small models by <a href="https://desertant.com/models/gist/" target="_blank" rel="noopener">Desert Ant Labs</a> that run in this browser: your text is not sent anywhere. The first time, the browser downloads about 75 MB from huggingface.co. The server admin installs it once (<code>scripts/install-gist.mjs</code>).</p>
+        <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="st-ai"> Suggest tags and emoji on this device</label>
         <p class="hint" id="st-ai-status"></p>
         <h4>Shared links</h4><div id="st-shares"><p class="hint">Loading…</p></div>
         ${isDemo ? '' : `<h4>Password</h4>
@@ -5940,7 +5964,7 @@ print("Welcome to Orto!")
       };
     }
     window.serverConfig = serverConfig;
-    Object.assign(window, { openMedia, mediaTabSet, mediaPlay, suggestTagsForNote, openFiles, filesUpload, filesDownload, filesDelete, filesShare, filesPick, noteAttach, filesNewGroup, filesRenameGroup, filesDeleteGroup, filesMove, photoOpen, shareNoteLink, openSettings });
+    Object.assign(window, { openMedia, mediaTabSet, mediaPlay, suggestTagsForNote, suggestEmojiForNote, openFiles, filesUpload, filesDownload, filesDelete, filesShare, filesPick, noteAttach, filesNewGroup, filesRenameGroup, filesDeleteGroup, filesMove, photoOpen, shareNoteLink, openSettings });
 
     Object.assign(window, { openBookmarks, bmSearch, bmPickFolder, bmAdd, bmImport, bmDelete, bmEdit, bmRenameFolder, bmExport });
 

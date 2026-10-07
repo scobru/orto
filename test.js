@@ -395,6 +395,9 @@ console.log('On-device tag suggestions (add-on plumbing)');
   ai.setClassifier({ classify: async (text, k) => { assert(!text.includes('http') && !text.includes('const x'), 'links and code are not sent to the model'); return [{ slug: 'technology', name: 'Technology & Software', score: 0.9 }].slice(0, k); } });
   assert.deepEqual(await ai.suggestTags('Intro https://example.com/x ```const x = 1``` to computers'), [{ tag: 'technology', label: 'Technology & Software', emoji: '💻', score: 0.9 }]);
   assert.deepEqual(await ai.suggestTags('  '), [], 'nothing to tag');
+  ai.setClassifier({ emoji: async (text, k) => { assert(!text.includes('http'), 'links are not sent to the model'); return [{ emoji: '💰', confidence: 0.65 }, { emoji: '', confidence: 0.1 }].slice(0, k); } });
+  assert.deepEqual(await ai.suggestEmoji('Pay my bills https://example.com'), [{ emoji: '💰', confidence: 0.65 }]);
+  assert.deepEqual(await ai.suggestEmoji(' '), [], 'nothing to suggest');
   ai.setClassifier(null);
 
   // /models/* is <data>/models/* and nothing else of the data folder
