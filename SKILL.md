@@ -59,6 +59,7 @@ Usage:
   node cli.js vault-get    [--user <user> --pass <pass>] --soul <soul>
   node cli.js vault-read   [--user <user> --pass <pass>] [--cat <cat>] [--query <q>] [--pinned]
   node cli.js vault-delete [--user <user> --pass <pass>] --soul <soul>
+  # Attach a file to a note: file-upload it, then put `[name](#orto-file=<id>)` (or `![name](#orto-file=<id>)` for an image) in the body; the web app shows it
 
   # Calendar (Encrypted Events & Graph Links)
   node cli.js calendar-write      [--user <user> --pass <pass>] --title <title> --start <date> [--end <date>] [--allDay] [--notes <text>] [--location <loc>] [--soul <soul>]
