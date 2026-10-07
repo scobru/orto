@@ -2269,6 +2269,47 @@
     .mp-row input[type=range] { flex: 1; min-width: 0; accent-color: var(--bear-red); }
     #mp-time { font: 11px var(--font-mono); color: var(--text-muted); flex: none; }
 
+    /* ── Garden view (SVG scene built from the other apps) ── */
+    body.garden-mode #garden-pane { display: flex; }
+    body.garden-mode .note-list-pane,
+    body.garden-mode .editor-pane { display: none !important; }
+    .gd-title { font: 600 16px var(--font-heading); display: inline-flex; align-items: center; gap: 6px; }
+    .gd-health { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); }
+    .gd-meter { width: 90px; height: 8px; border-radius: 4px; background: var(--border-color); overflow: hidden; }
+    .gd-meter i { display: block; height: 100%; border-radius: 4px; }
+    .gd-wrap { max-width: 1100px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+    .gd-scene svg { display: block; width: 100%; height: auto; border-radius: 16px; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
+    .gd-hit { cursor: pointer; }
+    .gd-hit:hover { filter: drop-shadow(0 0 5px rgba(255, 255, 230, .95)); }
+    .gd-sway { animation: gdSway 6s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+    .gd-drift { animation: gdDrift 40s ease-in-out infinite alternate; }
+    .gd-fly { animation: gdFly 9s ease-in-out infinite; }
+    .gd-wing { animation: gdFlap .25s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
+    .gd-buzz { animation: gdBuzz 3.2s ease-in-out infinite; }
+    .gd-rain line { animation: gdRain .8s linear infinite; }
+    .gd-star { animation: gdTwinkle 3s ease-in-out infinite; }
+    .gd-rays { animation: gdSpin 60s linear infinite; transform-box: fill-box; transform-origin: center; }
+    .gd-spark { animation: gdTwinkle 1.6s ease-in-out infinite; }
+    @keyframes gdSway { 0%, 100% { transform: rotate(-2deg); } 50% { transform: rotate(2deg); } }
+    @keyframes gdDrift { to { transform: translateX(60px); } }
+    @keyframes gdFly { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(40px, -25px); } 50% { transform: translate(80px, 5px); } 75% { transform: translate(30px, 20px); } }
+    @keyframes gdFlap { to { transform: scaleX(.25); } }
+    @keyframes gdBuzz { 0%, 100% { transform: translate(0, 0); } 30% { transform: translate(18px, -10px); } 60% { transform: translate(-12px, -18px); } }
+    @keyframes gdRain { from { transform: translateY(-40px); opacity: 0; } 20% { opacity: .8; } to { transform: translateY(260px); opacity: 0; } }
+    @keyframes gdTwinkle { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+    @keyframes gdSpin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { #garden-pane * { animation: none !important; } }
+    .gd-tips { display: flex; flex-direction: column; gap: 6px; }
+    .gd-tip { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-list); font-size: 14px; }
+    .gd-tip i { font-size: 18px; color: var(--bear-red); flex: none; }
+    .gd-tip.ok i { color: #4f8f2f; }
+    .gd-tip .cal-btn { margin-left: auto; flex: none; }
+    .gd-legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+    .gd-key { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-list); }
+    .gd-key svg { flex: none; width: 40px; height: 44px; }
+    .gd-key b { display: block; font: 600 18px var(--font-heading); line-height: 1.1; }
+    .gd-key small { color: var(--text-muted); font-size: 12px; line-height: 1.25; display: block; }
+
     /* ── Tasks & Kanban view (encrypted, tasks collection) ── */
     .tasks-pane {
       flex: 1;
@@ -2908,6 +2949,12 @@
           <span class="nav-count" id="count-tasks">0</span>
         </a>
 
+        <a class="nav-item" id="nav-garden" onclick="openGarden()">
+          <span class="nav-icon"><i class="ti ti-plant"></i></span>
+          <span class="nav-text">Garden</span>
+          <span class="nav-count" id="count-garden"></span>
+        </a>
+
         <a class="nav-item" id="filter-trash" onclick="setFilter('trash')">
           <span class="nav-icon"><i class="ti ti-trash"></i></span>
           <span class="nav-text">Trash</span>
@@ -3068,6 +3115,24 @@
     </section>
 
     <!-- Feeds pane: RSS/Atom you follow; the list is encrypted at the feeds collection, articles are fetched live -->
+    <!-- Garden: a living picture computed from tasks, events, notes, feeds and secrets (nothing stored) -->
+    <section class="bm-pane" id="garden-pane">
+      <div class="bm-main">
+        <div class="bm-bar">
+          <button class="mobile-menu-btn" onclick="toggleSidebar()" title="Menu" aria-label="Menu"><i class="ti ti-menu-2"></i></button>
+          <b class="gd-title"><i class="ti ti-plant"></i> Garden</b>
+          <span class="gd-health" id="garden-health"></span>
+        </div>
+        <div class="bm-items">
+          <div class="gd-wrap">
+            <div id="garden-scene" class="gd-scene"></div>
+            <div id="garden-tips" class="gd-tips"></div>
+            <div id="garden-legend" class="gd-legend"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="bm-pane" id="feeds-pane">
       <div class="bm-folders" id="feeds-list"></div>
       <div class="bm-main">
@@ -4424,7 +4489,7 @@ print("Welcome to Orto!")
     function setFilter(filter) {
       closeCalendar();
       closeBlog();
-      closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeMedia();
+      closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
       closeTasks();
       currentFilter = filter;
       triggerRender();
@@ -4675,12 +4740,13 @@ print("Welcome to Orto!")
         }
         document.getElementById('count-calendar').textContent = Object.keys(calEvents).length;
         if (calMode) renderCalendar();
+        if (gardenOpen()) renderGarden();
         renderNoteEvents();
       });
     }
 
     function openCalendar() {
-      closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeMedia(); closeTasks();
+      closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia(); closeTasks();
       calMode = true;
       document.body.classList.add('cal-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -4795,7 +4861,7 @@ print("Welcome to Orto!")
     }
     function unlinkNoteFromModal(soul) { evLinks = evLinks.filter(l => !(l.kind === 'note' && l.soul === soul)); renderEvLinks(); }
     function openLinkedNote(soul) {
-      closeEventModal(); if (typeof closeTaskModal === 'function') closeTaskModal(); closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeMedia(); if (typeof closeTasks === 'function') closeTasks(); selectNote(soul);
+      closeEventModal(); if (typeof closeTaskModal === 'function') closeTaskModal(); closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia(); if (typeof closeTasks === 'function') closeTasks(); selectNote(soul);
     }
     // events & tasks linked to the open note, shown under its title; click one to open it
     function renderNoteEvents() {
@@ -4901,7 +4967,7 @@ print("Welcome to Orto!")
       });
     }
     function openBlog() {
-      closeCalendar(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeMedia(); closeTasks();
+      closeCalendar(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia(); closeTasks();
       blogMode = true;
       document.body.classList.add('blog-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -5086,7 +5152,7 @@ print("Welcome to Orto!")
     function bmScheduleRender() { clearTimeout(bmTimer); bmTimer = setTimeout(renderBookmarks, 150); }
 
     function openBookmarks() {
-      closeCalendar(); closeBlog(); closeTasks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeMedia();
+      closeCalendar(); closeBlog(); closeTasks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
       bmMode = true;
       document.body.classList.add('bm-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -5216,7 +5282,7 @@ print("Welcome to Orto!")
       const b = e.target.closest('[data-act]'); if (b && handlers[b.dataset.act]) handlers[b.dataset.act](b.dataset.soul);
     });
     function openPane(mode, navId, render) {
-      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeMedia();
+      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
       document.body.classList.add(mode);
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
       document.getElementById(navId).classList.add('active');
@@ -5511,7 +5577,7 @@ print("Welcome to Orto!")
     const closeModal = (id = 'zmodal-bg') => document.getElementById(id)?.remove();
 
     async function openFiles(view) {
-      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeMedia();
+      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
       filesMode = true;
       filesView = view === 'photos' ? 'photos' : 'list';
       document.body.classList.add('files-mode');
@@ -5704,7 +5770,7 @@ print("Welcome to Orto!")
     function mediaFree() { if (mediaBlobUrl) { URL.revokeObjectURL(mediaBlobUrl); mediaBlobUrl = null; } }
 
     async function openMedia() {
-      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeMedia();
+      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
       mediaMode = true;
       document.body.classList.add('media-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -5940,7 +6006,7 @@ print("Welcome to Orto!")
       };
     }
     window.serverConfig = serverConfig;
-    Object.assign(window, { openMedia, mediaTabSet, mediaPlay, suggestTagsForNote, openFiles, filesUpload, filesDownload, filesDelete, filesShare, filesPick, noteAttach, filesNewGroup, filesRenameGroup, filesDeleteGroup, filesMove, photoOpen, shareNoteLink, openSettings });
+    Object.assign(window, { openGarden, openMedia, mediaTabSet, mediaPlay, suggestTagsForNote, openFiles, filesUpload, filesDownload, filesDelete, filesShare, filesPick, noteAttach, filesNewGroup, filesRenameGroup, filesDeleteGroup, filesMove, photoOpen, shareNoteLink, openSettings });
 
     Object.assign(window, { openBookmarks, bmSearch, bmPickFolder, bmAdd, bmImport, bmDelete, bmEdit, bmRenameFolder, bmExport });
 
@@ -5978,12 +6044,13 @@ print("Welcome to Orto!")
         }
         document.getElementById('count-tasks').textContent = Object.keys(tasks).length;
         if (tasksMode) renderTasks();
+        if (gardenOpen()) renderGarden();
         renderNoteEvents();
       });
     }
 
     function openTasks() {
-      closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeMedia();
+      closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
       tasksMode = true;
       document.body.classList.add('tasks-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -5996,6 +6063,181 @@ print("Welcome to Orto!")
       tasksMode = false;
       document.body.classList.remove('tasks-mode');
       document.getElementById('nav-tasks')?.classList.remove('active');
+    }
+
+    // ── Garden: a living picture of the workspace. Nothing is stored: every render is computed from the other apps.
+    // Task -> plant (to do: sprout, in progress: young plant, blocked: snail, done in the last 2 weeks: harvest by priority,
+    // overdue: wilted), untouched 2 weeks -> weeds; event in the next week -> tulip in a pot that opens as it gets close;
+    // notes -> rain, dry soil, butterflies; tasks done today -> bees; unread feed items -> fallen leaves; secrets older than a year -> rocks.
+    const GD_DAY = 864e5;
+    const gdRand = (s) => { let h = 2166136261; for (const c of String(s)) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return (h >>> 0) / 4294967296; };
+    const gdLeaf = (x, y, rot, s, fill) => `<g transform="translate(${x} ${y}) rotate(${rot}) scale(${s})"><path d="M0 0C5-7 15-8 22 0C15 7 5 7 0 0Z" fill="${fill}"/><path d="M2 0H18" stroke="#000" stroke-opacity=".15"/></g>`;
+    const gdMound = (c = '#4a2c1a') => `<ellipse cy="1" rx="15" ry="4" fill="${c}"/>`;
+    const gdStem = (h, w = 3, c = '#4f8f2f') => `<path d="M0 0Q-3 ${-h / 2} 0 ${-h}" stroke="${c}" stroke-width="${w}" fill="none" stroke-linecap="round"/>`;
+    const gdTomato = (x, y) => `<circle cx="${x}" cy="${y}" r="6.5" fill="#e53935"/><circle cx="${x}" cy="${y}" r="6.5" fill="url(#gd-shine)"/><path d="M${x - 3.5} ${y - 6}l3.5 2.5 3.5-2.5-1 3.5z" fill="#2e7d32"/>`;
+    const gdStake = `<path d="M-14 2V-48" stroke="#b08354" stroke-width="2.5" stroke-linecap="round"/><path d="M-14 -32Q-7 -35 -1 -32" stroke="#efdcb0" stroke-width="1.6" fill="none"/>`;
+    const GD_PLANT = {
+      sprout: () => gdMound() + gdStem(17, 2.5) + gdLeaf(0, -14, -150, .6, '#7cc04b') + gdLeaf(0, -16, -30, .65, '#93d65e'),
+      young: () => gdMound() + gdStake + gdStem(46) + gdLeaf(0, -12, -20, .8, '#5fa338') + gdLeaf(0, -21, -160, .8, '#6fb544') + gdLeaf(0, -31, -25, .75, '#7cc04b') + gdLeaf(0, -39, -150, .7, '#8fd65a') + gdLeaf(0, -46, -95, .5, '#a3e06f'),
+      blocked: () => GD_PLANT.young() + `<g transform="translate(17 0)"><path d="M-11 0C-11-3-7-4 0-4H8C10-4 11-6 11-9" stroke="#a89670" stroke-width="1.5" fill="#d8c79e" stroke-linecap="round"/><path d="M10-8l-1-5M11-8l3-4" stroke="#7d6b48" stroke-width="1.2" stroke-linecap="round"/><circle cx="-1" cy="-9" r="7" fill="#b5651d"/><path d="M-1-9m-4 0a4 4 0 1 1 4 4a2.4 2.4 0 1 1-2-3" stroke="#7a3e10" stroke-width="1.3" fill="none"/></g>`,
+      wilted: () => gdMound('#5a3d26') + `<path d="M0 0C1-18 3-30 12-34C18-36 21-31 19-25" stroke="#8b7d3a" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="19" cy="-23" r="4.5" fill="#7a5230"/>`
+        + gdLeaf(1, -14, 160, .7, '#a98d4a') + gdLeaf(2, -22, 30, .65, '#b59a55') + gdLeaf(-16, 1, 178, .5, '#9c7b44'),
+      sunflower: (r) => {
+        let petals = ''; for (let i = 0; i < 16; i++) petals += `<ellipse rx="4" ry="11" transform="rotate(${i * 22.5}) translate(0 -13)" fill="${i % 2 ? '#f6c431' : '#f9a825'}"/>`;
+        return gdMound() + gdStem(86, 4) + gdLeaf(0, -28, -20, 1.1, '#5fa338') + gdLeaf(0, -48, -165, 1, '#6fb544') + gdLeaf(0, -66, -30, .8, '#7cc04b')
+          + `<g transform="translate(0 -92) rotate(${(r - .5) * 30})">${petals}<circle r="10" fill="#6b3e1f"/><circle r="7" fill="#4a2a12"/><circle cx="-2.5" cy="-2.5" r="2" fill="#8a5a35"/></g>`;
+      },
+      tomato: (r) => gdMound() + `<path d="M-15 2V-58M15 2V-58M-15 -40H15" stroke="#b08354" stroke-width="2" stroke-linecap="round"/>` + gdStem(54, 3.5)
+        + [[-12, -160], [-20, -20], [-30, -150], [-38, -30], [-48, -120], [-52, -60]].map(([y, a], i) => gdLeaf(0, y, a, .85, i % 2 ? '#5fa338' : '#6fb544')).join('')
+        + gdTomato(-11, -20) + gdTomato(10, -30) + gdTomato(-7, -42) + (r > .4 ? gdTomato(8, -14) : '') + (r > .7 ? gdTomato(4, -50) : ''),
+      carrot: () => {
+        let fronds = ''; for (let i = 0; i < 7; i++) { const dx = (i - 3) * 7, top = -34 + Math.abs(i - 3) * 4; fronds += `<path d="M0 -4Q${dx * .4} ${top / 2} ${dx} ${top}" stroke="#3e8e2b" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="${dx}" cy="${top}" r="2.6" fill="#5fa338"/><circle cx="${dx * .7}" cy="${top * .7}" r="2.2" fill="#6fb544"/>`; }
+        return gdMound() + fronds + `<path d="M-7 1Q0 -10 7 1Z" fill="#f57c00"/><path d="M-3 -2h6M-4 0h8" stroke="#c75b00" stroke-width=".8"/>`;
+      },
+      lettuce: () => {
+        let ring = ''; for (let i = 0; i < 8; i++) ring += `<ellipse rx="9" ry="14" transform="translate(0 -12) rotate(${i * 45}) translate(0 -7)" fill="${i % 2 ? '#7cb342' : '#8bc34a'}" stroke="#558b2f" stroke-width=".8"/>`;
+        for (let i = 0; i < 5; i++) ring += `<ellipse rx="6" ry="9" transform="translate(0 -12) rotate(${i * 72 + 20}) translate(0 -4)" fill="#aed581"/>`;
+        return gdMound() + ring + '<circle cy="-12" r="4" fill="#dcedc8"/>';
+      },
+    };
+    const gdWeeds = (r) => [0, 1, 2].slice(0, 2 + (r > .5)).map(i => `<path transform="translate(${16 + i * 7} ${i % 2}) scale(${.8 + i * .15})" d="M0 0L-5-10L-2-4L0-15L2-5L6-12L4 0Z" fill="${i % 2 ? '#7a9a2a' : '#6b8e23'}"/>`).join('');
+    const gdButterfly = (x, y, c, d, k = 1.5) => `<g transform="translate(${x} ${y}) scale(${k})"><g class="gd-fly" style="animation-delay:${d}s"><g class="gd-wing"><path d="M0 0C-10-13-17-4-12 1C-16 8-8 12 0 2Z" fill="${c}"/><path d="M0 0C10-13 17-4 12 1C16 8 8 12 0 2Z" fill="${c}"/><circle cx="-8" cy="-4" r="2" fill="#fff" opacity=".7"/><circle cx="8" cy="-4" r="2" fill="#fff" opacity=".7"/></g><rect x="-1" y="-5" width="2" height="10" rx="1" fill="#333"/></g></g>`;
+    const gdBee = (x, y, d) => `<g transform="translate(${x} ${y}) scale(1.4)"><g class="gd-buzz" style="animation-delay:${d}s"><ellipse cx="-2" cy="-6" rx="4.5" ry="3" fill="#fff" opacity=".85"/><ellipse cx="3" cy="-7" rx="4.5" ry="3" fill="#fff" opacity=".85"/><ellipse rx="7" ry="5" fill="#fbc02d"/><path d="M-2-4.5v9M2.5-4.5v9" stroke="#3e2723" stroke-width="2"/><circle cx="7" r="2.6" fill="#3e2723"/></g></g>`;
+    const gdCloud = (x, y, s, dark, d) => `<g transform="translate(${x} ${y}) scale(${s})"><g class="gd-drift" style="animation-delay:${d}s" fill="${dark ? '#6b7280' : '#fff'}" opacity="${dark ? .95 : .88}"><circle cx="-22" cy="4" r="16"/><circle cx="0" cy="-6" r="22"/><circle cx="24" cy="2" r="17"/><rect x="-38" y="2" width="78" height="18" rx="9"/></g></g>`;
+    const gdRock = (x, y, s) => `<g transform="translate(${x} ${y}) scale(${s})"><ellipse rx="14" ry="9" fill="#8d8f94"/><ellipse cx="-4" cy="-3" rx="5" ry="2.5" fill="#b9bbc0"/><path d="M-6 3Q0 6 8 2" stroke="#6b6d72" fill="none"/></g>`;
+    const gdFallen = (x, y, a, c) => `<g transform="translate(${x} ${y}) rotate(${a})"><path d="M0 0C4-6 12-6 16 0C12 6 4 6 0 0Z" fill="${c}"/><path d="M0 0H14" stroke="#7a4a1a" stroke-width=".8"/></g>`;
+    function gdTulip(ev, now) {
+      const c = ev.color || CAL_COLORS[0], dt = ev.start - now;
+      const head = dt <= 0
+        ? `<circle cy="-50" r="16" fill="${c}" opacity=".18"/><path d="M0-40C-13-41-16-55-12-62L-5-50 0-64 5-50 12-62C16-55 13-41 0-40Z" fill="${c}"/><path class="gd-spark" d="M-18-62l2 4 4 2-4 2-2 4-2-4-4-2 4-2zM18-58l1.5 3 3 1.5-3 1.5-1.5 3-1.5-3-3-1.5 3-1.5z" fill="#fff59d"/>`
+        : dt < GD_DAY
+          ? `<path d="M0-40C-9-41-11-52-8-58L-3-49 0-60 3-49 8-58C11-52 9-41 0-40Z" fill="${c}"/>`
+          : `<ellipse cy="-48" rx="5" ry="9" fill="${c}"/><path d="M-5-44Q0-38 5-44L3-40H-3Z" fill="#5fa338"/>`;
+      return `<path d="M0-18V-40" stroke="#4f8f2f" stroke-width="2.5"/>` + gdLeaf(0, -24, -40, .6, '#6fb544') + gdLeaf(0, -27, -140, .55, '#7cc04b') + head
+        + `<path d="M-12 0H12L15-18H-15Z" fill="#c1663a"/><rect x="-17" y="-22" width="34" height="6" rx="2" fill="#d97b4a"/><path d="M-10-4H10" stroke="#a24e28" stroke-opacity=".5"/>`;
+    }
+
+    function openGarden() { openPane('garden-mode', 'nav-garden', renderGarden); }
+    function closeGarden() {
+      document.body.classList.remove('garden-mode');
+      document.getElementById('nav-garden')?.classList.remove('active');
+    }
+    const gardenOpen = () => document.body.classList.contains('garden-mode');
+
+    function renderGarden() {
+      const box = document.getElementById('garden-scene'); if (!box) return;
+      const now = Date.now(), hour = new Date().getHours(), W = 1000, H = 640;
+      const fmtDay = (ms) => new Date(ms).toLocaleDateString(navigator.language || 'en-US', { month: 'short', day: 'numeric' });
+      const col = (t) => t.column || t.status || 'todo', isDone = (t) => t.status === 'done' || t.column === 'done';
+      const kind = (t) => isDone(t) ? 'harvest' : t.dueDate && Number(t.dueDate) < now ? 'wilted' : col(t) === 'blocked' ? 'blocked' : col(t) === 'in_progress' ? 'young' : 'sprout';
+      const plants = Object.entries(tasks).map(([soul, t]) => ({ soul, ...t })).filter(t => !isDone(t) || now - (t.updatedAt || 0) < 14 * GD_DAY)
+        .sort((a, b) => (a.createdAt || a.updatedAt || 0) - (b.createdAt || b.updatedAt || 0) || (a.soul < b.soul ? -1 : 1));
+      const count = { sprout: 0, young: 0, blocked: 0, wilted: 0, harvest: 0, weeds: 0 };
+      plants.forEach(t => { count[kind(t)]++; if (!isDone(t) && now - (t.updatedAt || t.createdAt || now) > 14 * GD_DAY) count.weeds++; });
+      const doneToday = plants.filter(t => isDone(t) && now - (t.updatedAt || 0) < GD_DAY).length;
+      const notes = Object.values(localNotes).filter(n => !n.trash);
+      const lastNote = Math.max(0, ...notes.map(n => n.timestamp || 0)), notesWeek = notes.filter(n => now - (n.timestamp || 0) < 7 * GD_DAY).length;
+      const raining = now - lastNote < GD_DAY, dry = now - lastNote > 7 * GD_DAY;
+      const events = Object.entries(calEvents).map(([soul, e]) => ({ soul, ...e })).filter(e => (e.end ?? e.start) >= now && e.start - now < 7 * GD_DAY).sort((a, b) => a.start - b.start).slice(0, 10);
+      const unread = Object.values(feeds).reduce((n, f) => n + feedUnread(f), 0);
+      const oldSecrets = Object.values(secrets).filter(s => now - (s.updatedAt || s.createdAt || now) > 365 * GD_DAY).length;
+      const stormy = count.wilted >= 3;
+
+      // sky and light follow the real clock; three or more overdue tasks bring a storm
+      const night = hour < 6 || hour >= 21, dawn = !night && hour < 8, dusk = !night && hour >= 18;
+      const sky = stormy && !night ? ['#7d8c99', '#c9d3da'] : night ? ['#0b1d3a', '#2c4675'] : dawn ? ['#f3a683', '#fde3c2'] : dusk ? ['#5b4a8b', '#f39c6b'] : ['#5fb8f0', '#d9f1ff'];
+      const grass = dry ? ['#c2b56f', '#968a48'] : ['#8fcf5f', '#5a9a3a'];
+      const soil = dry ? '#9a7550' : '#5b3a24';
+      let s = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Your garden: ${plants.length} plants, ${count.wilted} wilting, ${events.length} events coming up" font-family="Outfit, Inter, sans-serif">
+        <defs>
+          <linearGradient id="gd-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${sky[0]}"/><stop offset="1" stop-color="${sky[1]}"/></linearGradient>
+          <linearGradient id="gd-grass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${grass[0]}"/><stop offset="1" stop-color="${grass[1]}"/></linearGradient>
+          <radialGradient id="gd-shine" cx=".35" cy=".3" r=".6"><stop offset="0" stop-color="#fff" stop-opacity=".6"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></radialGradient>
+          <radialGradient id="gd-glow"><stop offset="0" stop-color="#fff7c2" stop-opacity=".9"/><stop offset="1" stop-color="#fff7c2" stop-opacity="0"/></radialGradient>
+        </defs>
+        <rect width="${W}" height="${H}" fill="url(#gd-sky)"/>`;
+      if (night) {
+        for (let i = 0; i < 40; i++) s += `<circle class="gd-star" style="animation-delay:${(gdRand('st' + i) * 3).toFixed(2)}s" cx="${(gdRand('sx' + i) * W).toFixed(0)}" cy="${(gdRand('sy' + i) * 220).toFixed(0)}" r="${(.6 + gdRand('sr' + i) * 1.4).toFixed(1)}" fill="#fff"/>`;
+        s += `<circle cx="840" cy="80" r="60" fill="url(#gd-glow)" opacity=".5"/><circle cx="840" cy="80" r="26" fill="#f5f3ce"/><circle cx="851" cy="72" r="26" fill="${sky[0]}" opacity=".85"/>`;
+      } else if (!stormy) {
+        const t = Math.min(1, Math.max(0, (hour - 6) / 15)), sx = 80 + t * 840, sy = 200 - Math.sin(t * Math.PI) * 140;
+        let rays = ''; for (let i = 0; i < 12; i++) rays += `<path d="M0-44L4-34H-4Z" transform="rotate(${i * 30})" fill="#ffe082"/>`;
+        s += `<circle cx="${sx}" cy="${sy}" r="80" fill="url(#gd-glow)"/><g transform="translate(${sx} ${sy})"><g class="gd-rays">${rays}</g><circle r="26" fill="#ffd54f"/><circle r="20" fill="#ffe57f"/></g>`;
+      }
+      s += gdCloud(210, 80, .9, false, -3) + gdCloud(640, 55, .75, false, -17);
+      for (let i = 0; i < Math.min(count.wilted, 3); i++) s += gdCloud([400, 780, 120][i], [75, 100, 115][i], 1.15, true, -i * 9);
+      // hills, distant trees, fence with the sign
+      s += `<path d="M0 255Q180 190 400 240T780 225Q900 205 1000 230V340H0Z" fill="${dry ? '#b3ad6e' : '#9fd27a'}"/><path d="M0 290Q250 240 520 280T1000 270V340H0Z" fill="${dry ? '#a49c5c' : '#7fbf58'}"/>`;
+      [[90, 250], [150, 262], [700, 236], [745, 244], [930, 240]].forEach(([x, y], i) => { s += `<rect x="${x - 2.5}" y="${y}" width="5" height="18" fill="#7a5530"/><circle cx="${x}" cy="${y - 6}" r="${12 + i % 2 * 4}" fill="${dry ? '#8e8a46' : i % 2 ? '#4f9a3c' : '#5aa845'}"/>`; });
+      s += `<rect y="330" width="${W}" height="${H - 330}" fill="url(#gd-grass)"/>`;
+      for (let x = 18; x < W; x += 48) s += `<path d="M${x - 5} 352V306L${x} 298L${x + 5} 306V352Z" fill="#c89b6d" stroke="#a87a4f"/>`;
+      s += `<rect y="310" width="${W}" height="7" fill="#d4a878"/><rect y="331" width="${W}" height="7" fill="#d4a878"/>`;
+      s += `<g transform="translate(500 286)"><rect x="-4" y="0" width="8" height="40" fill="#8b5a2b"/><rect x="-66" y="-26" width="132" height="36" rx="6" fill="#a86d3b" stroke="#7a4a22" stroke-width="2"/><text y="0" text-anchor="middle" font-size="20" font-weight="700" fill="#fff3dc" letter-spacing="4">ORTO</text></g>`;
+      // upcoming events: tulips in pots along the fence
+      events.forEach((e, i) => { const x = 500 - (events.length - 1) * 42 + i * 84; s += `<g class="gd-hit" data-ev="${escapeHtml(e.soul)}" transform="translate(${x} 374) scale(1.3)"><title>${escapeHtml(e.title || 'Event')} · ${e.start <= now ? 'now' : fmtDay(e.start) + (e.allDay ? '' : ' ' + fmtTime(e.start))}</title><rect x="-20" y="-70" width="40" height="72" fill="transparent"/><g class="gd-sway" style="animation-delay:-${(gdRand(e.soul) * 6).toFixed(2)}s">${gdTulip(e, now)}</g></g>`; });
+      // three raised beds, back to front, plants spread evenly (up to 10 per bed)
+      const beds = 3, PER = Math.max(1, Math.min(10, Math.ceil(plants.length / beds))), slots = PER * beds, step = 880 / PER;
+      for (let b = 0; b < beds; b++) {
+        const top = 384 + b * 82;
+        s += `<rect x="38" y="${top}" width="924" height="56" rx="10" fill="#8b5a2b"/><rect x="38" y="${top + 46}" width="924" height="10" rx="5" fill="#6e4520"/><rect x="47" y="${top + 6}" width="906" height="40" rx="7" fill="${soil}"/>`
+          + `<path d="M60 ${top + 18}H940M60 ${top + 32}H940" stroke="#000" stroke-opacity=".14" stroke-dasharray="14 8"/>`;
+        if (dry) for (let k = 0; k < 6; k++) { const cx = 90 + gdRand('c' + b + k) * 820; s += `<path d="M${cx} ${top + 12}l6 6-4 5 7 6" stroke="#6e5034" stroke-width="1.2" fill="none"/>`; }
+        else if (raining) for (let k = 0; k < 8; k++) s += `<ellipse cx="${80 + gdRand('p' + b + k) * 840}" cy="${top + 14 + gdRand('q' + b + k) * 24}" rx="7" ry="2" fill="#9fc6e8" opacity=".45"/>`;
+        plants.slice(b * PER, (b + 1) * PER).forEach((t, j) => {
+          const r = gdRand(t.soul), k = kind(t), prio = t.priority || 'medium';
+          const svg = k !== 'harvest' ? GD_PLANT[k]() : prio === 'high' ? GD_PLANT.sunflower(r) : prio === 'medium' ? GD_PLANT.tomato(r) : r < .5 ? GD_PLANT.carrot() : GD_PLANT.lettuce();
+          const weedy = !isDone(t) && now - (t.updatedAt || t.createdAt || now) > 14 * GD_DAY;
+          const state = { sprout: 'to do', young: 'in progress', blocked: 'blocked', wilted: 'overdue since ' + fmtDay(Number(t.dueDate)), harvest: 'done, ready to harvest' }[k];
+          s += `<g class="gd-hit" data-task="${escapeHtml(t.soul)}" transform="translate(${(60 + step * (j + .5) + (r - .5) * 12).toFixed(1)} ${top + 36}) scale(${(1.25 + r * .2).toFixed(2)})"><title>${escapeHtml(t.title || 'Task')} · ${state}${weedy ? ' · untouched for 2 weeks' : ''}</title><rect x="-24" y="-62" width="48" height="66" fill="transparent"/><g class="gd-sway" style="animation-delay:-${(r * 6).toFixed(2)}s">${svg}</g>${weedy ? gdWeeds(r) : ''}</g>`;
+        });
+      }
+      if (!plants.length) s += `<g transform="translate(500 420)"><rect x="-170" y="-24" width="340" height="44" rx="10" fill="#fff8e7" stroke="#a86d3b" stroke-width="2"/><text y="4" text-anchor="middle" font-size="16" fill="#6e4520">Add a task to plant your first seed</text></g>`;
+      if (plants.length > slots) s += `<text x="${W - 20}" y="${H - 10}" text-anchor="end" font-size="14" fill="#fff" opacity=".9">+${plants.length - slots} more in the greenhouse</text>`;
+      // paths between beds: fallen leaves for unread feed items, rocks for old secrets
+      const gap = (i) => [445, 527, 609][i % 3];
+      for (let i = 0; i < Math.min(unread, 16); i++) s += gdFallen(60 + gdRand('l' + i) * 880, gap(i) + (gdRand('m' + i) - .5) * 10, gdRand('a' + i) * 360, ['#e07b39', '#d4a017', '#c0392b', '#e8a33d'][i % 4]);
+      for (let i = 0; i < Math.min(oldSecrets, 6); i++) s += gdRock(70 + gdRand('r' + i) * 860, gap(i + 1) + 2, .8 + gdRand('z' + i) * .5);
+      // life: butterflies for this week's notes, bees for tasks done today, rain if you wrote in the last day
+      const BF = ['#ff8a65', '#ba68c8', '#4fc3f7', '#ffd54f', '#f06292', '#81c784'];
+      for (let i = 0; i < Math.min(notesWeek, 6); i++) s += gdButterfly(80 + gdRand('b' + i) * 780, 360 + gdRand('y' + i) * 200, BF[i], -(gdRand('d' + i) * 9).toFixed(2));
+      for (let i = 0; i < Math.min(doneToday, 4); i++) s += gdBee(120 + gdRand('e' + i) * 760, 380 + gdRand('f' + i) * 160, -(i * .8));
+      if (raining) { s += '<g class="gd-rain" stroke="#bfe0ff" stroke-width="1.6" stroke-linecap="round" pointer-events="none">'; for (let i = 0; i < 60; i++) s += `<line x1="${(gdRand('rx' + i) * W).toFixed(0)}" y1="${(gdRand('ry' + i) * 120).toFixed(0)}" x2="${(gdRand('rx' + i) * W - 4).toFixed(0)}" y2="${(gdRand('ry' + i) * 120 + 14).toFixed(0)}" style="animation-delay:-${(gdRand('rd' + i)).toFixed(2)}s"/>`; s += '</g>'; }
+      if (night || dusk) s += `<rect width="${W}" height="${H}" fill="#0b1d3a" opacity="${night ? .3 : .12}" pointer-events="none"/>`;
+      box.innerHTML = s + '</svg>';
+      box.onclick = (e) => { const p = e.target.closest('[data-task]'); if (p) return taskEdit(p.dataset.task); const v = e.target.closest('[data-ev]'); if (v) calEditEvent(v.dataset.ev); };
+
+      // health, tips and legend
+      const health = Math.round(Math.max(0, Math.min(100, 100 - 12 * count.wilted - 5 * count.weeds - (dry ? 15 : 0) - 4 * oldSecrets - Math.min(unread, 20) / 2 - 4 * count.blocked + 3 * count.harvest)));
+      const hc = health >= 75 ? '#4f8f2f' : health >= 45 ? '#e0a020' : '#c4532f';
+      document.getElementById('garden-health').innerHTML = `${health >= 75 ? 'Thriving' : health >= 45 ? 'Needs some care' : 'Struggling'} <span class="gd-meter"><i style="width:${health}%;background:${hc}"></i></span> ${health}%`;
+      document.getElementById('count-garden').textContent = health + '%';
+      const plural = (n, a, b) => n + ' ' + (n === 1 ? a : b);
+      const tips = [
+        count.wilted && ['ti-droplet-off', `${plural(count.wilted, 'overdue task is', 'overdue tasks are')} wilting. Finish or reschedule.`, 'tasks'],
+        count.blocked && ['ti-bug', `${plural(count.blocked, 'blocked task has', 'blocked tasks have')} a snail on it.`, 'tasks'],
+        count.weeds && ['ti-plant-off', `${plural(count.weeds, 'task untouched', 'tasks untouched')} for two weeks, weeds are growing.`, 'tasks'],
+        dry && ['ti-sun-high', lastNote ? 'No notes for a week: the soil is drying out. Write something.' : 'Write your first note to water the garden.', null],
+        oldSecrets && ['ti-key', `${plural(oldSecrets, 'secret is', 'secrets are')} older than a year: rocks in your field. Rotate them.`, 'secrets'],
+        unread && ['ti-leaf', `${plural(unread, 'unread feed item', 'unread feed items')} piling up as leaves.`, 'feeds'],
+      ].filter(Boolean);
+      const go = { tasks: 'openTasks()', secrets: 'openSecrets()', feeds: 'openFeeds()' };
+      document.getElementById('garden-tips').innerHTML = tips.length
+        ? tips.map(([i, t, g]) => `<div class="gd-tip"><i class="ti ${i}"></i><span>${escapeHtml(t)}</span>${g ? `<button class="cal-btn" onclick="${go[g]}">Open ${g}</button>` : ''}</div>`).join('')
+        : `<div class="gd-tip ok"><i class="ti ti-plant-2"></i><span>Everything is thriving. Enjoy the view.</span></div>`;
+      const icon = (vb, inner) => `<svg viewBox="${vb}" aria-hidden="true">${inner.replace(/ class="gd-\w+"/g, '')}</svg>`;
+      const keys = [
+        [icon('-26 -30 52 36', GD_PLANT.sprout()), count.sprout, 'To do', 'seedlings'],
+        [icon('-30 -56 60 62', GD_PLANT.young()), count.young, 'In progress', 'growing'],
+        [icon('-30 -56 64 62', GD_PLANT.blocked()), count.blocked, 'Blocked', 'snail on it'],
+        [icon('-26 -40 52 46', GD_PLANT.wilted()), count.wilted, 'Overdue', 'wilting'],
+        [icon('-30 -60 60 66', GD_PLANT.tomato(1)), count.harvest, 'Done', 'harvest, by priority'],
+        [icon('-6 -18 40 22', gdWeeds(1)), count.weeds, 'Weeds', 'untouched for 2 weeks'],
+        [icon('-22 -70 44 74', gdTulip({ start: now + 2 * GD_DAY, color: CAL_COLORS[0] }, now)), events.length, 'Coming up', 'events, bloom as they near'],
+        [icon('-16 -14 32 28', gdButterfly(0, 0, BF[1], 0, 1)), notesWeek, 'Notes this week', raining ? 'raining today' : dry ? 'soil is dry' : 'butterflies'],
+        [icon('-4 -8 24 16', gdFallen(0, 0, 0, '#e07b39')), unread, 'Unread', 'fallen leaves'],
+        [icon('-18 -12 36 24', gdRock(0, 0, 1)), oldSecrets, 'Old secrets', 'rocks (over a year)'],
+      ];
+      document.getElementById('garden-legend').innerHTML = keys.map(([svg, n, t, h]) => `<div class="gd-key">${svg}<div><b>${n}</b><small>${escapeHtml(t)} · ${escapeHtml(h)}</small></div></div>`).join('');
     }
 
     const taskSearch = (v) => { taskQuery = (v || '').toLowerCase(); renderTasks(); };
