@@ -214,7 +214,7 @@ cd orto &amp;&amp; npm start</pre>
   <section id="agents">
     <p class="cap">For scripts and agents</p>
     <h2>The same data, from the command line.</h2>
-    <p class="sub">A dependency-free JavaScript SDK and a CLI use the same login. Autonomous agents can keep their notes, tasks and files in an encrypted workspace you control.</p>
+    <p class="sub">A dependency-free JavaScript SDK and a CLI use the same login. Autonomous agents can keep their notes, tasks and files in an encrypted workspace you control. For Claude Desktop and other MCP clients there is a small local MCP server (<code>orto-mcp</code>): it runs on your machine, so the encryption stays there.</p>
 <pre>node cli.js vault-write --title "Idea" --body "- [ ] ship it"
 node cli.js file-upload --file report.pdf --folder Docs/2026
 node cli.js file-list --folder Docs --table
