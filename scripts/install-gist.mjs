@@ -83,6 +83,9 @@ const load = (name) => loading[name] ||= (async () => {
   else models.gist = await (await import('@desert-ant-labs/gist')).Gist.load(wasm());
 })().catch((err) => { delete loading[name]; throw err; });
 const post = (m) => parent.postMessage(m, '*');
+// a crash inside the SDK (wasm abort, rejected promise nobody awaits) would leave the app waiting forever: tell it
+addEventListener('error', (e) => post({ event: 'error', error: e.message || 'model page error' }));
+addEventListener('unhandledrejection', (e) => post({ event: 'error', error: String((e.reason && e.reason.message) || e.reason) }));
 addEventListener('message', async (e) => {
   if (e.source !== parent) return;
   const { id, op, text, topK } = e.data || {};
