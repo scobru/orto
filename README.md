@@ -34,6 +34,8 @@ Set things with env vars in front of it, e.g. `PORT=8080 ORTO_DATA=~/orto-data O
 
 Open the URL, type a username and password; the first time, the app offers to create the account.
 
+**Desktop, no Node or server needed.** Download `orto-<os>.zip` from the latest [release](https://github.com/scobru/orto/releases) (`win-x64`, `darwin-arm64` / `darwin-x64`, `linux-x64` / `linux-arm64`), unzip and run `Orto.cmd` (Windows), `Orto.command` (macOS: first time right-click, Open) or `Orto.sh` (Linux). It starts a local server on `127.0.0.1:8787` and opens the browser; data lives in `%APPDATA%\\Orto`, `~/Library/Application Support/Orto` or `~/.local/share/orto` (back it up). Close the window to stop it. Built by `.github/workflows/desktop.yml` on every `v*` tag; from source: `node desktop.js`.
+
 Docker (includes the web app, data in the `zenos-data` volume): `docker compose up -d --build`, then open http://localhost:8787. The compose build also includes the optional tag suggestions (below); `ORTO_GIST=0 docker compose up -d --build` (or `--build-arg ORTO_GIST=0`) leaves them out. Or: `docker build -t orto . && docker run -d -p 8787:8787 -v zenos-data:/data orto`.
 
 Put it behind a reverse proxy with HTTPS (Caddy, nginx) before exposing it to the internet.
