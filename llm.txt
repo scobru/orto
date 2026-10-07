@@ -41,6 +41,8 @@ Every collection follows the same shape (`onX(cb)` replays existing records, the
 
 Links: `linkToEvent / unlinkFromEvent(eventSoul, {kind, soul})`, `linkToTask / unlinkFromTask`, `eventsFor({kind, soul})`, `tasksFor({kind, soul})`, `notesForEvent(eventSoul)`. `kind` is `note | bookmark | event | task`. Links live inside the encrypted record.
 
+Note attachments: a note body links a file from `files` with `[name](#orto-file=<id>)` (`![name](#orto-file=<id>)` for an image), `<id>` from `uploadFile`/`listFiles`. Plain Markdown, nothing extra is stored; the web app decrypts and shows it, public note shares do not resolve it.
+
 Sharing: `shareNote(soul)`, `shareFile(id)` -> `{id, url}` where url = `<server>/s/<id>#<key>` (key never reaches the server); `listShares()`, `unshare(id)`; `readShare(url)` (named export, no login). Account: `changePassword(new)`, `exportAll({files})` -> plain JSON object, `importAll(obj)`. `uploadFile(bytes, name, {encrypt, type, thumb, addedAt})` keeps `type` (MIME) and `thumb` (small data: URL) in the encrypted index.
 
 Server backup: `node server.js backup <folder>`.

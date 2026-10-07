@@ -33,7 +33,7 @@ const TOOLS = [
     async (os, a) => (await os.readVaultNotes()).filter((n) => !a.query || (n.title + ' ' + n.body).toLowerCase().includes(a.query.toLowerCase())).slice(0, lim(a))
       .map((n) => ({ soul: n.soul, title: n.title, cat: n.cat, pinned: n.pinned, timestamp: n.timestamp, preview: cut(n.body, 200) }))],
   ['note_get', 'Read one note in full (Markdown).', { soul: str('note id from note_list') }, ['soul'], 'read', (os, a) => os.getVaultNote(a.soul)],
-  ['note_write', 'Create a note, or replace one when `soul` is given (send the whole body: it overwrites).', { title: str('title'), body: str('Markdown text; #tags and - [ ] checklists work'), cat: str('category, default general'), pinned: { type: 'boolean' }, soul: str('existing note id to replace') }, ['title', 'body'], 'write',
+  ['note_write', 'Create a note, or replace one when `soul` is given (send the whole body: it overwrites).', { title: str('title'), body: str('Markdown text; #tags and - [ ] checklists work; attach a file from file_list/file_write with [name](#orto-file=<file id>), or ![name](#orto-file=<file id>) for an image'), cat: str('category, default general'), pinned: { type: 'boolean' }, soul: str('existing note id to replace') }, ['title', 'body'], 'write',
     (os, a) => os.writeVaultNote(a)],
   ['calendar_list', 'List calendar events, optionally inside a date range.', { from: when('range start'), to: when('range end') }, [], 'read', (os, a) => os.readCalendarEvents(a)],
   ['event_write', 'Create a calendar event, or replace one when `soul` is given.', { title: str('title'), start: when('start'), end: when('end, defaults to start'), notes: str('free text'), soul: str('existing event id to replace') }, ['title', 'start'], 'write',
