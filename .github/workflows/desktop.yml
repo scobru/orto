@@ -1,0 +1,37 @@
+name: desktop
+# Portable zips (Node runtime + app + launcher) for Windows, macOS (Intel/Apple silicon) and Linux.
+# Tag v* publishes them on the GitHub release; manual run or PR only keeps them as artifacts.
+on:
+  push: { tags: ['v*'] }
+  workflow_dispatch:
+permissions: { contents: write }
+env: { NODE_VERSION: 22.22.0 }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build zips
+        run: |
+          set -e
+          for t in win-x64 darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            d=orto-$t; mkdir -p $d/app
+            cp server.js orto.js demo.js desktop.js package.json $d/app/; cp -r web $d/app/web
+            n=node-v$NODE_VERSION-$t
+            if [ $t = win-x64 ]; then
+              curl -fsSLO https://nodejs.org/dist/v$NODE_VERSION/$n.zip; unzip -q $n.zip
+              cp $n/node.exe $d/node.exe
+              printf '@echo off\r\n"%%~dp0node.exe" --no-warnings "%%~dp0app\\desktop.js"\r\npause\r\n' > $d/Orto.cmd
+            else
+              curl -fsSLO https://nodejs.org/dist/v$NODE_VERSION/$n.tar.gz; tar xzf $n.tar.gz
+              cp $n/bin/node $d/node
+              l=Orto.sh; [ ${t#darwin} != $t ] && l=Orto.command
+              printf '#!/bin/sh\ncd "$(dirname "$0")" && exec ./node --no-warnings app/desktop.js\n' > $d/$l; chmod +x $d/$l $d/node
+            fi
+            zip -qr $d.zip $d
+          done
+      - uses: actions/upload-artifact@v4
+        with: { name: desktop, path: orto-*.zip }
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with: { files: orto-*.zip }
