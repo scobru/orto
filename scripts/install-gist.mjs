@@ -61,11 +61,12 @@ const scopes = { './node_modules/@desert-ant-labs/emo/': { '#platform': './node_
 const importMap = JSON.stringify({ imports, scopes }, null, 2);
 const hash = crypto.createHash('sha256').update('\n' + importMap + '\n').digest('base64');
 
-// The page the app embeds in a sandboxed iframe. The CSP is the second lock: whatever the SDK tries (it reports usage to
+// The page the app embeds in a sandboxed iframe. The CSP is the second lock ('unsafe-eval' because the SDK's wasm glue needs it; it only
+// weakens this opaque-origin page, which has no storage, no keys and can load scripts from itself only): whatever the SDK tries (it reports usage to
 // events.desertant.com unless told not to), it can only talk to this server and to Hugging Face for the model files.
 fs.writeFileSync(path.join(out, 'host.html'), `<!doctype html>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval' 'sha256-${hash}'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co; worker-src 'self' blob:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval' 'sha256-${hash}'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co; worker-src 'self' blob:">
 <title>Orto on-device models</title>
 <script type="importmap">
 ${importMap}
