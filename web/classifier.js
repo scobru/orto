@@ -38,6 +38,7 @@ export function loadClassifier({ base = '', onProgress } = {}) {
       const m = e.data || {};
       if (m.event === 'ready') ready();
       else if (m.event === 'progress') onProgress?.(m.p);
+      else if (m.event === 'error') { for (const p of pending.values()) p.rej(new Error(m.error)); pending.clear(); }
       else if (pending.has(m.id)) { const p = pending.get(m.id); pending.delete(m.id); m.ok ? p.res(m) : p.rej(new Error(m.error || 'failed')); }
     });
     document.body.appendChild(frame);
