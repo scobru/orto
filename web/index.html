@@ -3307,6 +3307,8 @@
               class="ti ti-table"></i></button>
           <button class="bar-btn" onclick="formatToolbarAction('image')" title="Insert Image"><i
               class="ti ti-photo"></i></button>
+          <button class="bar-btn" onclick="noteAttach()" title="Attach file from Files"><i
+              class="ti ti-paperclip"></i></button>
           <button class="bar-btn" onclick="formatToolbarAction('code')" title="Code Block"><i
               class="ti ti-code"></i></button>
         </div>
@@ -3872,6 +3874,8 @@
           });
         });
 
+        noteHydrateAttachments(renderedView);
+
         // Update stats
         updateStats(note.body || '');
 
@@ -3929,6 +3933,57 @@
       });
 
       return rawHtml;
+    }
+
+    // Attachments: a note holds `[name](#orto-file=ID)` / `![name](#orto-file=ID)` pointing at a file in Files (encrypted, fetched on view).
+    // The `#` URL survives DOMPurify; the rendered view swaps it for a decrypted blob URL. Not resolved in public shared notes.
+    const attachCache = new Map(); // id -> blob URL, kept for the session so re-renders don't refetch
+    async function attachUrl(id) {
+      if (attachCache.has(id)) return attachCache.get(id);
+      const meta = filesCache.find(f => f.id === id) || (await os.listFiles()).find(f => f.id === id);
+      if (!meta) throw new Error('Attachment not found (deleted from Files?)');
+      const url = URL.createObjectURL(new Blob([await os.downloadFile(id, { meta })], { type: isPhoto(meta) && /^image\//.test(meta.type || '') ? meta.type : '' }));
+      attachCache.set(id, url);
+      return url;
+    }
+    function noteHydrateAttachments(root) {
+      root.querySelectorAll('img[src^="#orto-file="]').forEach(img => {
+        const id = img.getAttribute('src').slice(11);
+        img.removeAttribute('src');
+        attachUrl(id).then(u => { img.src = u; }, () => { img.alt = '⚠ ' + (img.alt || 'missing attachment'); });
+      });
+      root.querySelectorAll('a[href^="#orto-file="]').forEach(a => {
+        const id = a.getAttribute('href').slice(11);
+        a.removeAttribute('href'); a.style.cursor = 'pointer'; a.textContent = '📎 ' + a.textContent;
+        a.onclick = async (e) => { e.preventDefault(); try { const u = await attachUrl(id); const x = document.createElement('a'); x.href = u; x.download = a.textContent.slice(3); x.click(); } catch (err) { showToast(err.message); } };
+      });
+    }
+    async function noteAttach() {
+      if (!selectedNoteId) return;
+      let files;
+      try { files = await os.listFiles(); filesCache = files; } catch (e) { return showToast(e.message); }
+      if (!files.length) return showToast('No files yet. Upload some in Files first.');
+      const bg = openModal(`<b>Attach a file</b><input id="attach-q" class="cal-input" placeholder="Search…" style="width:100%;margin:8px 0"><div id="attach-list" style="max-height:50vh;overflow:auto"></div>
+        <div class="cal-actions"><button class="cal-btn primary" id="attach-close">Close</button></div>`, 'attach-modal-bg');
+      const list = bg.querySelector('#attach-list');
+      const draw = () => {
+        const q = bg.querySelector('#attach-q').value.toLowerCase();
+        list.innerHTML = files.filter(f => (f.name || '').toLowerCase().includes(q)).map(f => `<div class="bm-folder" data-id="${escapeHtml(f.id)}"><span>${escapeHtml(f.name)}</span><span>${humanSize(f.size || 0)}</span></div>`).join('') || '<div class="blog-empty">Nothing found.</div>';
+      };
+      draw();
+      bg.querySelector('#attach-q').oninput = draw;
+      bg.querySelector('#attach-close').onclick = () => closeModal('attach-modal-bg');
+      list.onclick = (e) => {
+        const row = e.target.closest('[data-id]'); if (!row) return;
+        const f = files.find(x => x.id === row.dataset.id);
+        const name = f.name.replace(/[\[\]\n]/g, ' ');
+        const md = `${isPhoto(f) ? '!' : ''}[${name}](#orto-file=${f.id})`;
+        closeModal('attach-modal-bg');
+        isEditMode = true; renderEditor();
+        const ta = document.getElementById('editor-textarea'), s = ta.selectionStart ?? ta.value.length;
+        ta.setRangeText((s && ta.value[s - 1] !== '\n' ? '\n' : '') + md + '\n', s, ta.selectionEnd ?? s, 'end');
+        ta.focus(); handleBodyInput(ta.value);
+      };
     }
 
     // Toggle interactive checkbox in markdown body & auto-save
@@ -5885,7 +5940,7 @@ print("Welcome to Orto!")
       };
     }
     window.serverConfig = serverConfig;
-    Object.assign(window, { openMedia, mediaTabSet, mediaPlay, suggestTagsForNote, openFiles, filesUpload, filesDownload, filesDelete, filesShare, filesPick, filesNewGroup, filesRenameGroup, filesDeleteGroup, filesMove, photoOpen, shareNoteLink, openSettings });
+    Object.assign(window, { openMedia, mediaTabSet, mediaPlay, suggestTagsForNote, openFiles, filesUpload, filesDownload, filesDelete, filesShare, filesPick, noteAttach, filesNewGroup, filesRenameGroup, filesDeleteGroup, filesMove, photoOpen, shareNoteLink, openSettings });
 
     Object.assign(window, { openBookmarks, bmSearch, bmPickFolder, bmAdd, bmImport, bmDelete, bmEdit, bmRenameFolder, bmExport });
 
