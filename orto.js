@@ -836,6 +836,13 @@ export class Orto {
   async readFeeds() { return (await this._readAll('feeds')).filter((f) => f.url).sort((a, b) => (a.folder || '').localeCompare(b.folder || '') || (a.title || a.url).localeCompare(b.title || b.url)); }
   /** Everything up to `readAt` (default now) counts as read in the unread badge. */
   async markFeedRead(soul, readAt = Date.now()) { const f = await this._get('feeds', soul); if (!f) throw new Error('Unknown feed.'); return this.put('feeds', soul, { ...f, readAt }); }
+  /** Rename a feed or move it to another folder ('' = no folder). */
+  async updateFeed(soul, { title, folder } = {}) {
+    const f = await this._get('feeds', soul);
+    if (!f) throw new Error('Unknown feed.');
+    const { soul: _s, updatedAt, ...rec } = f;
+    return this.put('feeds', soul, { ...rec, ...(title !== undefined && { title }), ...(folder !== undefined && { folder }) });
+  }
   deleteFeed(soul) { return this._del('feeds', soul); }
   onFeed(callback) { return this._on('feeds', callback, (f) => f.url); }
   /** Fetch and parse any feed through the server (browsers cannot, CORS). See parseFeed for the shape. */
