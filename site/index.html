@@ -214,7 +214,7 @@
 
     <img class="hero-logo" src="logo.png" alt="orto" width="200" height="200">
     <h1>Your workspace.<br>Your server. Your data.</h1>
-    <p class="lead">Orto is a self-hosted personal workspace: encrypted notes, calendar, bookmarks, tasks, contacts, secrets, files and a
+    <p class="lead">Orto is a self-hosted personal workspace: encrypted notes, calendar, bookmarks, an RSS reader, tasks, contacts, secrets, files, music and video, and a
       public blog, on one small Node server with a single SQLite file. Everything private is encrypted in your browser
       with a key derived from your username and password; the server only stores ciphertext.</p>
     <div class="cta">
@@ -236,6 +236,9 @@
       <div class="card"><b>🔖 Bookmarks</b><code>bookmarks</code>
         <p>Private library with folders and tags. Import/export Brave, Chrome, Firefox HTML.</p>
       </div>
+      <div class="card"><b>📡 Feeds</b><code>feeds</code>
+        <p>Follow blogs and news over RSS or Atom. The list is encrypted, OPML in and out; articles are fetched live, never stored.</p>
+      </div>
       <div class="card"><b>👥 Contacts</b><code>contacts</code>
         <p>Encrypted address book with tags and an optional Orto username per contact. Import and export vCard (.vcf).</p>
       </div>
@@ -243,10 +246,13 @@
         <p>Passwords, API keys and secure notes, encrypted before they leave your browser. Hidden by default, with a password generator.</p>
       </div>
       <div class="card"><b>📁 Files</b><code>files</code>
-        <p>Upload any file. Encrypted in the browser, stored on your server's disk, with a per-user quota.</p>
+        <p>Upload any file, in folders. Encrypted in the browser (big files in chunks), stored on your server's disk, with a per-user quota.</p>
       </div>
       <div class="card"><b>🖼️ Photos</b><code>files</code>
-        <p>Thumbnail gallery of your images, encrypted like everything else. Upload from any device with a browser.</p>
+        <p>Thumbnail gallery of your images with albums, encrypted like everything else. Upload from any device with a browser.</p>
+      </div>
+      <div class="card"><b>🎵 Media</b><code>files</code>
+        <p>Play your own music and video while they stream: decrypted in your browser chunk by chunk, with playlists and seeking.</p>
       </div>
       <div class="card"><b>🔗 Public links</b><code>/s/&lt;id&gt;#key</code>
         <p>Share a note or file with anyone. The key lives only in the link, so the server cannot read what you share. Revoke any time.</p>
@@ -255,7 +261,7 @@
         <p>Export everything in one file, import it anywhere: that is also how you move to another server. Plus <code>node server.js backup</code>.</p>
       </div>
       <div class="card"><b>🪶 Blog</b><code>posts</code>
-        <p>Public Markdown blog at <code>/blog/&lt;username&gt;</code>, e.g. <a href="https://orto.scobrudot.dev/blog/scobru" style="color:var(--acc)">orto.scobrudot.dev/blog/scobru</a>.</p>
+        <p>Public Markdown blog at <code>/blog/&lt;username&gt;</code> with an RSS feed at <code>/feed.xml</code>, e.g. <a href="https://orto.scobrudot.dev/blog/scobru" style="color:var(--acc)">orto.scobrudot.dev/blog/scobru</a>.</p>
       </div>
     </div>
     <p style="margin-top:16px">One login works in the web app, the CLI and the SDK. AI agents can read and write the same
