@@ -179,6 +179,17 @@ await os.deleteTask(lt.soul);
 for (let i = 0; i < 50 && seen.length < 2; i++) await new Promise(r => setTimeout(r, 50));
 assert.deepEqual(seen, [['live one', false], [undefined, true]]);
 stop();
+// a cached bookmark that is still the server's version is skipped on the initial download; a changed or unknown one is delivered
+const bmA = await os.writeBookmark({ url: 'https://cache.example/a', title: 'A' }), bmB = await os.writeBookmark({ url: 'https://cache.example/b', title: 'B' });
+const bmRecs = await os._json('GET', '/c/bookmarks'), atA = bmRecs.find((r) => r.soul === bmA.soul).updatedAt;
+const gotBm = []; const stopBm = sameLogin.onBookmark((b, soul) => gotBm.push(soul), (soul, at) => soul === bmA.soul && at === atA);
+for (let i = 0; i < 50 && !gotBm.includes(bmB.soul); i++) await new Promise(r => setTimeout(r, 50));
+assert(gotBm.includes(bmB.soul) && !gotBm.includes(bmA.soul), 'known bookmark skipped, unknown delivered');
+stopBm();
+const gotAll = []; const stopAll = sameLogin.onBookmark((b, soul) => gotAll.push(soul), (soul, at) => soul === bmA.soul && at === 'stale');
+for (let i = 0; i < 50 && !gotAll.includes(bmB.soul); i++) await new Promise(r => setTimeout(r, 50));
+assert(gotAll.includes(bmA.soul), 'a record whose version changed is delivered');
+stopAll();
 
 console.log('11. Public share links');
 const sn = await os.writeVaultNote({ title: 'Shared note', body: '# Hi', cat: 'x' });

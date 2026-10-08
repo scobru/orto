@@ -22,7 +22,7 @@ export function normalizeServer(url) {
 
 // base64 without Buffer so it works in browsers too
 const toB64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000)); return btoa(s); };
-const fromB64 = (b) => Uint8Array.from(atob(b), (c) => c.charCodeAt(0));
+const fromB64 = (b) => { const s = atob(b), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }; // a plain loop: Uint8Array.from with a callback is ~25x slower on the multi-MB cache blob
 
 /** Compatibility no-op (the old build kept a graph cache on disk). */
 export function flushStorage() {}
@@ -362,10 +362,11 @@ export class Orto {
    * Replays every existing record first, then follows changes (from this or any other client).
    * @returns {() => void} unsubscribe
    */
-  _on(coll, callback, keep = () => true, plain = false) {
+  /** `known(soul, updatedAt)` -> true skips the initial download's record (no decrypt, no callback): the caller already has that version cached. */
+  _on(coll, callback, keep = () => true, plain = false, known = null) {
     if (!plain) this._needKey();
     const emit = async (rec) => { const v = plain ? rec : await this._dec(rec); if (v && keep(v)) callback(v, rec.soul, false); };
-    const sync = async () => { await Promise.all((await this._json('GET', '/c/' + coll)).map(emit)); };
+    const sync = async () => { await Promise.all((await this._json('GET', '/c/' + coll)).map((rec) => (known && rec.updatedAt != null && known(rec.soul, rec.updatedAt) ? null : emit(rec)))); };
     const sub = { coll, sync, handle: (e) => (e.deleted ? callback(null, e.soul, true) : emit(e.record)) };
     this._stream();
     this._subs.add(sub);
@@ -773,7 +774,7 @@ export class Orto {
   async exportBookmarksHtml({ folder = null } = {}) { return bookmarksToHtml(await this.readBookmarks({ folder })); }
   async getBookmark(soul) { const b = await this._get('bookmarks', soul); return b && b.url ? b : null; }
   deleteBookmark(soul) { return this._del('bookmarks', soul); }
-  onBookmark(callback) { return this._on('bookmarks', callback, (b) => /^https?:\/\//i.test(b.url)); }
+  onBookmark(callback, known) { return this._on('bookmarks', callback, (b) => /^https?:\/\//i.test(b.url), false, known); }
 
   // ─── Contacts ───────────────────────────────────────────────────────
 
