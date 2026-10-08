@@ -384,6 +384,42 @@ console.log('Landing page and app routes');
   web.closeAllConnections(); web.close();
 }
 
+console.log('On-device assistant model (add-on plumbing)');
+{
+  const llm = await import('./web/llm.js');
+  assert.deepEqual(llm.parseToolCalls('<think>x</think><|tool_call_start|>[task_write(title="Pane, latte", priority="high", tags=["a","b"])]<|tool_call_end|>'),
+    [{ name: 'task_write', arguments: { title: 'Pane, latte', priority: 'high', tags: ['a', 'b'] } }]);
+  assert.deepEqual(llm.parseToolCalls('<|tool_call_start|>[note_list(), task_list(status="todo", limit=5)]<|tool_call_end|>').map((c) => c.name), ['note_list', 'task_list']);
+  assert.deepEqual(llm.parseToolCalls('<|tool_call_start|>[x(a=foo bar)]<|tool_call_end|>'), [], 'malformed calls are dropped, not guessed');
+  assert.equal(llm.stripThink('<think>abc</think>ciao'), 'ciao');
+  assert.equal(llm.stripThink('<think>unfinished'), '');
+  assert.equal(await llm.llmInstalled('http://127.0.0.1:1'), null, 'not installed when the server is unreachable');
+}
+
+console.log('On-device assistant (tool loop)');
+{
+  const { askAssistant, TOOLS } = await import('./web/assistant.js');
+  assert(!TOOLS.some((t) => /delete|share|secret/.test(t[0])), 'no destructive, public or secret tool');
+  const created = [], os = { readTasks: async () => [{ soul: 't1', title: 'Pane' }], writeTask: async (t) => { created.push(t.title); return { soul: 't2' }; } };
+  const script = (...replies) => { const seen = []; return { seen, chat: async (msgs) => { seen.push(msgs.map((m) => m.role + ':' + m.content)); return replies.shift(); } }; };
+  let s = script('<|tool_call_start|>[task_list()]<|tool_call_end|>', '<think>x</think>You have one task: Pane.');
+  const hist = [];
+  assert.equal(await askAssistant(os, 'what is open?', hist, { chat: s.chat }), 'You have one task: Pane.');
+  assert(s.seen[1].some((m) => m.startsWith('tool:') && m.includes('Pane')), 'tool result goes back to the model');
+  assert.equal(hist.length, 2, 'history keeps only the question and the final answer');
+  s = script('<|tool_call_start|>[task_write(title="Latte")]<|tool_call_end|>', 'Not done.');
+  await askAssistant(os, 'add Latte', [], { chat: s.chat, ask: async () => false });
+  assert.deepEqual(created, [], 'a declined write never runs');
+  s = script('<|tool_call_start|>[task_write(title="Latte")]<|tool_call_end|>', 'Done.');
+  await askAssistant(os, 'add Latte', [], { chat: s.chat, ask: async (n, a) => n === 'task_write' && a.title === 'Latte' });
+  assert.deepEqual(created, ['Latte'], 'an approved write runs');
+  s = script('<|tool_call_start|>[delete(kind="note", id="x")]<|tool_call_end|>', '<|tool_call_start|>[task_write()]<|tool_call_end|>', 'Sorry.');
+  assert.equal(await askAssistant(os, 'x', [], { chat: s.chat, ask: async () => true }), 'Sorry.');
+  assert(s.seen[1].some((m) => m.includes('Unknown tool')) && s.seen[2].some((m) => m.includes('Missing argument')), 'bad calls are answered with an error, not run');
+  s = script(...Array(4).fill('<|tool_call_start|>[task_list()]<|tool_call_end|>'));
+  assert.match(await askAssistant(os, 'loop', [], { chat: s.chat }), /could not finish/, 'a looping model is stopped');
+}
+
 console.log('On-device tag suggestions (add-on plumbing)');
 {
   const ai = await import('./web/classifier.js');

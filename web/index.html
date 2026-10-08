@@ -2231,6 +2231,17 @@
     /* ── Feeds view reuses the bookmarks layout ── */
     body.feeds-mode #feeds-pane { display: flex; }
     body.feeds-mode .note-list-pane, body.feeds-mode .editor-pane { display: none !important; }
+    /* ── Assistant (on-device model) ── */
+    body.assistant-mode #assistant-pane { display: flex; }
+    body.assistant-mode .note-list-pane, body.assistant-mode .editor-pane { display: none !important; }
+    #assistant-pane .bm-main { display: flex; flex-direction: column; min-height: 0; }
+    .as-log { flex: 1; overflow-y: auto; padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+    .as-msg { max-width: 760px; padding: 9px 12px; border-radius: 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; border: 1px solid var(--border-color); }
+    .as-msg.user { align-self: flex-end; background: var(--input-bg); }
+    .as-msg.bot { align-self: flex-start; }
+    .as-msg.sys { align-self: flex-start; color: var(--text-muted); font-size: 12px; border-style: dashed; }
+    .as-form { display: flex; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border-color); }
+    .as-form textarea { flex: 1; resize: none; background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 7px; padding: 8px 10px; font: inherit; font-size: 14px; }
     .feed-folder { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 10px 10px 2px; }
     .feed-row { cursor: pointer; }
     .feed-row.unread b { font-weight: 700; }
@@ -2919,6 +2930,11 @@
           <span class="nav-count" id="count-contacts">0</span>
         </a>
 
+        <a class="nav-item hidden" id="nav-assistant" onclick="openAssistant()" title="On-device assistant (add-on)">
+          <span class="nav-icon"><i class="ti ti-sparkles"></i></span>
+          <span class="nav-text">Assistant</span>
+        </a>
+
         <a class="nav-item" id="nav-secrets" onclick="openSecrets()">
           <span class="nav-icon"><i class="ti ti-shield-lock"></i></span>
           <span class="nav-text">Secrets</span>
@@ -3165,6 +3181,21 @@
           <input type="file" id="ct-file" accept=".vcf,text/vcard,text/x-vcard" class="hidden" onchange="ctImport(this)">
         </div>
         <div class="bm-items" id="ct-items"></div>
+      </div>
+    </section>
+
+    <!-- Assistant pane: chat with the on-device model (web/assistant.js); it runs in this browser and can read and add your data -->
+    <section class="bm-pane" id="assistant-pane">
+      <div class="bm-main">
+        <div class="bm-bar">
+          <button class="mobile-menu-btn" onclick="toggleSidebar()" title="Menu" aria-label="Menu"><i class="ti ti-menu-2"></i></button>
+          <b>Assistant</b><span class="hint" id="as-status">On-device model: nothing leaves this browser.</span>
+        </div>
+        <div class="as-log" id="as-log" aria-live="polite"></div>
+        <form class="as-form" onsubmit="asSend(); return false;">
+          <textarea id="as-input" rows="2" placeholder="Ask about your notes, tasks and calendar…" onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); asSend(); }"></textarea>
+          <button class="cal-btn primary" id="as-send" type="submit">Send</button>
+        </form>
       </div>
     </section>
 
@@ -3541,6 +3572,7 @@
         loadSecrets();
         loadFeeds();
         loadTasks();
+        import('./llm.js').then((m) => m.llmInstalled(serverUrl || '')).then((ok) => { if (ok) document.getElementById('nav-assistant')?.classList.remove('hidden'); }).catch(() => { });
       } catch (e) {
         console.error("Login Error:", e);
         alert("Login failed: " + e.message);
@@ -4492,7 +4524,7 @@ print("Welcome to Orto!")
     function setFilter(filter) {
       closeCalendar();
       closeBlog();
-      closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
+      closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeAssistant(); closeGarden(); closeMedia();
       closeTasks();
       currentFilter = filter;
       triggerRender();
@@ -4749,7 +4781,7 @@ print("Welcome to Orto!")
     }
 
     function openCalendar() {
-      closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia(); closeTasks();
+      closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeAssistant(); closeGarden(); closeMedia(); closeTasks();
       calMode = true;
       document.body.classList.add('cal-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -4864,7 +4896,7 @@ print("Welcome to Orto!")
     }
     function unlinkNoteFromModal(soul) { evLinks = evLinks.filter(l => !(l.kind === 'note' && l.soul === soul)); renderEvLinks(); }
     function openLinkedNote(soul) {
-      closeEventModal(); if (typeof closeTaskModal === 'function') closeTaskModal(); closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia(); if (typeof closeTasks === 'function') closeTasks(); selectNote(soul);
+      closeEventModal(); if (typeof closeTaskModal === 'function') closeTaskModal(); closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeAssistant(); closeGarden(); closeMedia(); if (typeof closeTasks === 'function') closeTasks(); selectNote(soul);
     }
     // events & tasks linked to the open note, shown under its title; click one to open it
     function renderNoteEvents() {
@@ -4970,7 +5002,7 @@ print("Welcome to Orto!")
       });
     }
     function openBlog() {
-      closeCalendar(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia(); closeTasks();
+      closeCalendar(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeAssistant(); closeGarden(); closeMedia(); closeTasks();
       blogMode = true;
       document.body.classList.add('blog-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -5155,7 +5187,7 @@ print("Welcome to Orto!")
     function bmScheduleRender() { clearTimeout(bmTimer); bmTimer = setTimeout(renderBookmarks, 150); }
 
     function openBookmarks() {
-      closeCalendar(); closeBlog(); closeTasks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
+      closeCalendar(); closeBlog(); closeTasks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeAssistant(); closeGarden(); closeMedia();
       bmMode = true;
       document.body.classList.add('bm-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -5285,7 +5317,7 @@ print("Welcome to Orto!")
       const b = e.target.closest('[data-act]'); if (b && handlers[b.dataset.act]) handlers[b.dataset.act](b.dataset.soul);
     });
     function openPane(mode, navId, render) {
-      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
+      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeAssistant(); closeGarden(); closeMedia();
       document.body.classList.add(mode);
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
       document.getElementById(navId).classList.add('active');
@@ -5426,6 +5458,41 @@ print("Welcome to Orto!")
       copy: async (soul) => { try { await navigator.clipboard.writeText(secrets[soul].secret); showToast('Copied. Clear your clipboard when done'); } catch (_) { showToast('Copy not allowed here: use Show'); } },
       del: async (soul) => { if (confirm('Delete this secret?')) { try { await os.deleteSecret(soul); delete secrets[soul]; secShown.delete(soul); renderSecrets(); } catch (e) { showToast(e.message); } } }
     });
+    // Assistant: the on-device model (web/llm.js, add-on) with a closed set of tools (web/assistant.js). Shown only when the add-on is installed.
+    let assistantMode = false, asHistory = [], asBusy = false;
+    function openAssistant() { openPane('assistant-mode', 'nav-assistant', () => { assistantMode = true; document.getElementById('as-input').focus(); }); }
+    function closeAssistant() {
+      assistantMode = false;
+      document.body.classList.remove('assistant-mode');
+      document.getElementById('nav-assistant')?.classList.remove('active');
+    }
+    function asLine(cls, text) {
+      const log = document.getElementById('as-log'), d = document.createElement('div');
+      d.className = 'as-msg ' + cls; d.textContent = text; log.appendChild(d); log.scrollTop = log.scrollHeight;
+      return d;
+    }
+    async function asSend() {
+      const box = document.getElementById('as-input'), text = box.value.trim();
+      if (!text || asBusy) return;
+      asBusy = true; box.value = ''; document.getElementById('as-send').disabled = true;
+      asLine('user', text);
+      const out = asLine('bot', '…'), status = document.getElementById('as-status');
+      const tell = (t) => { status.textContent = t; };
+      try {
+        const { askAssistant } = await import('./assistant.js');
+        let streamed = '';
+        const answer = await askAssistant(os, text, asHistory, {
+          base: serverUrl || '',
+          onProgress: (p) => { if (p && p.status === 'progress' && p.total) tell('Downloading the model (first use only)… ' + Math.round(100 * p.loaded / p.total) + '%'); else if (p && p.status === 'ready') tell('Model ready.'); },
+          onToken: (t) => { streamed += t; tell('Thinking… ' + streamed.length + ' characters'); },
+          onTool: (name) => asLine('sys', 'Tool: ' + name),
+          ask: async (name, args) => confirm('The assistant wants to run ' + name + ':\n\n' + JSON.stringify(args, null, 1) + '\n\nAllow?'),
+        });
+        out.textContent = answer; tell('On-device model: nothing leaves this browser.');
+      } catch (e) { out.textContent = 'Error: ' + e.message; tell('Assistant failed.'); }
+      asBusy = false; document.getElementById('as-send').disabled = false; box.focus();
+    }
+    Object.assign(window, { openAssistant, asSend });
     Object.assign(window, { openContacts, ctSearch, ctEdit, ctImport, ctExport, openSecrets, secSearch, secKind, secEdit });
 
 
@@ -5580,7 +5647,7 @@ print("Welcome to Orto!")
     const closeModal = (id = 'zmodal-bg') => document.getElementById(id)?.remove();
 
     async function openFiles(view) {
-      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
+      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeAssistant(); closeGarden(); closeMedia();
       filesMode = true;
       filesView = view === 'photos' ? 'photos' : 'list';
       document.body.classList.add('files-mode');
@@ -5773,7 +5840,7 @@ print("Welcome to Orto!")
     function mediaFree() { if (mediaBlobUrl) { URL.revokeObjectURL(mediaBlobUrl); mediaBlobUrl = null; } }
 
     async function openMedia() {
-      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
+      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeAssistant(); closeGarden(); closeMedia();
       mediaMode = true;
       document.body.classList.add('media-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -6074,7 +6141,7 @@ print("Welcome to Orto!")
     }
 
     function openTasks() {
-      closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
+      closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeAssistant(); closeGarden(); closeMedia();
       tasksMode = true;
       document.body.classList.add('tasks-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
