@@ -51,7 +51,7 @@ export function loadLlm({ base = '', onProgress } = {}) {
       load: () => call('load'),
       chat: async (messages, { tools, maxTokens, onToken } = {}) => {
         try { return (await call('chat', { messages, tools, maxTokens }, onToken)).text; }
-        catch (err) { throw new Error(/download|fetch/i.test(err.message) ? 'Could not download the model from huggingface.co. Check the connection and try again.' : String(err.message).split('\n')[0].slice(0, 160)); }
+        catch (err) { throw new Error((/download|fetch|Could not locate|Unauthorized/i.test(err.message) ? 'Could not load the model from huggingface.co (check the connection and that the model repo exists): ' : '') + String(err.message).split('\n')[0].slice(0, 200)); }
       },
     };
   })().catch((err) => { loading = null; throw err; });
