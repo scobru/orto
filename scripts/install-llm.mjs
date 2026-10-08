@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Optional add-on: a small chat model (default LiquidAI LFM2.5 1.2B Thinking, 4-bit ONNX) that runs in the browser with WebGPU
+ * Optional add-on: a small chat model (default LiquidAI LFM2.5 1.2B Instruct, 4-bit ONNX) that runs in the browser with WebGPU
  * (WASM fallback), so an Orto assistant can use your data without it leaving the device.
  *
  *   node scripts/install-llm.mjs [--model <hf repo>] [--dtype q4] [--data <folder>] [--models <folder>]
@@ -19,7 +19,7 @@ import { spawnSync } from 'node:child_process';
 
 const PIN = { '@huggingface/transformers': '4.3.1' }; // pinned: this runs inside your pages
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : d; };
-const model = arg('--model', 'LiquidAI/LFM2.5-1.2B-Thinking-ONNX'), dtype = arg('--dtype', 'q4');
+const model = arg('--model', 'LiquidAI/LFM2.5-1.2B-Instruct-ONNX'), dtype = arg('--dtype', 'q4');
 if (!/^[\w.-]+\/[\w.-]+$/.test(model) || !/^[\w]+$/.test(dtype)) { console.error('bad --model or --dtype'); process.exit(1); }
 const data = path.resolve(arg('--data') || process.env.ORTO_DATA || process.env.ZENOS_DATA || path.join(process.cwd(), 'data'));
 const out = path.join(path.resolve(arg('--models') || process.env.ORTO_MODELS || path.join(data, 'models')), 'llm');
@@ -83,8 +83,10 @@ const load = () => loading ||= (async () => {
   try { model = await AutoModelForCausalLM.from_pretrained(cfg.model, { ...opts, device: 'webgpu' }); }
   catch (_) { env.backends.onnx.wasm.wasmPaths = { mjs: new URL('./lib/ort-wasm-simd-threaded.mjs', location.href).href, wasm: new URL('./lib/ort-wasm-simd-threaded.wasm', location.href).href }; model = await AutoModelForCausalLM.from_pretrained(cfg.model, { ...opts, device: 'wasm' }); }
 })().catch((err) => { loading = null; throw err; });
-addEventListener('error', (e) => post({ event: 'error', error: e.message || 'model page error' }));
-addEventListener('unhandledrejection', (e) => post({ event: 'error', error: String((e.reason && e.reason.message) || e.reason) }));
+// browser extensions (MetaMask and the like) inject scripts into every frame and their failures land here: they are not the model's
+const foreign = (x) => /MetaMask|-extension:/i.test(String(x));
+addEventListener('error', (e) => { if (!foreign(e.message + ' ' + e.filename)) post({ event: 'error', error: e.message || 'model page error' }); });
+addEventListener('unhandledrejection', (e) => { const r = e.reason; if (!foreign((r && (r.stack || r.message)) || r)) post({ event: 'error', error: String((r && r.message) || r) }); });
 addEventListener('message', async (e) => {
   if (e.source !== parent) return;
   const m = e.data || {};
