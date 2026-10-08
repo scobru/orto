@@ -22,7 +22,7 @@ export function normalizeServer(url) {
 
 // base64 without Buffer so it works in browsers too
 const toB64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000)); return btoa(s); };
-const fromB64 = (b) => Uint8Array.from(atob(b), (c) => c.charCodeAt(0));
+const fromB64 = (b) => { const s = atob(b), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }; // a plain loop: Uint8Array.from with a callback is ~25x slower on the multi-MB cache blob
 
 /** Compatibility no-op (the old build kept a graph cache on disk). */
 export function flushStorage() {}
