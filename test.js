@@ -384,6 +384,18 @@ console.log('Landing page and app routes');
   web.closeAllConnections(); web.close();
 }
 
+console.log('On-device assistant model (add-on plumbing)');
+{
+  const llm = await import('./web/llm.js');
+  assert.deepEqual(llm.parseToolCalls('<think>x</think><|tool_call_start|>[task_write(title="Pane, latte", priority="high", tags=["a","b"])]<|tool_call_end|>'),
+    [{ name: 'task_write', arguments: { title: 'Pane, latte', priority: 'high', tags: ['a', 'b'] } }]);
+  assert.deepEqual(llm.parseToolCalls('<|tool_call_start|>[note_list(), task_list(status="todo", limit=5)]<|tool_call_end|>').map((c) => c.name), ['note_list', 'task_list']);
+  assert.deepEqual(llm.parseToolCalls('<|tool_call_start|>[x(a=foo bar)]<|tool_call_end|>'), [], 'malformed calls are dropped, not guessed');
+  assert.equal(llm.stripThink('<think>abc</think>ciao'), 'ciao');
+  assert.equal(llm.stripThink('<think>unfinished'), '');
+  assert.equal(await llm.llmInstalled('http://127.0.0.1:1'), null, 'not installed when the server is unreachable');
+}
+
 console.log('On-device tag suggestions (add-on plumbing)');
 {
   const ai = await import('./web/classifier.js');
