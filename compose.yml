@@ -4,8 +4,6 @@ services:
       context: .
       args:
         ORTO_GIST: "${ORTO_GIST:-1}"   # 1 = include the optional on-device tag and emoji suggestions (Gist + Emo, ~130 MB in the image); ORTO_GIST=0 to leave it out
-        ORTO_LLM: "${ORTO_LLM:-1}"     # 1 = include the optional in-browser assistant runtime (~40 MB); weights come from huggingface.co in each browser; ORTO_LLM=0 to leave it out
-        ORTO_LLM_MODEL: "${ORTO_LLM_MODEL:-}"   # optional: another ONNX chat model (hf repo), default LiquidAI/LFM2.5-1.2B-Instruct-ONNX
     ports: ["8787:8787"]
     volumes: ["zenos-data:/data"]
     restart: unless-stopped
