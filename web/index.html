@@ -3102,6 +3102,8 @@
           <input type="search" id="bm-search" placeholder="Search bookmarks" oninput="bmSearch(this.value)">
           <button class="cal-btn hidden" id="bm-rename" onclick="bmRenameFolder()"><i class="ti ti-folder"></i> Rename
             folder</button>
+          <button class="cal-btn hidden" id="bm-del-folder" onclick="bmDeleteFolder()"><i class="ti ti-trash"></i> Delete
+            folder</button>
 <button class="cal-btn" onclick="loadDemo('bookmarks')" title="Add a few example entries (safe to click twice)"><i class="ti ti-sparkles"></i> Examples</button>
           <button class="cal-btn" onclick="bmAdd()"><i class="ti ti-plus"></i> Add</button>
           <button class="cal-btn" id="bm-export" onclick="bmExport()"
@@ -5185,6 +5187,7 @@ print("Welcome to Orto!")
       const fb = (name, label, n, depth = 0) => `<div class="bm-folder ${bmFolder === name ? 'active' : ''}" style="padding-left:${10 + depth * 14}px" onclick="bmPickFolder(${name === null ? 'null' : `decodeURIComponent('${encodeURIComponent(name)}')`})"><span>${escapeHtml(label)}</span><span>${n}</span></div>`;
       document.getElementById('bm-folders').innerHTML = fb(null, 'All', all.length) + Object.keys(folders).sort().map(f => fb(f, f ? f.split('/').pop() : 'Unfiled', folders[f], f ? f.split('/').length - 1 : 0)).join('');
       document.getElementById('bm-rename').classList.toggle('hidden', !bmFolder);
+      document.getElementById('bm-del-folder').classList.toggle('hidden', !bmFolder);
       const shown = all
         .filter(b => bmFolder === null || (b.folder || '') === bmFolder || (b.folder || '').startsWith(bmFolder + '/'))
         .filter(b => { const hay = [b.title, b.url, b.folder, ...(b.tags || [])].join(' ').toLowerCase(); return bmQuery.every(w => hay.includes(w)); })
@@ -5266,6 +5269,22 @@ print("Welcome to Orto!")
       const failed = await bmSaveMany(hit.map(b => ({ ...b, folder: to + b.folder.slice(from.length) })).map(b => ({ ...b, folder: b.folder.replace(/^\/+/, '') })), 'Moving');
       bmFolder = to || null; renderBookmarks();
       showToast('Moved ' + (hit.length - failed) + ' bookmarks' + (failed ? ' (' + failed + ' failed)' : ''));
+    }
+    // delete a folder with every bookmark in it and below it (no trash for bookmarks: asks first)
+    async function bmDeleteFolder() {
+      const from = bmFolder; if (!from) return;
+      const hit = Object.keys(bookmarks).filter(s => bookmarks[s].folder === from || (bookmarks[s].folder || '').startsWith(from + '/'));
+      if (!hit.length || !confirm('Delete the folder "' + from + '" and its ' + hit.length + ' bookmark' + (hit.length === 1 ? '' : 's') + '?\n\nThere is no undo.')) return;
+      let failed = 0;
+      for (let i = 0; i < hit.length; i += 100) {
+        await Promise.all(hit.slice(i, i + 100).map(async (soul) => {
+          try { await os.deleteBookmark(soul); delete bookmarks[soul]; bmCache.del(soul); } catch (_) { failed++; }
+        }));
+        if (hit.length > 100) showToast('Deleting ' + Math.min(i + 100, hit.length) + '/' + hit.length + '…');
+      }
+      document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
+      renderBookmarks();
+      showToast('Deleted ' + (hit.length - failed) + ' bookmarks' + (failed ? ' (' + failed + ' failed)' : ''));
     }
     async function bmDelete(soul) {
       try {
@@ -6037,7 +6056,7 @@ print("Welcome to Orto!")
     window.serverConfig = serverConfig;
     Object.assign(window, { openGarden, openMedia, mediaTabSet, mediaPlay, suggestTagsForNote, suggestEmojiForNote, openFiles, filesUpload, filesDownload, filesDelete, filesShare, filesPick, noteAttach, filesNewGroup, filesRenameGroup, filesDeleteGroup, filesMove, photoOpen, shareNoteLink, openSettings });
 
-    Object.assign(window, { openBookmarks, bmSearch, bmPickFolder, bmAdd, bmImport, bmDelete, bmEdit, bmRenameFolder, bmExport });
+    Object.assign(window, { openBookmarks, bmSearch, bmPickFolder, bmAdd, bmImport, bmDelete, bmEdit, bmRenameFolder, bmDeleteFolder, bmExport });
 
     // ═══════════════════════════════════════════════════════════════
     // Tasks & Kanban — E2EE Kanban board at tasks collection
