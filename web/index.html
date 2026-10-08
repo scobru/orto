@@ -5155,6 +5155,7 @@ print("Welcome to Orto!")
           return Object.fromEntries(Object.entries(entries).map(([soul, e]) => [soul, e.b]));
         },
         same: (soul, sig) => !!entries[soul] && entries[soul].c === sig,
+        fresh: (soul, updatedAt) => entries[soul]?.b.updatedAt === updatedAt, // the cached record is the server's current version
         set(soul, sig, record) { entries[soul] = { c: sig, b: structuredClone(record) }; save(); },
         del(soul) { delete entries[soul]; save(); }
       };
@@ -5169,7 +5170,8 @@ print("Welcome to Orto!")
         if (bmMode) bmScheduleRender();
         syncBump();
       }
-      os.onBookmark((bm, soul, isDeleted) => {
+      // the cache already shows everything: sync when the browser is idle and only decrypt what changed (24k bookmarks are ~7 MB to download and ~2 s to decrypt)
+      const live = () => os.onBookmark((bm, soul, isDeleted) => {
         syncBump();
         if (isDeleted) {
           delete bookmarks[soul];
@@ -5180,7 +5182,10 @@ print("Welcome to Orto!")
         }
         document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
         if (bmMode) bmScheduleRender();
-      });
+      }, bmCache.fresh);
+      if (!Object.keys(cached).length) live();
+      else if (window.requestIdleCallback) requestIdleCallback(live, { timeout: 3000 });
+      else setTimeout(live, 1500);
     }
     // imports fire thousands of updates; coalesce renders
     let bmTimer = null;
