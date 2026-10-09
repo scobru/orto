@@ -3578,6 +3578,10 @@
         const sig = JSON.stringify([note.title, note.body, note.cat, note.pinned, note.trash, note.timestamp]);
         notesCache.set(id, sig, note);
         triggerRender();
+      }, (souls) => { // drop cached notes that were deleted from another device
+        const gone = Object.keys(localNotes).filter((id) => !souls.has(id));
+        gone.forEach((id) => { delete localNotes[id]; notesCache.del(id); if (selectedNoteId === id) selectedNoteId = null; });
+        if (gone.length) triggerRender();
       });
     }
 
