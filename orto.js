@@ -363,10 +363,14 @@ export class Orto {
    * @returns {() => void} unsubscribe
    */
   /** `known(soul, updatedAt)` -> true skips the initial download's record (no decrypt, no callback): the caller already has that version cached. */
-  _on(coll, callback, keep = () => true, plain = false, known = null) {
+  _on(coll, callback, keep = () => true, plain = false, known = null, listed = null) {
     if (!plain) this._needKey();
     const emit = async (rec) => { const v = plain ? rec : await this._dec(rec); if (v && keep(v)) callback(v, rec.soul, false); };
-    const sync = async () => { await Promise.all((await this._json('GET', '/c/' + coll)).map((rec) => (known && rec.updatedAt != null && known(rec.soul, rec.updatedAt) ? null : emit(rec)))); };
+    const sync = async () => {
+      const recs = await this._json('GET', '/c/' + coll);
+      if (listed) listed(new Set(recs.map((r) => r.soul))); // lets the caller drop cached records deleted elsewhere
+      await Promise.all(recs.map((rec) => (known && rec.updatedAt != null && known(rec.soul, rec.updatedAt) ? null : emit(rec))));
+    };
     const sub = { coll, sync, handle: (e) => (e.deleted ? callback(null, e.soul, true) : emit(e.record)) };
     this._stream();
     this._subs.add(sub);
@@ -397,8 +401,8 @@ export class Orto {
 
   deleteVaultNote(soul) { return this._del('vault', soul); }
 
-  onVaultNote(callback) {
-    return this._on('vault', (n, soul, deleted) => (n && n.trash ? callback(null, soul, true) : callback(n && { ...n, id: soul }, soul, deleted)), (n) => n.title !== undefined || n.trash);
+  onVaultNote(callback, listed) {
+    return this._on('vault', (n, soul, deleted) => (n && n.trash ? callback(null, soul, true) : callback(n && { ...n, id: soul }, soul, deleted)), (n) => n.title !== undefined || n.trash, false, null, listed);
   }
 
   // ─── Calendar ───────────────────────────────────────────────────────
