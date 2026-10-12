@@ -13,16 +13,21 @@
   h2 { margin-bottom: .2rem; }
   small { opacity: .6; }
   img { max-width: 100%; }
+  #index { list-style: none; padding: 0; }
+  #index li { margin: 0 0 1.4rem; }
+  #index a { font-size: 1.15rem; font-weight: 600; }
+  #index p { margin: .2rem 0 0; opacity: .8; }
+  nav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #8884; }
 </style>
 </head>
 <body>
-<h1 id="who"></h1>
+<h1><a id="who"></a></h1>
 <p><small><a id="rss">RSS</a></small></p>
 <main id="posts">Loading…</main>
 <script src="/vendor/marked.min.js"></script>
 <script src="/vendor/purify.min.js"></script>
 <script>
-  // /blog/<username>[?post=<id>]: public posts of one user, markdown rendered and sanitized
+  // /blog/<username>: index of public posts; ?post=<id>: one post, markdown rendered and sanitized, with prev/next links
   const name = decodeURIComponent(location.pathname.split('/')[2] || '');
   const only = new URLSearchParams(location.search).get('post');
   document.getElementById('who').textContent = name;
@@ -30,17 +35,39 @@
   document.getElementById('rss').href = '/blog/' + encodeURIComponent(name) + '/feed.xml';
   document.getElementById('feed').href = '/blog/' + encodeURIComponent(name) + '/feed.xml';
   document.getElementById('feed').title = name;
+  document.getElementById('who').href = '/blog/' + encodeURIComponent(name);
+  const link = (p) => '?post=' + encodeURIComponent(p.id || p.soul);
+  const a = (href, text) => { const el = document.createElement('a'); el.href = href; el.textContent = text; return el; };
+  const date = (p) => { const d = document.createElement('small'); d.textContent = new Date(p.createdAt).toLocaleDateString(); return d; };
   fetch('/api/u/' + encodeURIComponent(name) + '/posts').then(r => r.ok ? r.json() : Promise.reject()).then(list => {
-    const posts = list.filter(p => !p.deleted && (!only || (p.id || p.soul) === only)).sort((a, b) => b.createdAt - a.createdAt);
+    const posts = list.filter(p => !p.deleted).sort((a, b) => b.createdAt - a.createdAt);
     const root = document.getElementById('posts');
     root.textContent = posts.length ? '' : 'No posts.';
-    for (const p of posts) {
-      const el = document.createElement('article');
-      const h = document.createElement('h2'); h.textContent = p.title;
-      const d = document.createElement('small'); d.textContent = new Date(p.createdAt).toLocaleDateString();
-      const body = document.createElement('div'); body.innerHTML = DOMPurify.sanitize(marked.parse(p.content || ''));
-      el.append(h, d, body); root.append(el);
+    if (!only) {
+      // index: titles, dates and a short excerpt; each post opens on its own page
+      const ul = document.createElement('ul'); ul.id = 'index';
+      for (const p of posts) {
+        const li = document.createElement('li');
+        const ex = document.createElement('p'); ex.textContent = (p.content || '').replace(/[#*_>`\[\]()!-]/g, '').replace(/\s+/g, ' ').trim().slice(0, 160);
+        li.append(a(link(p), p.title || 'Untitled'), document.createElement('br'), date(p), ex); ul.append(li);
+      }
+      if (posts.length) root.append(ul);
+      return;
     }
+    const i = posts.findIndex(p => (p.id || p.soul) === only);
+    if (i < 0) { root.textContent = 'Not found.'; return; }
+    const p = posts[i];
+    document.title = (p.title || 'Untitled') + ' · ' + name;
+    const el = document.createElement('article');
+    const h = document.createElement('h2'); h.textContent = p.title || 'Untitled';
+    const body = document.createElement('div'); body.innerHTML = DOMPurify.sanitize(marked.parse(p.content || ''));
+    el.append(h, date(p), body);
+    // newer on the left, older on the right, index in the middle
+    const nav = document.createElement('nav');
+    nav.append(posts[i - 1] ? a(link(posts[i - 1]), '← ' + (posts[i - 1].title || 'Newer')) : document.createElement('span'),
+      a('/blog/' + encodeURIComponent(name), 'All posts'),
+      posts[i + 1] ? a(link(posts[i + 1]), (posts[i + 1].title || 'Older') + ' →') : document.createElement('span'));
+    root.append(el, nav);
   }).catch(() => { document.getElementById('posts').textContent = 'Not found.'; });
 </script>
 </body>
