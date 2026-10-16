@@ -206,6 +206,22 @@ Usage:
   node cli.js share-revoke [--user <user> --pass <pass>] --id <id>
   node cli.js share-read   --url <link> [--out <path>]                                # no login needed
 
+  # Shared spaces: notes, tasks, events, files... shared with other Orto users. Add --space <id> to ANY command below to work inside a space.
+  node cli.js space-list    [--user <user> --pass <pass>]                              # your spaces and pending invitations
+  node cli.js space-create  [--user <user> --pass <pass>] --name <name>
+  node cli.js space-invite  [--user <user> --pass <pass>] --id <id> --to <user> [--role <editor|viewer>]
+  node cli.js space-accept  [--user <user> --pass <pass>] --id <id>                    # accept an invitation
+  node cli.js space-members [--user <user> --pass <pass>] --id <id>
+  node cli.js space-role    [--user <user> --pass <pass>] --id <id> --to <user> --role <editor|viewer>
+  node cli.js space-remove  [--user <user> --pass <pass>] --id <id> --to <user>        # also rotates the space key
+  node cli.js space-leave   [--user <user> --pass <pass>] --id <id>                    # leave, or decline an invitation
+  node cli.js space-link    [--user <user> --pass <pass>] --id <id> [--role <editor|viewer>]   # invite link for any registered user
+  node cli.js space-links   [--user <user> --pass <pass>] --id <id>
+  node cli.js space-unlink  [--user <user> --pass <pass>] --id <id> --token <token>    # revoke an invite link
+  node cli.js space-join    [--user <user> --pass <pass>] --url <invite link>
+  node cli.js space-copy    [--user <user> --pass <pass>] --id <id> --coll <vault|calendar|tasks|bookmarks|contacts|secrets|files> --soul <soul>   # your item into the space
+  node cli.js space-delete  [--user <user> --pass <pass>] --id <id>                    # for everyone
+
   # File storage (encrypted client-side unless --plain)
   node cli.js file-upload   [--user <user> --pass <pass>] --file <path> [--plain] [--folder <a/b>] [--album <name>] [--playlist <name>]   # above 4 MB: encrypted chunks, playable while streaming
   node cli.js file-list     [--user <user> --pass <pass>] [--folder <a/b>] [--album <name>] [--playlist <name>] [--table] [--count] [-n <limit> -p <page>]
@@ -298,6 +314,11 @@ Server (all commands):
 
   const server = normalizeServer(typeof flags.server === 'string' ? flags.server : ev('SERVER') || DEFAULT_SERVER);
   const os = new Orto({ server });
+  const spaceId = flags.space ?? ev('SPACE');
+  if (spaceId) { // every command below then reads and writes that shared space instead of your own data
+    const login = os.login.bind(os);
+    os.login = async (...a) => { const pair = await login(...a), v = await os.openSpace(spaceId); Object.assign(os, { key: v.key, _space: v._space, _role: v._role, _raw: v._raw, spaceName: v.spaceName }); return pair; };
+  }
 
   switch (cmd) {
     case 'register': {
@@ -341,6 +362,34 @@ Server (all commands):
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       console.log(JSON.stringify(await os.importAll(JSON.parse(fs.readFileSync(flags.file, 'utf8'))), null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'space-list': case 'space-create': case 'space-invite': case 'space-accept': case 'space-members': case 'space-role': case 'space-remove':
+    case 'space-leave': case 'space-link': case 'space-links': case 'space-unlink': case 'space-join': case 'space-copy': case 'space-delete': {
+      const need = (k) => { if (typeof flags[k] !== 'string') throw new Error(`--${k} is required.`); return flags[k]; };
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      let out;
+      if (cmd === 'space-list') out = await os.spaces();
+      else if (cmd === 'space-create') { const sp = await os.createSpace(need('name')); out = { id: sp.spaceId, name: sp.spaceName }; }
+      else if (cmd === 'space-accept') { const sp = await os.acceptInvite(need('id')); out = { id: sp.spaceId, name: sp.spaceName, role: sp.spaceRole }; }
+      else if (cmd === 'space-leave') out = await os.leaveSpace(need('id'));
+      else if (cmd === 'space-join') { const sp = await os.joinLink(need('url')); out = { id: sp.spaceId, name: sp.spaceName, role: sp.spaceRole }; }
+      else {
+        const sp = await os.openSpace(need('id'));
+        if (cmd === 'space-invite') out = await sp.invite(need('to'), flags.role || 'editor');
+        else if (cmd === 'space-members') out = await sp.members();
+        else if (cmd === 'space-role') out = await sp.setRole(need('to'), need('role'));
+        else if (cmd === 'space-remove') out = await sp.removeMember(need('to'));
+        else if (cmd === 'space-link') out = await sp.createLink(flags.role || 'viewer');
+        else if (cmd === 'space-links') out = await sp.listLinks();
+        else if (cmd === 'space-unlink') out = await sp.revokeLink(need('token'));
+        else if (cmd === 'space-copy') out = await os.copyTo(sp, need('coll'), need('soul'));
+        else out = await sp.deleteSpace();
+      }
+      console.log(JSON.stringify(out, null, 2));
       safeExit(0);
       break;
     }

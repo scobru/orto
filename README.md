@@ -92,6 +92,17 @@ It is still encrypted like any account; the password is just public. For the dem
 - **Public links**: `node cli.js share-note --soul <soul>` / `share-file --id <id>` (or **Share** in the web app) give `https://<server>/s/<id>#<key>`. The item is encrypted with a fresh key that lives only in the `#fragment`, so the server never sees it; anyone with the link can read it. `share-revoke` deletes it.
 - **Change password**: `node cli.js password-change --new '…'` (or Settings). It re-encrypts everything, then signs out your other sessions. Export first.
 
+## Shared spaces
+
+With several accounts on one server, a **space** is a shared folder: notes, tasks, calendar, bookmarks, contacts, secrets, files, photos and media, together, live. Open **Shared spaces** at the top of the sidebar of the web app (or use `space-*` in the CLI, `openSpace()` in the SDK).
+
+- **Invite** a registered user by username: they see the invitation (badge in the sidebar), accept, and the space appears. Roles: **owner**, **editor** (read and write), **viewer** (read-only, enforced by the server).
+- **Invite link** (like "anyone with the link" in Google Docs, but only for registered users): `https://<server>/app#join=...`, with a role. Whoever opens it signs in and joins. Revoke it at any time (people who already joined stay).
+- **Copy** a note or a file into a space (note menu, Files list; `space-copy` in the CLI) or back to Personal.
+- CLI and MCP: add `--space <id>` (or `ORTO_SPACE=<id>`) to any command to work inside a space.
+
+Still end-to-end encrypted: each space has its own random AES key. Every member holds it wrapped (ECDH P-256) for their own public key, and invite links carry it in the `#fragment`, so the server never sees it. Your private key is sealed with your own key (it follows a password change). Removing a member **changes the space key** and re-encrypts the space, so what they kept cannot open anything written afterwards; the others pick up the new key when they open the space again. Limits: the server hands out public keys, so compare the **fingerprint** shown when you invite someone if you do not trust it; a person you removed keeps whatever they already decrypted; notes are last-write-wins (two people editing the same note at once: the last save wins); storage and quota of a space are counted for the space, not per member; spaces have no public blog.
+
 ## How it stays private
 
 Your login derives two independent keys with PBKDF2 (210k rounds): an **AES-GCM key** that never leaves the client, and an **auth secret** the server stores only as a hash. Notes, events, tasks, bookmarks, contacts, secrets, file contents *and* file names are encrypted before upload; the server (and anyone with the SQLite file) sees ciphertext, usernames, record ids and timestamps. The blog is the one public part.
@@ -142,6 +153,7 @@ All JSON. `Authorization: Bearer <token>` from `POST /api/login` or `/api/regist
 | `GET /api/events` | server-sent events for your collections |
 | `POST /api/files` (raw body), `GET/PUT/DELETE /api/files/:id` | blobs (PUT replaces in place) |
 | `POST /api/s` (`{data}` JSON or raw bytes), `DELETE /api/s/:id` | create / revoke a public share |
+| `GET/POST /api/sp`, `/api/sp/:id/{members,links,accept}`, `/api/sp/:id/c/...`, `/api/sp/:id/files...` | shared spaces (see [llm.txt](llm.txt)) |
 | `GET /api/s/:id` | public ciphertext of a share, no auth (`/s/:id#key` is the page) |
 | `POST /api/password` (`{auth, newAuth}`; `check: true` = dry run) | swap the login secret after re-encrypting |
 | `GET /api/config` | `{registration, maxUpload, demo?}` (no auth) |

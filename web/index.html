@@ -2768,6 +2768,12 @@
       }
     }
 
+    body.in-space #nav-blog { display: none; } /* the blog is public and personal: spaces have none */
+    #count-spaces:empty { display: none; }
+    #sp-modal .cal-modal { max-width: 480px; overflow-x: hidden; box-sizing: border-box; }
+    #sp-modal .cal-modal select { width: auto; flex: none; padding: 6px 8px; }
+    #sp-modal .cal-modal .row > button, #sp-modal .share-row > button { flex: none; width: auto; }
+    #sp-modal .share-row { min-width: 0; }
     /* Photos grid, settings, share dialogs */
     .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; padding: 12px; align-content: start; }
     .photo-tile { aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--input-bg); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 28px; }
@@ -2855,6 +2861,12 @@
 
       <!-- Navigation & Filters -->
       <nav class="sidebar-nav">
+        <a class="nav-item" id="nav-spaces" onclick="openSpaces()" title="Notes, tasks, calendar and files shared with other Orto users">
+          <span class="nav-icon"><i class="ti ti-users-group"></i></span>
+          <span class="nav-text" id="space-label">Personal</span>
+          <span class="nav-count" id="count-spaces"></span>
+        </a>
+
         <div class="nav-section-title">
           <span>Views</span>
         </div>
@@ -3330,6 +3342,9 @@
               <button class="popover-item" onclick="shareNoteLink()">
                 <span><i class="ti ti-link"></i> Share public link</span>
               </button>
+              <button class="popover-item" onclick="copyToSpace('vault', selectedNoteId)">
+                <span><i class="ti ti-users-group"></i> Copy to a shared space…</span>
+              </button>
               <div class="popover-divider"></div>
               <button class="popover-item" onclick="deleteActiveNote()" style="color:var(--bear-red);">
                 <span><i class="ti ti-trash"></i> Delete Note</span>
@@ -3417,7 +3432,8 @@
   <script type="module">
     import { Orto, DEFAULT_SERVER, normalizeServer, contactsToVcf, generatePassword } from './orto.js';
 
-    let os;
+    let os;       // the client the app reads and writes through: a view of `root` on your own data, or on one shared space
+    let root;     // the signed-in client itself (spaces list, invitations, password)
     let pair;
     // encrypt/decrypt helpers over the SDK's AES-GCM (the cache and bookmark code call them with the key pair)
     const ZEN = { encrypt: (v) => os.encrypt(v), decrypt: (c) => os.decrypt(c) };
@@ -3509,13 +3525,14 @@
         btn.innerHTML = '<i class="ti ti-loader animate-spin"></i> Decrypting...';
         btn.disabled = true;
 
-        os = new Orto({ server: serverUrl });
+        root = new Orto({ server: serverUrl });
         try {
-          pair = await os.login(userInput, passInput);
+          pair = await root.login(userInput, passInput);
         } catch (e) {
           if (e.status !== 404 || !confirm('No account "' + userInput + '" on this server. Create it?\n\nThere is no password recovery: if you forget it, your data cannot be read.')) throw e;
-          pair = await os.login(userInput, passInput, { create: true });
+          pair = await root.login(userInput, passInput, { create: true });
         }
+        os = root.personal();
         isAuthenticated = true;
         window.os = os; window.pair = pair;
         if (demoCfg && pair.pub === demoCfg.user) setTimeout(() => showToast(`Demo account: random fake data, reset every ${demoCfg.hours} h. Sharing and the password are off here.`), 800);
@@ -3543,6 +3560,7 @@
         loadSecrets();
         loadFeeds();
         loadTasks();
+        startSpaces();
       } catch (e) {
         console.error("Login Error:", e);
         alert("Login failed: " + e.message);
@@ -4967,6 +4985,7 @@ print("Welcome to Orto!")
     let blogMode = false, blogSelected = null;
 
     function loadBlog() {
+      if (os._space) return; // spaces have no public blog
       os.onPost(pair.pub, (post, id, isDeleted) => {
         syncBump();
         if (isDeleted) delete blogPosts[id];
@@ -5113,7 +5132,7 @@ print("Welcome to Orto!")
     function createCache(name) {
       const entries = {}; // soul -> { c: signature, b: record }
       let timer = null;
-      const key = () => name + ':' + pair.pub;
+      const key = () => name + ':' + pair.pub + (os._space ? '#' + os._space : ''); // one cache per space
       const save = () => {
         clearTimeout(timer);
         timer = setTimeout(async () => {
@@ -5128,6 +5147,7 @@ print("Welcome to Orto!")
           } catch (_) { }
           return Object.fromEntries(Object.entries(entries).map(([soul, e]) => [soul, e.b]));
         },
+        reset() { clearTimeout(timer); for (const k of Object.keys(entries)) delete entries[k]; },
         same: (soul, sig) => !!entries[soul] && entries[soul].c === sig,
         fresh: (soul, updatedAt) => entries[soul]?.b.updatedAt === updatedAt, // the cached record is the server's current version
         set(soul, sig, record) { entries[soul] = { c: sig, b: structuredClone(record) }; save(); },
@@ -5676,6 +5696,7 @@ print("Welcome to Orto!")
       items.innerHTML = shown.length ? shown.map(f => `<div class="bm-item file-item"><div style="flex:1;min-width:0"><b>${escapeHtml(f.name)}</b><small>${humanSize(f.size)} · ${new Date(f.addedAt).toLocaleString()}${f.folder ? ' · ' + escapeHtml(f.folder) : ''}${f.encrypted ? ' · encrypted' : ''}</small></div>
           <button class="bm-del" title="Move to folder" onclick="filesMove('${escapeHtml(f.id)}','folder')"><i class="ti ti-folder"></i></button>
           <button class="bm-del" title="Public link" onclick="filesShare('${escapeHtml(f.id)}')"><i class="ti ti-link"></i></button>
+          <button class="bm-del" title="Copy to a shared space" onclick="copyToSpace('files','${escapeHtml(f.id)}')"><i class="ti ti-users-group"></i></button>
           <button class="bm-del" title="Download" onclick="filesDownload('${escapeHtml(f.id)}','${encodeURIComponent(f.name)}')"><i class="ti ti-download"></i></button>
           <button class="bm-del" title="Delete" onclick="filesDelete('${escapeHtml(f.id)}')"><i class="ti ti-trash"></i></button></div>`).join('') : '<div class="blog-empty">' + (sel === null ? 'No files yet. Use Upload.' : 'Nothing in this folder. Use Upload, or move files here with the folder button.') + '</div>';
     }
@@ -5787,7 +5808,7 @@ print("Welcome to Orto!")
       if (f.chunked && 'serviceWorker' in navigator) {
         try {
           const reg = await navigator.serviceWorker.ready;
-          const p = { type: 'orto-media', id: f.id, meta: { id: f.id, size: f.size, chunked: f.chunked, type: mediaType(f) }, key: os.key, token: os.token, base: serverUrl || location.origin };
+          const p = { type: 'orto-media', id: f.id, meta: { id: f.id, size: f.size, chunked: f.chunked, type: mediaType(f) }, key: os.key, token: os.token, base: serverUrl || location.origin, pre: os._space ? '/sp/' + os._space : '' };
           mediaParams.set(f.id, p);
           reg.active.postMessage(p);
           for (let i = 0; i < 30 && !navigator.serviceWorker.controller; i++) await new Promise(r => setTimeout(r, 100)); // the first visit is controlled a moment after activation
@@ -6012,7 +6033,7 @@ print("Welcome to Orto!")
         if (p1 !== $('st-pw2').value) return showToast('Passwords do not match');
         if (!confirm('Change the password now? If you forget the new one, the data cannot be recovered.')) return;
         $('st-pw').disabled = true; showToast('Re-encrypting everything…');
-        try { await os.changePassword(p1); showToast('Password changed'); closeModal(); }
+        try { await root.changePassword(p1); if (!os._space) Object.assign(os, { key: root.key, _auth: root._auth }); showToast('Password changed'); closeModal(); }
         catch (e) { showToast(e.message + ' (nothing is lost: you can retry with the same new password)'); $('st-pw').disabled = false; }
       };
       aiSettings($('st-ai'), $('st-ai-status'));
@@ -6027,6 +6048,120 @@ print("Welcome to Orto!")
         else if (t.dataset.revoke && confirm('Revoke this link? It stops working immediately.')) { try { await os.unshare(t.dataset.revoke); showToast('Link revoked'); } catch (err) { showToast(err.message); } drawShares(); }
       };
       drawShares();
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════
+    // Shared spaces: notes, tasks, events, files and media shared with other Orto users (see Orto.openSpace in orto.js).
+    // Switching swaps `os` for a view on that space and reloads every collection; the key never leaves the browsers.
+    // ═══════════════════════════════════════════════════════════════
+    let currentSpace = null, spaceList = [];
+    const spBtn = (act, id, label, cls = '') => `<button class="cal-btn ${cls}" data-act="${act}" data-id="${escapeHtml(String(id))}" style="flex:none">${label}</button>`;
+
+    function startSpaces() {
+      root.onSpaces(() => root.spaces().then((l) => {
+        spaceList = l;
+        const waiting = l.filter((x) => x.status === 'pending').length;
+        document.getElementById('count-spaces').textContent = waiting ? waiting + ' new' : '';
+        if (currentSpace && !l.some((x) => x.id === currentSpace.id && x.status === 'active')) { showToast('You no longer have access to ' + currentSpace.name); switchSpace(null); }
+        if (document.getElementById('sp-modal')) drawSpaces();
+      }).catch(() => { }));
+      const m = /^#join=/.test(location.hash) && location.href; // an invite link opened before signing in
+      if (m) {
+        history.replaceState(null, '', location.pathname + location.search);
+        joinSpace(m);
+      }
+    }
+    async function joinSpace(link) {
+      try { const sp = await root.joinLink(link); showToast('Joined ' + sp.spaceName); await switchSpace(sp.spaceId); }
+      catch (e) { showToast(e.message); }
+    }
+    async function switchSpace(id) {
+      let next;
+      try { next = id ? await root.openSpace(id) : root.personal(); } catch (e) { return showToast(e.message); }
+      stopMedia(); try { navigator.serviceWorker?.controller?.postMessage({ type: 'orto-media-clear' }); } catch (_) { }
+      os.close(); // no more callbacks from the old view
+      os = next; window.os = os;
+      currentSpace = id ? { id: next.spaceId, name: next.spaceName, role: next.spaceRole } : null;
+      document.body.classList.toggle('in-space', !!currentSpace);
+      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
+      for (const m of [localNotes, calEvents, blogPosts, bookmarks, contacts, secrets, feeds, feedData, tasks]) for (const k of Object.keys(m)) delete m[k];
+      attachCache.forEach((u) => { try { URL.revokeObjectURL(u); } catch (_) { } }); attachCache.clear(); mediaParams.clear();
+      for (const c of [bmCache, notesCache, calCache, tasksCache]) c.reset();
+      selectedNoteId = null; filesCache = []; filesGroups = { folders: [], albums: [], playlists: [] }; filesFolder = filesAlbum = mediaPlaylist = null;
+      document.querySelectorAll('.nav-count').forEach((el) => { if (el.id !== 'count-garden' && el.id !== 'count-spaces') el.textContent = '0'; });
+      document.getElementById('space-label').textContent = currentSpace ? currentSpace.name : 'Personal';
+      setFilter('all');
+      syncStart(); loadNotes(); loadCalendar(); loadBlog(); loadBookmarks(); loadContacts(); loadSecrets(); loadFeeds(); loadTasks();
+      if (document.getElementById('sp-modal')) drawSpaces();
+    }
+
+    async function spManage() {
+      const owner = currentSpace.role === 'owner';
+      let members, links = [];
+      try { members = await os.members(); if (owner) links = await os.listLinks(); } catch (e) { return `<p class="hint">${escapeHtml(e.message)}</p>`; }
+      const roleSel = (cur, extra = '') => `<select ${extra} style="flex:none"><option${cur === 'editor' ? ' selected' : ''}>editor</option><option${cur === 'viewer' ? ' selected' : ''}>viewer</option></select>`;
+      let h = `<h4>${escapeHtml(currentSpace.name)}</h4><p class="hint">Your role: ${currentSpace.role}.${currentSpace.role === 'viewer' ? ' Read-only: the server refuses changes.' : ''} Everything in here (notes, tasks, calendar, files, media) is shared with the members and encrypted with a key the server never sees.</p>`;
+      h += members.map((m) => `<div class="share-row"><i class="ti ti-user"></i><span title="Key fingerprint ${escapeHtml(m.fingerprint || '')}: compare it with them to be sure the key is theirs">${escapeHtml(m.name)} <small class="hint">${m.status === 'pending' ? 'invited · ' : ''}${m.role}</small></span>${owner && m.role !== 'owner' ? roleSel(m.role, `data-role="${escapeHtml(m.name)}"`) + spBtn('remove', m.name, 'Remove') : ''}</div>`).join('');
+      if (owner) {
+        h += `<div class="row"><input type="text" id="sp-inv" placeholder="Orto username to invite" autocapitalize="none" spellcheck="false">${roleSel('editor', 'id="sp-inv-role"')}${spBtn('invite', '', 'Invite')}</div>`;
+        h += `<h4>Invite links</h4><p class="hint">Any registered Orto user who opens the link joins with its role. The key is in the link after the #: the server never sees it. Share it only with people you trust.</p>`;
+        h += links.map((l) => `<div class="share-row"><i class="ti ti-link"></i><span>${l.role} link</span><button class="cal-btn" data-act="copy" data-id="${escapeHtml(l.url)}">Copy</button>${spBtn('revoke', l.token, 'Revoke')}</div>`).join('');
+        h += `<div class="cal-actions" style="justify-content:flex-start">${spBtn('link', 'viewer', 'New viewer link')}${spBtn('link', 'editor', 'New editor link')}</div>`;
+        h += `<div class="cal-actions">${spBtn('delete', '', 'Delete this space')}</div><p class="hint">Removing a member also changes the space key, so they cannot open anything written afterwards. Others get the new key the next time they open the space.</p>`;
+      } else h += `<div class="cal-actions">${spBtn('leave', currentSpace.id, 'Leave this space')}</div>`;
+      return h;
+    }
+    async function drawSpaces() {
+      const body = document.getElementById('sp-body'); if (!body) return;
+      const active = spaceList.filter((x) => x.status === 'active'), pending = spaceList.filter((x) => x.status === 'pending');
+      let h = `<h4>Open</h4><div class="share-row"><i class="ti ti-user"></i><span>Personal</span>${currentSpace ? spBtn('go', '', 'Open') : '<small class="hint">open now</small>'}</div>`;
+      h += active.map((x) => `<div class="share-row"><i class="ti ti-users-group"></i><span title="${escapeHtml(x.name)}">${escapeHtml(x.name)} <small class="hint">${x.role}</small></span>${currentSpace?.id === x.id ? '<small class="hint">open now</small>' : spBtn('go', x.id, 'Open')}</div>`).join('');
+      if (pending.length) h += '<h4>Invitations</h4>' + pending.map((x) => `<div class="share-row"><i class="ti ti-mail"></i><span>${escapeHtml(x.name)} <small class="hint">${x.role} · from ${escapeHtml(x.invitedBy || '?')}</small></span>${spBtn('accept', x.id, 'Accept', 'primary')}${spBtn('decline', x.id, 'Decline')}</div>`).join('');
+      h += `<h4>New</h4><div class="row"><input type="text" id="sp-new" placeholder="Name of a new space">${spBtn('create', '', 'Create')}</div><div class="row"><input type="text" id="sp-join" placeholder="Paste an invite link">${spBtn('join', '', 'Join')}</div>`;
+      body.innerHTML = h + (currentSpace ? await spManage() : '');
+    }
+    function openSpaces() {
+      const bg = openModal(`<b>Shared spaces</b><p class="hint">Share notes, tasks, calendar and files with other Orto users on this server, like a shared folder.</p><div id="sp-body"><p class="hint">Loading…</p></div><div class="cal-actions"><button class="cal-btn primary" id="sp-close">Close</button></div>`, 'sp-modal');
+      if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('open')) toggleSidebar();
+      bg.querySelector('#sp-close').onclick = () => closeModal('sp-modal');
+      const input = (id) => (bg.querySelector('#' + id)?.value || '').trim();
+      const run = async (fn, ok) => { try { const r = await fn(); if (ok) showToast(typeof ok === 'function' ? ok(r) : ok); } catch (e) { showToast(e.message); } root.spaces().then((l) => { spaceList = l; drawSpaces(); }).catch(() => { }); };
+      bg.addEventListener('click', async (e) => {
+        const b = e.target.closest('[data-act]'); if (!b) return;
+        const id = b.dataset.id;
+        switch (b.dataset.act) {
+          case 'go': return switchSpace(id ? Number(id) : null);
+          case 'accept': return run(async () => { const sp = await root.acceptInvite(Number(id)); await switchSpace(sp.spaceId); }, 'Joined');
+          case 'decline': return run(() => root.leaveSpace(Number(id)), 'Declined');
+          case 'create': { const name = input('sp-new'); if (!name) return; return run(async () => { const sp = await root.createSpace(name); await switchSpace(sp.spaceId); }, 'Space created'); }
+          case 'join': { const link = input('sp-join'); if (link) return run(() => joinSpace(link)); return; }
+          case 'invite': { const who = input('sp-inv'); if (!who) return; return run(() => os.invite(who, bg.querySelector('#sp-inv-role').value), (r) => `Invited ${r.user}. Their key fingerprint: ${r.fingerprint}`); }
+          case 'remove': if (confirm('Remove ' + id + ' from this space? The key is changed and everything is re-encrypted; it can take a while with many files.')) return run(() => os.removeMember(id), 'Removed'); return;
+          case 'link': return run(() => os.createLink(id), 'Link created');
+          case 'copy': try { await navigator.clipboard.writeText(id); showToast('Link copied'); } catch (_) { showToast('Copy not allowed here'); } return;
+          case 'revoke': if (confirm('Revoke this link? It stops working at once (members who already joined stay).')) return run(() => os.revokeLink(id), 'Link revoked'); return;
+          case 'leave': if (confirm('Leave this space?')) return run(async () => { await root.leaveSpace(Number(id)); await switchSpace(null); }, 'Left'); return;
+          case 'delete': if (confirm('Delete "' + currentSpace.name + '" and everything in it, for every member? This cannot be undone.')) return run(async () => { const sp = os; await switchSpace(null); await sp.deleteSpace(); }, 'Space deleted'); return;
+        }
+      });
+      bg.addEventListener('change', (e) => { const n = e.target.dataset?.role; if (n) run(() => os.setRole(n, e.target.value), 'Role changed'); });
+      drawSpaces();
+    }
+    // note or file -> another space (or back to Personal); the item is decrypted here and encrypted again with the other key
+    function copyToSpace(coll, soul) {
+      document.getElementById('more-menu-popover')?.classList.add('hidden');
+      if (!soul) return showToast('Open a note first');
+      const dests = [...(currentSpace ? [{ id: '', name: 'Personal' }] : []), ...spaceList.filter((x) => x.status === 'active' && x.id !== currentSpace?.id)];
+      if (!dests.length) return showToast('Create a shared space first (Shared spaces in the sidebar)');
+      const bg = openModal(`<b>Copy to…</b><p class="hint">A copy goes there; the original stays here.</p>${dests.map((d) => `<div class="share-row"><i class="ti ti-${d.id === '' ? 'user' : 'users-group'}"></i><span>${escapeHtml(d.name)}</span>${spBtn('to', d.id, 'Copy')}</div>`).join('')}<div class="cal-actions"><button class="cal-btn" id="cp-cancel">Cancel</button></div>`);
+      bg.querySelector('#cp-cancel').onclick = () => closeModal();
+      bg.onclick = async (e) => {
+        const b = e.target.closest('[data-act="to"]'); if (!b) return;
+        closeModal(); showToast('Copying…');
+        try { await os.copyTo(b.dataset.id ? await root.openSpace(Number(b.dataset.id)) : root.personal(), coll, soul); showToast('Copied'); }
+        catch (err) { showToast(err.message); }
+      };
     }
 
     // Servers: remember the ones you use; the choice is stored in this browser only
@@ -6058,7 +6193,7 @@ print("Welcome to Orto!")
       };
     }
     window.serverConfig = serverConfig;
-    Object.assign(window, { openGarden, openMedia, mediaTabSet, mediaPlay, suggestTagsForNote, suggestEmojiForNote, openFiles, filesUpload, filesDownload, filesDelete, filesShare, filesPick, noteAttach, filesNewGroup, filesRenameGroup, filesDeleteGroup, filesMove, photoOpen, shareNoteLink, openSettings });
+    Object.assign(window, { openGarden, openMedia, mediaTabSet, mediaPlay, suggestTagsForNote, suggestEmojiForNote, openFiles, filesUpload, filesDownload, filesDelete, filesShare, filesPick, noteAttach, filesNewGroup, filesRenameGroup, filesDeleteGroup, filesMove, photoOpen, shareNoteLink, openSettings, openSpaces, copyToSpace });
 
     Object.assign(window, { openBookmarks, bmSearch, bmPickFolder, bmAdd, bmImport, bmDelete, bmEdit, bmRenameFolder, bmDeleteFolder, bmExport });
 

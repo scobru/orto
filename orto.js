@@ -209,6 +209,26 @@ const unseal = async (key, cipher) => {
   const raw = fromB64(cipher.slice(3));
   return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.subarray(0, 12) }, key, raw.subarray(12))));
 };
+// Shared spaces. A space has one random AES key; each member holds it wrapped for their own ECDH (P-256) public key:
+// "w1.<ephemeral public key>.<e1 ciphertext>", ECDH with an ephemeral key, so only the owner of the private key can open it.
+const ECDH = { name: 'ECDH', namedCurve: 'P-256' };
+const wrapFor = async (pub, payload) => {
+  const eph = await crypto.subtle.generateKey(ECDH, true, ['deriveKey']);
+  const k = await crypto.subtle.deriveKey({ name: 'ECDH', public: await crypto.subtle.importKey('raw', fromB64(pub), ECDH, false, []) }, eph.privateKey, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+  return 'w1.' + toB64(new Uint8Array(await crypto.subtle.exportKey('raw', eph.publicKey))) + '.' + await seal(k, payload);
+};
+const unwrap = async (priv, wrapped) => {
+  const [, eph, ...rest] = String(wrapped).split('.');
+  const k = await crypto.subtle.deriveKey({ name: 'ECDH', public: await crypto.subtle.importKey('raw', fromB64(eph), ECDH, false, []) }, priv, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+  return unseal(k, rest.join('.'));
+};
+/** Short text to compare out of band (call, chat) before trusting someone's public key: the server hands out the keys, so it could swap one. */
+export async function fingerprint(pub) {
+  const h = [...new Uint8Array(await crypto.subtle.digest('SHA-256', fromB64(pub)))].slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
+  return h.replace(/(.{4})(?=.)/g, '$1 ');
+}
+const SPACE_ROLES = ['editor', 'viewer'];
+
 // folder: "a/b" nests; album and playlist: flat. Trimmed, no empty parts, at most 100 chars.
 const groupName = (kind, s) => { const parts = String(s ?? '').split('/').map((x) => x.trim()).filter(Boolean); return (kind === 'folder' ? parts.join('/') : parts.join('-')).slice(0, 100); };
 
@@ -268,6 +288,7 @@ export class Orto {
     const { name, key, auth } = await deriveKeys(username, password);
     const { token } = await this._json('POST', create ? '/register' : '/login', { name, auth });
     Object.assign(this, { key, token, username: name, pair: { pub: name }, _auth: auth });
+    await this._kp().catch(() => {}); // the key pair that lets others invite you to shared spaces (not available on the demo account)
     return this.pair;
   }
 
@@ -278,6 +299,7 @@ export class Orto {
 
   async _fetch(method, path, body, signal, headers) {
     const isBytes = body instanceof Uint8Array;
+    if (this._space && /^\/(c|files|events)(\/|\?|$)/.test(path)) path = '/sp/' + this._space + path; // a space view: same calls, the space's data
     const r = await fetch(this.server + '/api' + path, {
       method, signal,
       headers: { ...(this.token && { Authorization: 'Bearer ' + this.token }), ...(body !== undefined && !isBytes && { 'Content-Type': 'application/json' }), ...headers },
@@ -365,13 +387,13 @@ export class Orto {
   /** `known(soul, updatedAt)` -> true skips the initial download's record (no decrypt, no callback): the caller already has that version cached. */
   _on(coll, callback, keep = () => true, plain = false, known = null, listed = null) {
     if (!plain) this._needKey();
-    const emit = async (rec) => { const v = plain ? rec : await this._dec(rec); if (v && keep(v)) callback(v, rec.soul, false); };
+    const emit = async (rec) => { const v = plain ? rec : await this._dec(rec); if (v && keep(v) && !this._closed) callback(v, rec.soul, false); }; // after close() nothing reaches the app (it may have switched to another space)
     const sync = async () => {
       const recs = await this._json('GET', '/c/' + coll);
       if (listed) listed(new Set(recs.map((r) => r.soul))); // lets the caller drop cached records deleted elsewhere
       await Promise.all(recs.map((rec) => (known && rec.updatedAt != null && known(rec.soul, rec.updatedAt) ? null : emit(rec))));
     };
-    const sub = { coll, sync, handle: (e) => (e.deleted ? callback(null, e.soul, true) : emit(e.record)) };
+    const sub = { coll, sync, handle: (e) => (e.deleted ? (this._closed || callback(null, e.soul, true)) : emit(e.record)) };
     this._stream();
     this._subs.add(sub);
     sync().catch(() => {});
@@ -582,14 +604,14 @@ export class Orto {
   }
 
   // Re-encrypt a chunked file with `newKey`, chunk by chunk, and swap it in place. Safe to run twice: a file already on the new key is left alone.
-  async _rekeyChunked(id, meta, newKey) {
+  async _rekeyChunked(id, meta, oldKey, newKey) {
     const { n, nonce } = meta.chunked, nonceBytes = fromB64(nonce), P = meta.chunked.size;
     const get = async (i) => new Uint8Array(await (await this._fetch('GET', '/files/' + encodeURIComponent(id), undefined, undefined, { Range: `bytes=${i * (P + GCM)}-${i * (P + GCM) + chunkLen(meta, i) - 1}` })).arrayBuffer());
     try { await openChunk(newKey, await get(0), nonceBytes, 0, n); return false; } catch (_) { } // already done
     const { id: tmp } = await this._json('POST', '/files/begin');
     let sent = 0;
     for (let i = 0; i < n; i++) {
-      const body = await sealChunk(newKey, await openChunk(this.key, await get(i), nonceBytes, i, n), nonceBytes, i, n);
+      const body = await sealChunk(newKey, await openChunk(oldKey, await get(i), nonceBytes, i, n), nonceBytes, i, n);
       await this._fetch('PUT', `/files/${tmp}/append`, body, undefined, { 'X-Offset': String(sent) });
       sent += body.length;
     }
@@ -655,7 +677,199 @@ export class Orto {
     return this._del('shares', id);
   }
 
+  // ─── Shared spaces ──────────────────────────────────────────────────
+  // A space is a shared set of notes, tasks, events, files... under its own random key. openSpace() returns a *view* of this client:
+  // the same methods (writeVaultNote, uploadFile, onTask...) but on the space's data. Members hold the key wrapped for their public key,
+  // invite links carry it in the #fragment, so the server never sees it. Roles: owner, editor (read + write), viewer (read).
+
+  /** Your key pair for spaces, made at first login: the public key is in clear on the server, the private one sealed with your own key. */
+  async _kp() {
+    if (this._base) return this._base._kp();
+    if (this._kpc) return this._kpc;
+    this._needKey();
+    for (let tries = 0; ; tries++) {
+      const me = await this._json('GET', '/keys');
+      if (me.pub && me.priv) return (this._kpc = { pub: me.pub, priv: await crypto.subtle.importKey('pkcs8', fromB64(await this.decrypt(me.priv)), ECDH, false, ['deriveKey']) });
+      const kp = await crypto.subtle.generateKey(ECDH, true, ['deriveKey']);
+      const pub = toB64(new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey)));
+      try { await this._json('POST', '/keys', { pub, priv: await this.encrypt(toB64(new Uint8Array(await crypto.subtle.exportKey('pkcs8', kp.privateKey)))) }); }
+      catch (e) { if (e.status === 409 && tries < 2) continue; throw e; } // another device was first: use its keys
+      return (this._kpc = { pub, priv: kp.privateKey });
+    }
+  }
+
+  _spaceOnly() { if (!this._space) throw new Error('Open a space first: openSpace(id)'); }
+  _spaceOwner() { this._spaceOnly(); if (this._role !== 'owner') throw new Error('Only the owner of the space can do that'); }
+
+  /** Your spaces and pending invitations: [{id, name, role, status: 'active'|'pending', invitedBy, createdAt}]. */
+  async spaces() {
+    const kp = await this._kp();
+    return Promise.all((await this._json('GET', '/sp')).map(async (m) => ({ id: m.id, name: (await unwrap(kp.priv, m.wrapped).catch(() => ({}))).name || '(unreadable)', role: m.role, status: m.status, invitedBy: m.invitedBy, createdAt: m.createdAt })));
+  }
+
+  async createSpace(name) {
+    name = String(name ?? '').trim().slice(0, 80);
+    if (!name) throw new Error('name is required');
+    const kp = await this._kp();
+    const { id } = await this._json('POST', '/sp', { wrapped: await wrapFor(kp.pub, { name, key: toB64u(crypto.getRandomValues(new Uint8Array(32))) }) });
+    return this.openSpace(id);
+  }
+
+  /** @returns a view of this client on space `id` (an owner's interrupted key rotation is finished first) */
+  async openSpace(id) {
+    const base = this._base || this, kp = await base._kp();
+    const m = (await base._json('GET', '/sp')).find((x) => x.id === Number(id));
+    if (!m) throw new Error('No such space: ' + id);
+    if (m.status !== 'active') throw new Error('Accept the invitation first');
+    const p = await unwrap(kp.priv, m.wrapped), raw = fromB64u(p.key), prevRaw = p.prev ? fromB64u(p.prev) : null;
+    const v = Object.create(base);
+    Object.assign(v, { key: await aesKey(raw), _raw: raw, _prevRaw: prevRaw, _prev: prevRaw && await aesKey(prevRaw), _base: base, _space: m.id, _role: m.role, spaceId: m.id, spaceName: p.name, spaceRole: m.role, _subs: null, _abort: null, _closed: false });
+    if (prevRaw && m.role === 'owner') await v.rotateKey();
+    return v;
+  }
+
+  /** Accept an invitation, then open the space. */
+  async acceptInvite(id) {
+    await this._json('POST', `/sp/${Number(id)}/accept`);
+    return this.openSpace(id);
+  }
+
+  /** Decline an invitation, or leave a space you do not own. */
+  leaveSpace(id) { return this._json('DELETE', `/sp/${Number(id)}/members/${encodeURIComponent((this._base || this).username)}`); }
+
+  /** Called when your invitations or memberships change (also once at the start). */
+  onSpaces(callback) {
+    const base = this._base || this, sub = { coll: '_spaces', sync: async () => callback(), handle: () => callback() };
+    base._stream();
+    base._subs.add(sub);
+    callback();
+    return () => base._subs.delete(sub);
+  }
+
+  /** A view on your own data with its own event stream, independent of the others: what an app switches to when it leaves a space. */
+  personal() { const base = this._base || this; return Object.assign(Object.create(base), { _base: base, _subs: null, _abort: null, _closed: false }); }
+
+  // Everything below runs on a space view.
+
+  /** [{name, role, status, fingerprint}] */
+  async members() {
+    this._spaceOnly();
+    return Promise.all((await this._json('GET', `/sp/${this._space}/members`)).map(async ({ pub, ...m }) => ({ ...m, fingerprint: pub ? await fingerprint(pub) : null })));
+  }
+
+  /** Invite a registered user. They see it, accept it, and the space key (wrapped for their public key) is theirs. Compare `fingerprint` with them if the server is not fully trusted. */
+  async invite(user, role = 'editor') {
+    this._spaceOwner();
+    const name = String(user ?? '').trim().toLowerCase();
+    if (!SPACE_ROLES.includes(role)) throw new Error('role must be editor or viewer');
+    const who = await this._json('GET', '/u/' + encodeURIComponent(name));
+    if (!who.pub) throw new Error(name + ' has to sign in once with an up-to-date Orto before they can be invited');
+    await this._json('POST', `/sp/${this._space}/members`, { user: name, role, wrapped: await wrapFor(who.pub, { name: this.spaceName, key: toB64u(this._raw) }) });
+    return { user: name, role, fingerprint: await fingerprint(who.pub) };
+  }
+
+  setRole(user, role) {
+    this._spaceOwner();
+    if (!SPACE_ROLES.includes(role)) throw new Error('role must be editor or viewer');
+    return this._json('PUT', `/sp/${this._space}/members/${encodeURIComponent(String(user).trim().toLowerCase())}`, { role });
+  }
+
+  /** Remove a member and rotate the key, so what they kept (or the server's backups) cannot open what is written from now on. */
+  async removeMember(user) {
+    this._spaceOwner();
+    await this._json('DELETE', `/sp/${this._space}/members/${encodeURIComponent(String(user).trim().toLowerCase())}`);
+    await this.rotateKey();
+    return { removed: user };
+  }
+
+  /**
+   * New space key: wrapped for yourself first (with the old one next to it), data re-encrypted, then wrapped for everyone else.
+   * Interrupted? openSpace() finishes it. Other members open the space again to pick up the new key.
+   */
+  async rotateKey() {
+    this._spaceOwner();
+    const kp = await this._kp(), put = async (name, pub, raw, prev) => this._json('PUT', `/sp/${this._space}/members/${encodeURIComponent(name)}`, { wrapped: await wrapFor(pub, { name: this.spaceName, key: toB64u(raw), ...(prev && { prev: toB64u(prev) }) }) });
+    if (!this._prevRaw) {
+      const raw = crypto.getRandomValues(new Uint8Array(32));
+      await put(this.username, kp.pub, raw, this._raw);
+      Object.assign(this, { _prev: this.key, _prevRaw: this._raw, key: await aesKey(raw), _raw: raw });
+    }
+    await this._rekeyAll(this._prev, this.key);
+    for (const m of await this._json('GET', `/sp/${this._space}/members`)) if (m.name !== this.username && m.pub) await put(m.name, m.pub, this._raw);
+    await put(this.username, kp.pub, this._raw);
+    Object.assign(this, { _prev: null, _prevRaw: null });
+  }
+
+  /** Delete the space and everything in it, for everyone. */
+  deleteSpace() { this._spaceOwner(); return this._json('DELETE', `/sp/${this._space}`); }
+
+  // Invite link: <server>/app#join=<token>.<name and key>. Any registered user who opens it joins with the link's role; the key lives in
+  // the #fragment, the server never sees it. Revoke it with revokeLink() (members who already joined stay).
+  _joinUrl(token) { return `${this.server || globalThis.location?.origin || ''}/app#join=${token}.${toB64u(new TextEncoder().encode(JSON.stringify({ n: this.spaceName, k: toB64u(this._raw) })))}`; }
+
+  async createLink(role = 'viewer') {
+    this._spaceOwner();
+    if (!SPACE_ROLES.includes(role)) throw new Error('role must be editor or viewer');
+    const { token } = await this._json('POST', `/sp/${this._space}/links`, { role });
+    return { token, role, url: this._joinUrl(token) };
+  }
+
+  async listLinks() {
+    this._spaceOwner();
+    return (await this._json('GET', `/sp/${this._space}/links`)).map((l) => ({ ...l, url: this._joinUrl(l.token) }));
+  }
+
+  revokeLink(token) { this._spaceOwner(); return this._json('DELETE', `/sp/${this._space}/links/${encodeURIComponent(token)}`); }
+
+  /** Join through an invite link (you must be signed in). @returns the space view */
+  async joinLink(link) {
+    const base = this._base || this, [token, payload] = (/#join=([^#]*)$/.exec(String(link).trim()) || [])[1]?.split('.') || [];
+    let p; try { p = JSON.parse(new TextDecoder().decode(fromB64u(payload))); } catch (_) { /* checked below */ }
+    if (!/^[a-f0-9]{32}$/.test(token) || !p?.k) throw new Error('Not an Orto invite link');
+    const kp = await base._kp();
+    const { id } = await base._json('POST', '/sp/join/' + token, { wrapped: await wrapFor(kp.pub, { name: String(p.n || 'Shared space'), key: p.k }) });
+    return base.openSpace(id);
+  }
+
+  /** Copy a record (`coll`: vault, calendar, tasks, bookmarks, contacts, secrets, feeds) or a file (`coll` 'files') from this client or space view into `dest` (another view, or the client itself for the way back). */
+  async copyTo(dest, coll, soul) {
+    if (!COLLECTIONS.includes(coll) || coll === 'shares') throw new Error('Cannot copy from ' + coll);
+    const r = await this._get(coll, soul);
+    if (!r) throw new Error('Not found: ' + soul);
+    if (coll === 'files') {
+      if (!r.id) throw new Error('Not a file: ' + soul);
+      const { name, type, thumb, addedAt, folder, album, playlist } = r;
+      return dest.uploadFileChunked(new Blob([await this.downloadFile(soul, { meta: r })]), name, { type, thumb, addedAt, folder, album, playlist });
+    }
+    const { soul: _s, updatedAt, ...rest } = r;
+    return dest.put(coll, soul, rest);
+  }
+
   // ─── Account: password, export, import ──────────────────────────────
+
+  async _openEither(cipher, oldKey, newKey) {
+    for (const [key, fresh] of [[oldKey, false], [newKey, true]]) { try { return { v: await unseal(key, cipher), fresh }; } catch (_) {} }
+    return null;
+  }
+
+  /** Re-encrypt every file and record from `oldKey` to `newKey`. Safe to run twice: what is already on the new key is left alone. */
+  async _rekeyAll(oldKey, newKey) {
+    const open = (cipher) => this._openEither(cipher, oldKey, newKey);
+    const recs = async (coll) => (await this._json('GET', '/c/' + coll)).filter(r => typeof r.data === 'string');
+    await chunked(await recs('files'), async (r) => { // file contents first
+      const meta = await open(r.data);
+      if (!meta?.v.encrypted) return;
+      if (meta.v.chunked) { await this._rekeyChunked(r.soul, meta.v, oldKey, newKey); return; }
+      const blob = await open(new TextDecoder().decode(new Uint8Array(await (await this._fetch('GET', '/files/' + encodeURIComponent(r.soul))).arrayBuffer())));
+      if (blob && !blob.fresh) await this._fetch('PUT', '/files/' + encodeURIComponent(r.soul), new TextEncoder().encode(await seal(newKey, blob.v)));
+    }, 5);
+    for (const coll of COLLECTIONS) {
+      await chunked(await recs(coll), async (r) => {
+        const o = await open(r.data);
+        if (o && !o.fresh) await this._json('PUT', `/c/${coll}/${encodeURIComponent(r.soul)}`, { data: await seal(newKey, o.v), encrypted: true });
+      });
+    }
+  }
 
   /**
    * Change the password. Your key comes from it, so every encrypted record and file is re-encrypted first, then the login secret
@@ -664,26 +878,12 @@ export class Orto {
    */
   async changePassword(newPassword) {
     this._needKey();
+    if (this._space) throw new Error('Change the password on your own account, not on a space');
     const next = await deriveKeys(this.username, newPassword);
     await this._json('POST', '/password', { auth: this._auth, newAuth: next.auth, check: true }); // fail now (wrong session, demo account...) rather than after re-encrypting
-    const open = async (cipher) => {
-      for (const [key, fresh] of [[this.key, false], [next.key, true]]) { try { return { v: await unseal(key, cipher), fresh }; } catch (_) {} }
-      return null;
-    };
-    const recs = async (coll) => (await this._json('GET', '/c/' + coll)).filter(r => typeof r.data === 'string');
-    await chunked(await recs('files'), async (r) => { // file contents first
-      const meta = await open(r.data);
-      if (!meta?.v.encrypted) return;
-      if (meta.v.chunked) { await this._rekeyChunked(r.soul, meta.v, next.key); return; }
-      const blob = await open(new TextDecoder().decode(new Uint8Array(await (await this._fetch('GET', '/files/' + encodeURIComponent(r.soul))).arrayBuffer())));
-      if (blob && !blob.fresh) await this._fetch('PUT', '/files/' + encodeURIComponent(r.soul), new TextEncoder().encode(await seal(next.key, blob.v)));
-    }, 5);
-    for (const coll of COLLECTIONS) {
-      await chunked(await recs(coll), async (r) => {
-        const o = await open(r.data);
-        if (o && !o.fresh) await this._json('PUT', `/c/${coll}/${encodeURIComponent(r.soul)}`, { data: await seal(next.key, o.v), encrypted: true });
-      });
-    }
+    await this._rekeyAll(this.key, next.key);
+    const me = await this._json('GET', '/keys'); // the sealed private key of the shared spaces moves to the new key too
+    if (me.priv) { const o = await this._openEither(me.priv, this.key, next.key); if (o && !o.fresh) await this._json('POST', '/keys', { pub: me.pub, priv: await seal(next.key, o.v) }); }
     await this._json('POST', '/password', { auth: this._auth, newAuth: next.auth });
     Object.assign(this, { key: next.key, _auth: next.auth });
     return { status: 'changed' };
@@ -695,7 +895,7 @@ export class Orto {
    */
   async exportAll({ files = true } = {}) {
     this._needKey();
-    const out = { format: 'orto-export', version: 1, user: this.username, exportedAt: Date.now(), collections: {}, files: {}, posts: await this._json('GET', '/c/posts') };
+    const out = { format: 'orto-export', version: 1, user: this.username, exportedAt: Date.now(), collections: {}, files: {}, posts: this._space ? [] : await this._json('GET', '/c/posts') }; // a space has no public posts
     for (const coll of COLLECTIONS.filter(c => c !== 'shares')) out.collections[coll] = await this._readAll(coll);
     if (files) await chunked(out.collections.files.filter(f => f.id), async (f) => { try { out.files[f.id] = toB64(await this.downloadFile(f.id, { meta: f })); } catch (_) {} }, 5);
     return out; // ponytail: files go in memory as base64, stream to a ZIP if exports get huge

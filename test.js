@@ -639,6 +639,99 @@ console.log('Chunked files (big files, streaming)');
   tu.close(); tiny.closeAllConnections(); tiny.close();
 }
 
+console.log('Shared spaces');
+{
+  const ann = await client('ann', 'pw-ann'), bob = await client('bob', 'pw-bob'), eve = await client('eve', 'pw-eve');
+  // owner creates a space; every collection and files work on the view
+  const sp = await ann.createSpace('Family');
+  assert.equal(sp.spaceName, 'Family'); assert.equal(sp.spaceRole, 'owner');
+  const note = await sp.writeVaultNote({ title: 'Shopping', body: 'milk' });
+  await sp.writeTask({ title: 'Book flights' });
+  await sp.writeCalendarEvent({ title: 'Trip', start: '2026-12-01T10:00:00Z' });
+  const bytes = new Uint8Array(3 * (1 << 20) + 5).map((_, i) => i % 251);
+  const media = await sp.uploadFileChunked(new Blob([bytes]), 'clip.mp4', { type: 'video/mp4' });
+  assert.deepEqual(await sp.readFileRange(media.id, 1 << 20, (1 << 20) + 10), bytes.subarray(1 << 20, (1 << 20) + 10), 'range read inside a space');
+  assert.equal((await ann.readVaultNotes()).length, 0, 'space data is not in the personal account');
+  assert(!JSON.stringify(await sp._json('GET', `/c/vault/${note.soul}`)).includes('milk'), 'space data is encrypted at rest');
+  // invitations: pending until accepted, key handed over wrapped, server never sees it
+  await assert.rejects(sp.invite('nobody'), (e) => e.status === 404);
+  await assert.rejects(sp.invite('bob', 'owner'), /editor or viewer/);
+  const inv = await sp.invite('bob', 'editor');
+  assert.match(inv.fingerprint, /^([0-9a-f]{4} ){3}[0-9a-f]{4}$/);
+  await assert.rejects(sp.invite('bob'), (e) => e.status === 409);
+  let list = await bob.spaces();
+  assert.deepEqual(list.map((x) => [x.name, x.status, x.role, x.invitedBy]), [['Family', 'pending', 'editor', 'ann']]);
+  await assert.rejects(bob.openSpace(sp.spaceId), /Accept/);
+  await assert.rejects(bob._json('GET', `/sp/${sp.spaceId}/c/vault`), (e) => e.status === 403, 'pending members see nothing');
+  const bsp = await bob.acceptInvite(sp.spaceId);
+  assert.deepEqual((await bsp.readVaultNotes()).map((n) => n.title), ['Shopping']);
+  assert.deepEqual((await bsp.downloadFile(media.id)), bytes, 'files and media open for the member');
+  await bsp.writeVaultNote({ title: 'From Bob', body: 'x' });
+  assert.equal((await sp.readVaultNotes()).length, 2, 'the owner sees the member\'s note');
+  // live updates reach every member
+  const seen = []; const stop = sp.onTask((t) => t && seen.push(t.title));
+  await bsp.writeTask({ title: 'Live one' });
+  for (let i = 0; i < 50 && !seen.includes('Live one'); i++) await new Promise((r) => setTimeout(r, 100));
+  assert(seen.includes('Live one')); stop(); sp.close(); // a view has its own event stream
+  // roles
+  await assert.rejects(bsp.invite('eve'), /owner/);
+  await assert.rejects(bsp.createLink(), /owner/);
+  await sp.setRole('bob', 'viewer');
+  await assert.rejects(bsp.writeVaultNote({ title: 'no' }), (e) => e.status === 403);
+  await assert.rejects(bsp.uploadFile(new Uint8Array(3), 'a.bin'), (e) => e.status === 403);
+  assert.equal((await bsp.readVaultNotes()).length, 2, 'viewers still read');
+  assert.deepEqual((await sp.members()).map((m) => [m.name, m.role, m.status]), [['ann', 'owner', 'active'], ['bob', 'viewer', 'active']]);
+  // outsiders
+  await assert.rejects(eve.openSpace(sp.spaceId), /No such space/);
+  await assert.rejects(eve._json('GET', `/sp/${sp.spaceId}/c/vault`), (e) => e.status === 404);
+  await assert.rejects(eve._json('GET', '/u/~1'), (e) => e.status === 400, 'space pseudo-users are not reachable');
+  await assert.rejects(new Orto({ server: url })._json('GET', '/sp'), (e) => e.status === 401);
+  // invite link: any registered user, link role, key only in the fragment
+  const link = await sp.createLink('viewer');
+  assert.match(link.url, /\/app#join=[a-f0-9]{32}\./);
+  assert(!JSON.stringify(await sp._json('GET', `/sp/${sp.spaceId}/links`)).includes(link.url.split('#join=')[1].split('.')[1]), 'the server never holds the link key');
+  const esp = await eve.joinLink(link.url);
+  assert.equal(esp.spaceRole, 'viewer'); assert.equal((await esp.readVaultNotes()).length, 2);
+  await assert.rejects(esp.writeVaultNote({ title: 'no' }), (e) => e.status === 403);
+  assert.equal((await sp.listLinks()).length, 1);
+  await sp.revokeLink(link.token);
+  await assert.rejects((await client('zed', 'pw-zed')).joinLink(link.url), (e) => e.status === 404, 'revoked link');
+  // copy in and out of a space
+  const owned = await ann.createSpace('Team');
+  const ownNote = await ann.writeVaultNote({ title: 'Plan', body: 'draft' });
+  await ann.copyTo(owned, 'vault', ownNote.soul);
+  assert.deepEqual((await owned.readVaultNotes()).map((n) => n.body), ['draft']);
+  const f = await ann.uploadFile(new Uint8Array([1, 2, 3]), 'p.bin');
+  await ann.copyTo(owned, 'files', f.id);
+  assert.deepEqual(await owned.downloadFile((await owned.listFiles())[0].id), new Uint8Array([1, 2, 3]));
+  // removing a member rotates the key; the others pick up the new one by reopening
+  await sp.setRole('bob', 'editor');
+  await sp.removeMember('bob');
+  await assert.rejects(bsp._json('GET', `/sp/${sp.spaceId}/c/vault`), (e) => e.status === 404, 'removed: no server access');
+  await assert.rejects(bob.openSpace(sp.spaceId), /No such space/);
+  assert.equal((await sp.readVaultNotes()).length, 2, 'owner still reads everything after rotation');
+  assert.deepEqual(await sp.downloadFile(media.id), bytes, 'chunked file survives rotation');
+  await assert.rejects(sp.invite('eve', 'viewer'), (e) => e.status === 409, 'eve already joined by link');
+  const reopened = await eve.openSpace(sp.spaceId);
+  assert.equal((await reopened.readVaultNotes()).length, 2, 'a member who reopens gets the rotated key');
+  // leaving, and the owner cannot be removed
+  await assert.rejects(ann._json('DELETE', `/sp/${sp.spaceId}/members/ann`), (e) => e.status === 400);
+  await eve.leaveSpace(sp.spaceId);
+  assert.equal((await eve.spaces()).length, 0);
+  await assert.rejects(sp.changePassword('x'), /not on a space/);
+  assert.deepEqual((await sp.exportAll()).posts, [], 'a space exports without posts');
+  assert.equal((await ann.personal().readVaultNotes()).length, 1, 'a personal view reads your own data');
+  // password change keeps the key pair usable
+  await bob.changePassword('pw-bob-2');
+  const bob2 = await client('bob', 'pw-bob-2', false);
+  await ann.createSpace('Again').then((s) => s.invite('bob'));
+  assert.equal((await bob2.spaces())[0].name, 'Again');
+  // deleting
+  await sp.deleteSpace();
+  assert.equal((await ann.spaces()).some((x) => x.name === 'Family'), false);
+  await assert.rejects(ann._json('GET', `/sp/${sp.spaceId}/c/vault`), (e) => e.status === 404);
+}
+
 console.log('ok - all tests passed');
 clients.forEach(c => c.close());
 server.closeAllConnections();
