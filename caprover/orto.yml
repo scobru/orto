@@ -1,0 +1,34 @@
+# CapRover one-click app: copy this file into your own one-click-apps repo, or paste it in "One-Click Apps/Databases" > "Template" (Settings).
+captainVersion: 4
+services:
+  $$cap_appname:
+    image: $$cap_image
+    caproverExtra:
+      containerHttpPort: '8787'
+    volumes:
+      - $$cap_appname-data:/data
+    environment:
+      ORTO_REGISTRATION: $$cap_registration
+      ORTO_ADMIN_PASS: $$cap_admin_pass
+      ORTO_PUBLIC_URL: https://$$cap_appname.$$cap_root_domain
+    restart: always
+caproverOneClickApp:
+  variables:
+    - id: $$cap_image
+      label: Docker image
+      defaultValue: ghcr.io/scobru/orto:latest
+      description: Image of Orto. Leave the default only if you publish one there; otherwise deploy from the repo (see README, "CapRover") instead of using this template.
+    - id: $$cap_registration
+      label: Registration (open or closed)
+      defaultValue: open
+      description: Set to closed once your accounts exist.
+    - id: $$cap_admin_pass
+      label: Admin panel password (min 8 chars, empty = panel off)
+      defaultValue: ''
+  instructions:
+    start: Orto, encrypted notes, calendar, tasks, files and shared spaces on a server you run.
+    end: Orto is deployed. Open it, create your account (there is no password recovery), then set Registration to closed.
+  displayName: Orto
+  isOfficial: false
+  description: Self-hosted encrypted workspace (notes, calendar, tasks, bookmarks, files, shared spaces) on one SQLite file.
+  documentation: https://github.com/scobru/orto
