@@ -1,0 +1,13 @@
+{
+  "name": "aula",
+  "version": "0.1.0",
+  "description": "Self-hosted, open source alternative to Google Classroom: classes, announcements, assignments, submissions, grades",
+  "type": "module",
+  "bin": { "aula": "server.js" },
+  "engines": { "node": ">=22.5" },
+  "scripts": {
+    "start": "node --no-warnings server.js",
+    "test": "node --no-warnings --test test.js"
+  },
+  "license": "MIT"
+}
