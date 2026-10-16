@@ -485,6 +485,7 @@ console.log('MCP server (stdio)');
 {
   const { spawn } = await import('node:child_process');
   const os_mcp = await client('mcp-user', 'mcp-pass');
+  let mcpSpace;
   const run = async (extraEnv, steps) => {
     const p = spawn(process.execPath, ['mcp.js'], { env: { ...process.env, ORTO_SERVER: url, ORTO_USER: 'mcp-user', ORTO_PASS: 'mcp-pass', ...extraEnv } });
     let buf = ''; const waiting = new Map();
@@ -526,6 +527,21 @@ console.log('MCP server (stdio)');
     const ct = (await J('contact_write', { name: 'Ada', emails: ['a@x.org'] })).soul;
     await J('contact_update', { soul: ct, org: 'Lab' });
     const c2 = await J('contact_get', { soul: ct }); assert.deepEqual([c2.name, c2.org, c2.emails], ['Ada', 'Lab', ['a@x.org']]);
+    // shared spaces over MCP
+    const buddy = await client('mcp-buddy', 'mcp-pass2');
+    const sp1 = await J('space_create', { name: 'Agents' });
+    mcpSpace = sp1.id;
+    await J('space_invite', { id: String(sp1.id), user: 'mcp-buddy', role: 'viewer' });
+    assert.deepEqual((await J('space_members', { id: String(sp1.id) })).map((m) => [m.name, m.role, m.status]), [['mcp-user', 'owner', 'active'], ['mcp-buddy', 'viewer', 'pending']]);
+    await J('space_copy', { id: String(sp1.id), coll: 'vault', soul });
+    const link = await J('space_link', { id: String(sp1.id), role: 'viewer' });
+    assert.match(link.url, /#join=/);
+    await J('space_unlink', { id: String(sp1.id), token: link.token });
+    assert.equal((await buddy.spaces())[0].status, 'pending');
+    assert.equal((await (await buddy.acceptInvite(sp1.id)).readVaultNotes())[0].title, 'From an agent');
+    assert((await J('space_list', {})).some((x) => x.name === 'Agents'));
+    await J('space_remove', { id: String(sp1.id), user: 'mcp-buddy' });
+    assert.equal((await buddy.spaces()).length, 0);
     const bm = (await J('bookmark_list', {}))[0].soul;
     await J('bookmark_update', { soul: bm, folder: 'Dev', tags: ['t'] });
     assert.equal((await J('bookmark_list', { folder: 'Dev' }))[0].title, 'A');
@@ -564,6 +580,10 @@ console.log('MCP server (stdio)');
   await run({ ORTO_MCP_READONLY: '1', ORTO_MCP_SECRETS: '1' }, async (rpc) => {
     const names = (await rpc('tools/list')).result.tools.map((x) => x.name);
     assert(names.includes('note_list') && names.includes('secret_get') && !names.includes('note_write') && !names.includes('delete'), 'read-only hides writes');
+    assert(names.includes('space_list') && names.includes('space_members') && !names.includes('space_create') && !names.includes('space_remove'), 'read-only hides the space writes');
+  });
+  await run({ ORTO_SPACE: String(mcpSpace) }, async (rpc) => { // ORTO_SPACE points every tool at one space
+    const r = await tool(rpc, 'note_list', {}); assert(!r.err && JSON.parse(r.text).length === 1 && JSON.parse(r.text)[0].title === 'From an agent', r.text);
   });
   await run({ ORTO_PASS: 'wrong' }, async (rpc) => { // a bad login is a tool error, not a crash
     const r = await tool(rpc, 'note_list', {}); assert(r.err && /password/i.test(r.text), r.text);
