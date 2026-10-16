@@ -38,6 +38,8 @@ Open the URL, type a username and password; the first time, the app offers to cr
 
 Docker (includes the web app, data in the `zenos-data` volume): `docker compose up -d --build`, then open http://localhost:8787. The compose build also includes the optional tag suggestions (below); `ORTO_GIST=0 docker compose up -d --build` (or `--build-arg ORTO_GIST=0`) leaves them out. Or: `docker build -t orto . && docker run -d -p 8787:8787 -v zenos-data:/data orto`.
 
+**CapRover.** The repo has a `captain-definition`, so: create an app, enable *Persistent Directory* with path `/data`, set *Container HTTP Port* to `8787`, enable HTTPS, add the env vars of the table below (at least `ORTO_PUBLIC_URL=https://your-app.example.com`, and `ORTO_ADMIN_PASS` if you want `/admin`), then deploy from the repo (*Deploy via Github/Git*) or with `caprover deploy` from a clone. `caprover/orto.yml` is a one-click template for a private one-click-apps repo (it needs a published image). Behind CapRover's nginx the Range and big-upload notes below apply: raise *Client max body size* in the nginx config if you upload large media.
+
 Put it behind a reverse proxy with HTTPS (Caddy, nginx) before exposing it to the internet.
 
 | Env var | Default | |

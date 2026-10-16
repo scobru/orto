@@ -1,12 +1,23 @@
+# Fast deploy: docker compose up -d --build   (then open http://localhost:8787)
+# Settings go in a .env next to this file or in the environment, e.g. ORTO_ADMIN_PASS=change-me-please ORTO_REGISTRATION=closed docker compose up -d
 services:
   orto:
     build:
       context: .
       args:
         ORTO_GIST: "${ORTO_GIST:-1}"   # 1 = include the optional on-device tag and emoji suggestions (Gist + Emo, ~130 MB in the image); ORTO_GIST=0 to leave it out
-    ports: ["8787:8787"]
+    ports: ["${ORTO_PORT:-8787}:8787"]
     volumes: ["zenos-data:/data"]
+    environment:
+      ORTO_REGISTRATION: "${ORTO_REGISTRATION:-open}"   # closed once your accounts exist
+      ORTO_ADMIN_PASS: "${ORTO_ADMIN_PASS:-}"           # min 8 chars turns on /admin
+      ORTO_PUBLIC_URL: "${ORTO_PUBLIC_URL:-}"           # https://orto.example.com behind a proxy (RSS links, invite links)
+      ORTO_DEMO: "${ORTO_DEMO:-}"                       # 1 = public demo account
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
-    # environment: [ORTO_DEMO=1]   # public demo account, see README
 volumes:
   zenos-data: # old name, kept so existing data is not left behind

@@ -1,0 +1,8 @@
+.git
+.github
+data
+node_modules
+site
+test.js
+*.md
+!README.md
