@@ -49,7 +49,7 @@ async function serveMedia(e) {
       if (i > last) return ctrl.close();
       try {
         const from = i * (P + GCM);
-        const r = await fetch(m.base + '/api/files/' + encodeURIComponent(id), { headers: { Authorization: 'Bearer ' + m.token, Range: `bytes=${from}-${from + chunkLen(meta, i) - 1}` } });
+        const r = await fetch(m.base + '/api' + (m.pre || '') + '/files/' + encodeURIComponent(id), { headers: { Authorization: 'Bearer ' + m.token, Range: `bytes=${from}-${from + chunkLen(meta, i) - 1}` } });
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const enc = new Uint8Array(await r.arrayBuffer());
         const plain = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: enc.subarray(0, 12), additionalData: aad(nonce, i, n) }, m.key, enc.subarray(12)));

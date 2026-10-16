@@ -128,7 +128,11 @@ export function createServer(opts = {}) {
     CREATE TABLE IF NOT EXISTS files (user_id INTEGER NOT NULL REFERENCES users(id), id TEXT NOT NULL, size INTEGER NOT NULL, PRIMARY KEY (user_id, id));
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS shares (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), file_id TEXT, data TEXT, created_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS members (space_id INTEGER NOT NULL REFERENCES users(id), user_id INTEGER NOT NULL REFERENCES users(id), role TEXT NOT NULL, status TEXT NOT NULL, wrapped TEXT NOT NULL, invited_by INTEGER, created_at INTEGER NOT NULL, PRIMARY KEY (space_id, user_id));
+    CREATE TABLE IF NOT EXISTS space_links (token TEXT PRIMARY KEY, space_id INTEGER NOT NULL REFERENCES users(id), role TEXT NOT NULL, created_at INTEGER NOT NULL);
   `);
+  // A shared space is a pseudo-user (name "~<hex>", which no login can have): its records and files reuse every per-user query. Members hold the space key, wrapped for their own public key.
+  for (const col of ['pub', 'priv']) try { db.exec(`ALTER TABLE users ADD COLUMN ${col} TEXT`); } catch (_) { } // pub: ECDH public key, priv: private key sealed with the user's own key
   db.prepare('DELETE FROM sessions WHERE expires < ?').run(Date.now());
   // settings saved from the admin panel win over the env defaults
   const cfg = { ...defaults };
@@ -151,7 +155,19 @@ export function createServer(opts = {}) {
     delShare: db.prepare('DELETE FROM shares WHERE id = ? AND user_id = ?'),
     setAuth: db.prepare('UPDATE users SET auth_hash = ? WHERE id = ?'),
     dropSessions: db.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?'),
-    used: db.prepare('SELECT COALESCE(SUM(size), 0) AS n FROM files WHERE user_id = ?')
+    used: db.prepare('SELECT COALESCE(SUM(size), 0) AS n FROM files WHERE user_id = ?'),
+    setKeys: db.prepare('UPDATE users SET pub = ?, priv = ? WHERE id = ?'),
+    mySpaces: db.prepare('SELECT m.space_id AS id, m.role, m.status, m.wrapped, m.created_at AS createdAt, (SELECT name FROM users WHERE id = m.invited_by) AS invitedBy FROM members m WHERE m.user_id = ? ORDER BY m.created_at'),
+    member: db.prepare('SELECT role, status FROM members WHERE space_id = ? AND user_id = ?'),
+    members: db.prepare('SELECT u.name, m.role, m.status, u.pub FROM members m JOIN users u ON u.id = m.user_id WHERE m.space_id = ? ORDER BY m.created_at'),
+    addMember: db.prepare('INSERT INTO members VALUES (?, ?, ?, ?, ?, ?, ?)'),
+    setMember: db.prepare('UPDATE members SET role = COALESCE(?, role), wrapped = COALESCE(?, wrapped), status = COALESCE(?, status) WHERE space_id = ? AND user_id = ?'),
+    delMember: db.prepare('DELETE FROM members WHERE space_id = ? AND user_id = ?'),
+    ownedSpaces: db.prepare("SELECT COUNT(*) AS n FROM members WHERE user_id = ? AND role = 'owner'"),
+    addLink: db.prepare('INSERT INTO space_links VALUES (?, ?, ?, ?)'),
+    links: db.prepare('SELECT token, role, created_at AS createdAt FROM space_links WHERE space_id = ?'),
+    link: db.prepare('SELECT space_id, role FROM space_links WHERE token = ?'),
+    delLink: db.prepare('DELETE FROM space_links WHERE token = ? AND space_id = ?')
   };
 
   const toRecord = (r) => ({ soul: r.soul, ...JSON.parse(r.data), updatedAt: r.updated_at });
@@ -198,6 +214,14 @@ export function createServer(opts = {}) {
     if (old) q.setFileSize.run(size, u.user_id, id); else q.addFile.run(u.user_id, id, size);
     return { id, size };
   }
+  // Everything of a space (or, for removeUser, of one user) goes; a space's pseudo-user row last, after its members and links.
+  function dropSpace(sid) {
+    for (const t of ['records', 'shares', 'files']) db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(sid);
+    for (const t of ['members', 'space_links']) db.prepare(`DELETE FROM ${t} WHERE space_id = ?`).run(sid);
+    db.prepare('DELETE FROM users WHERE id = ?').run(sid);
+    fs.rmSync(path.join(filesDir, String(sid)), { recursive: true, force: true });
+    for (const r of listeners.get(sid) || []) r.end();
+  }
   const dropFile = (uid, id) => { q.delFile.run(uid, id); fs.rmSync(path.join(filesDir, String(uid), id), { force: true }); };
 
   // Admin panel API: separate in-memory bearer tokens (12 h), never a user session
@@ -237,14 +261,15 @@ export function createServer(opts = {}) {
         (SELECT COUNT(*) FROM files WHERE user_id = u.id) AS files,
         (SELECT COALESCE(SUM(size), 0) FROM files WHERE user_id = u.id) AS bytes,
         (SELECT COUNT(*) FROM sessions WHERE user_id = u.id AND expires > ?) AS sessions
-        FROM users u ORDER BY u.id`).all(Date.now()));
+        FROM users u WHERE u.name NOT LIKE '~%' ORDER BY u.id`).all(Date.now()));
     }
     if (b === 'users' && c) {
       const user = q.userByName.get(c);
-      if (!user) throw new HttpError(404, 'Unknown user');
+      if (!user || user.name.startsWith('~')) throw new HttpError(404, 'Unknown user');
       if (d === 'logout' && req.method === 'POST') { q.dropSessions.run(user.id, ''); return json(200, { name: c, loggedOut: true }); }
       if (!d && req.method === 'DELETE') { // data is end-to-end encrypted: there is no password reset, only removal
-        for (const t of ['records', 'shares', 'files', 'sessions']) db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(user.id);
+        for (const m of db.prepare("SELECT space_id FROM members WHERE user_id = ? AND role = 'owner'").all(user.id)) dropSpace(m.space_id); // the spaces they own go with them
+        for (const t of ['records', 'shares', 'files', 'sessions', 'members']) db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(user.id);
         db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
         fs.rmSync(path.join(filesDir, String(user.id)), { recursive: true, force: true });
         for (const r of listeners.get(user.id) || []) r.end();
@@ -259,8 +284,8 @@ export function createServer(opts = {}) {
   }
 
   async function api(req, res, url) {
-    const parts = url.pathname.split('/').slice(2).map(decodeURIComponent); // after /api
-    const [a, b, c] = parts;
+    let parts = url.pathname.split('/').slice(2).map(decodeURIComponent); // after /api
+    let [a, b, c] = parts;
     const json = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
     for (const p of parts) if (!SEG.test(p)) throw new HttpError(400, 'Bad path');
 
@@ -292,7 +317,7 @@ export function createServer(opts = {}) {
     if (a === 'u') {
       const user = q.userByName.get(String(b || '').toLowerCase());
       if (!user) throw new HttpError(404, 'Unknown user');
-      if (!c) return json(200, { name: user.name });
+      if (!c) return json(200, { name: user.name, pub: user.pub || null }); // pub: public key to invite this user to a shared space
       if (c === 'posts') return json(200, q.list.all(user.id, 'posts').map(toRecord));
       throw new HttpError(404, 'Not found');
     }
@@ -309,13 +334,110 @@ export function createServer(opts = {}) {
 
     if (a === 'admin') return admin(req, json, b, c, parts[3]);
 
-    const u = authed(req);
+    let u = authed(req);
 
     if (demoOn && u.name === DEMO.user) { // the demo account is public: no sharing, no public posts, no password change, bounded size
-      const off = (a === 'password') || (a === 'feed') || (a === 's' && req.method !== 'GET') || (a === 'c' && b === 'posts' && req.method !== 'GET');
+      const off = (a === 'password') || (a === 'feed') || (a === 'sp') || (a === 'keys' && req.method !== 'GET') || (a === 's' && req.method !== 'GET') || (a === 'c' && b === 'posts' && req.method !== 'GET');
       const full = (a === 'c' && req.method === 'PUT' && db.prepare('SELECT COUNT(*) AS n FROM records WHERE user_id = ?').get(u.user_id).n >= DEMO.maxRecords)
         || (a === 'files' && req.method === 'POST' && db.prepare('SELECT COUNT(*) AS n FROM files WHERE user_id = ?').get(u.user_id).n >= DEMO.maxFiles);
       if (off || full) throw new HttpError(403, 'Not available in the demo');
+    }
+
+    if (a === 'keys') { // the user's ECDH key pair for shared spaces: public in clear, private sealed with their own key (created by the client at login)
+      const me = q.userByName.get(u.name);
+      if (req.method === 'GET') return json(200, { pub: me.pub || null, priv: me.priv || null });
+      if (req.method === 'POST') {
+        const { pub, priv } = await readJson(req, 1e4);
+        if (typeof pub !== 'string' || typeof priv !== 'string' || !priv.startsWith('e1.') || pub.length > 200 || priv.length > 2000) throw new HttpError(400, 'Bad keys');
+        if (me.pub && me.pub !== pub) throw new HttpError(409, 'Keys already set'); // the public key never changes: spaces were wrapped for it
+        q.setKeys.run(pub, priv, me.id);
+        return json(200, { ok: true });
+      }
+    }
+
+    // Shared spaces: a space is a set of collections and files under its own key, handed to members wrapped for their public key.
+    // Roles: owner (everything), editor (read + write), viewer (read). The server enforces roles; it never sees a key.
+    if (a === 'sp') {
+      const ROLES = ['editor', 'viewer'], wrapOk = (w) => typeof w === 'string' && w.startsWith('w1.') && w.length < 2000;
+      const poke = (uid) => emit(uid, { coll: '_spaces' });
+      if (!b) {
+        if (req.method === 'GET') return json(200, q.mySpaces.all(u.user_id));
+        if (req.method === 'POST') {
+          const { wrapped } = await readJson(req, 1e4);
+          if (!wrapOk(wrapped)) throw new HttpError(400, 'Bad key');
+          if (q.ownedSpaces.get(u.user_id).n >= 20) throw new HttpError(403, 'Too many spaces');
+          const name = '~' + crypto.randomBytes(8).toString('hex');
+          q.addUser.run(name, sha(crypto.randomBytes(32).toString('hex')), Date.now());
+          const sid = q.userByName.get(name).id;
+          q.addMember.run(sid, u.user_id, 'owner', 'active', wrapped, u.user_id, Date.now());
+          return json(200, { id: sid });
+        }
+      }
+      if (b === 'join' && c && req.method === 'POST') { // a registered user opens an invite link: the role is the link's, the key came in its #fragment
+        const { wrapped } = await readJson(req, 1e4);
+        const l = /^[a-f0-9]{32}$/.test(c) && q.link.get(c);
+        if (!l || !wrapOk(wrapped)) throw new HttpError(404, 'This link was revoked or never existed');
+        const cur = q.member.get(l.space_id, u.user_id);
+        if (cur?.status === 'active') return json(200, { id: l.space_id, role: cur.role });
+        if (cur) q.setMember.run(l.role, wrapped, 'active', l.space_id, u.user_id);
+        else q.addMember.run(l.space_id, u.user_id, l.role, 'active', wrapped, u.user_id, Date.now());
+        poke(u.user_id);
+        return json(200, { id: l.space_id, role: l.role });
+      }
+      const sid = /^\d+$/.test(b || '') ? Number(b) : 0, me = sid && q.member.get(sid, u.user_id);
+      if (!me) throw new HttpError(404, 'Not found');
+      const owner = me.role === 'owner', target = parts[3] && q.userByName.get(parts[3]);
+      if (c === 'accept' && req.method === 'POST') {
+        if (me.status !== 'pending') throw new HttpError(409, 'Nothing to accept');
+        q.setMember.run(null, null, 'active', sid, u.user_id);
+        return json(200, { id: sid, role: me.role });
+      }
+      if (c === 'members' && req.method === 'DELETE' && target && (target.id === u.user_id || owner)) { // decline, leave, or (owner) remove
+        const t = q.member.get(sid, target.id);
+        if (!t || t.role === 'owner') throw new HttpError(400, 'The owner cannot be removed: delete the space');
+        q.delMember.run(sid, target.id);
+        poke(target.id);
+        return json(200, { removed: target.name });
+      }
+      if (me.status !== 'active') throw new HttpError(403, 'Accept the invitation first');
+      if (c === 'members' && req.method === 'GET' && !parts[3]) return json(200, q.members.all(sid));
+      if (c === 'c' || c === 'files' || c === 'events') { // the data itself: fall through to the normal handlers, acting as the space
+        if (me.role === 'viewer' && req.method !== 'GET') throw new HttpError(403, 'Read-only access');
+        if (c === 'c' && parts[3] === 'posts') throw new HttpError(400, 'Spaces have no public posts');
+        u = { user_id: sid, name: '~' + sid };
+        parts = parts.slice(2); [a, b, c] = parts;
+      } else {
+        if (!owner) throw new HttpError(403, 'Only the owner can do that');
+        if (!c && req.method === 'DELETE') { for (const m of q.members.all(sid)) poke(q.userByName.get(m.name).id); dropSpace(sid); return json(200, { id: sid, deleted: true }); }
+        if (c === 'members' && req.method === 'POST') {
+          const { user: raw, role, wrapped } = await readJson(req, 1e4), who = q.userByName.get(String(raw || '').trim().toLowerCase());
+          if (!who || who.name.startsWith('~')) throw new HttpError(404, 'Unknown user');
+          if (!ROLES.includes(role) || !wrapOk(wrapped)) throw new HttpError(400, 'Bad role or key');
+          if (q.member.get(sid, who.id)) throw new HttpError(409, 'Already a member');
+          q.addMember.run(sid, who.id, role, 'pending', wrapped, u.user_id, Date.now());
+          poke(who.id);
+          return json(200, { user: who.name, role, status: 'pending' });
+        }
+        if (c === 'members' && req.method === 'PUT' && target) { // change a role, or hand over a new wrapped key (key rotation)
+          const { role, wrapped } = await readJson(req, 1e4), t = q.member.get(sid, target.id);
+          if (!t || (role !== undefined && (!ROLES.includes(role) || t.role === 'owner')) || (wrapped !== undefined && !wrapOk(wrapped))) throw new HttpError(400, 'Bad request');
+          q.setMember.run(role ?? null, wrapped ?? null, null, sid, target.id);
+          poke(target.id);
+          return json(200, { user: target.name, role: role ?? t.role });
+        }
+        if (c === 'links') {
+          if (req.method === 'GET') return json(200, q.links.all(sid));
+          if (req.method === 'POST') {
+            const { role } = await readJson(req, 1e4);
+            if (!ROLES.includes(role)) throw new HttpError(400, 'Bad role');
+            const token = crypto.randomBytes(16).toString('hex');
+            q.addLink.run(token, sid, role, Date.now());
+            return json(200, { token, role });
+          }
+          if (req.method === 'DELETE' && parts[3]) { q.delLink.run(parts[3], sid); return json(200, { token: parts[3], deleted: true }); }
+        }
+        throw new HttpError(404, 'Not found');
+      }
     }
 
     if (a === 'feed' && req.method === 'GET') { // relay one feed's XML for the reader

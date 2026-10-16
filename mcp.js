@@ -3,6 +3,7 @@
 // It runs on YOUR machine and uses the SDK, so encryption and decryption happen here, never on the server and never in a hosted service.
 // Config (env): ORTO_SERVER, ORTO_USER, ORTO_PASS; ORTO_MCP_READONLY=1 hides every tool that changes data;
 // ORTO_MCP_SECRETS=1 adds secret_list / secret_get (off by default: a secret you read is sent to the model).
+// ORTO_SPACE=<id> points every tool at that shared space instead of your own data.
 import readline from 'node:readline';
 import Orto, { DEFAULT_SERVER } from './orto.js';
 
@@ -16,7 +17,7 @@ const orto = () => session ||= (async () => {
   if (!user || !pass) throw new Error('Set ORTO_USER and ORTO_PASS (and ORTO_SERVER) in the environment of this MCP server.');
   const os = new Orto({ server: env('SERVER') || DEFAULT_SERVER });
   await os.login(user, pass);
-  return os;
+  return env('SPACE') ? os.openSpace(env('SPACE')) : os;
 })().catch((e) => { session = null; throw e; });
 
 const cut = (s, n) => (String(s || '').length > n ? String(s).slice(0, n) + '…' : String(s || ''));

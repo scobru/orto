@@ -107,6 +107,13 @@ Usage:
   node cli.js share-list | share-revoke --id <id>  [--user <user> --pass <pass>]
   node cli.js share-read   --url <link> [--out <path>]                      # no login needed
 
+  # Shared spaces (notes, tasks, events, files shared with other Orto users; add --space <id> or ORTO_SPACE=<id> to ANY command to work inside one)
+  node cli.js space-list | space-create --name <name>  [--user <user> --pass <pass>]
+  node cli.js space-invite --id <id> --to <user> [--role editor|viewer] | space-accept --id <id> | space-leave --id <id>
+  node cli.js space-members --id <id> | space-role --id <id> --to <user> --role <role> | space-remove --id <id> --to <user>   # remove rotates the key
+  node cli.js space-link --id <id> [--role editor|viewer] | space-links --id <id> | space-unlink --id <id> --token <t> | space-join --url <link>
+  node cli.js space-copy --id <id> --coll <vault|tasks|calendar|files|...> --soul <soul> | space-delete --id <id>
+
   # Blog (public posts)
   node cli.js blog-publish [--user <user> --pass <pass>] --title <title> --content <content> [--tags <tags>] [--id <id>]
   node cli.js blog-get     --id <id> (--alias <username> | --user <user> --pass <pass>)
