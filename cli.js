@@ -321,6 +321,13 @@ Server (all commands):
   }
 
   switch (cmd) {
+    case 'start':
+    case 'desktop':
+    case 'ui': {
+      await import('./desktop.js');
+      break;
+    }
+
     case 'register': {
       const { user, pass } = requireCredentials();
       await os.login(user, pass, { create: true });
