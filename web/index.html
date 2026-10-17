@@ -3782,12 +3782,15 @@
     }
 
     const VISO_KEY = "GzHy3jnEtj26EoGqMsBpoawcY378hK9kp91rTcNYiAac";
+    const ORTO_KEY = "9eBjDkH6ZXA6ehUyWBBjT6Xg4tQE4ALZjSsgXERds4yZ";
     const fnVisoBtn = document.getElementById('fn-viso-btn');
     if (fnVisoBtn) {
-      fnVisoBtn.onclick = () => {
-        const visoUrl = `${location.protocol}//${location.host}/v1/contract/web/${VISO_KEY}/`;
+      fnVisoBtn.onclick = (e) => {
+        e.preventDefault();
         const challenge = `wd1.orto.${Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('')}`;
-        const target = `${visoUrl}?connect=v1&challenge=${challenge}&return=${encodeURIComponent(location.href)}`;
+        const returnUrl = `/v1/contract/web/${ORTO_KEY}/`;
+        const target = `/v1/contract/web/${VISO_KEY}/?connect=v1&challenge=${challenge}&return=${encodeURIComponent(returnUrl)}`;
+        console.log('[Orto] Navigating to Viso:', target);
         if (window.parent !== window) {
           parent.postMessage({ __freenet_shell__: true, type: "navigate", href: target }, "*");
         } else {
