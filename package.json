@@ -15,6 +15,7 @@
   "scripts": {
     "start": "node --no-warnings server.js",
     "desktop": "node --no-warnings desktop.js",
+    "freenet:publish": "node -e \"import('node:fs').then(fs => fs.copyFileSync('orto.js', 'web/orto.js'))\" && fdev website update web --key orto",
     "test": "node --no-warnings test.js"
   },
   "keywords": [
