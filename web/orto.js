@@ -303,6 +303,29 @@ export class Orto {
 
   // ─── transport ──────────────────────────────────────────────────────
 
+  _safeStorageGet(k) {
+    try { return localStorage.getItem(k); } catch (_) { return this._memStore ? this._memStore.get(k) : null; }
+  }
+  _safeStorageSet(k, v) {
+    if (!this._memStore) this._memStore = new Map();
+    this._memStore.set(k, v);
+    try { localStorage.setItem(k, v); } catch (_) {}
+  }
+  _safeStorageRemove(k) {
+    if (this._memStore) this._memStore.delete(k);
+    try { localStorage.removeItem(k); } catch (_) {}
+  }
+  _safeStorageKeys(prefix) {
+    const set = new Set(this._memStore ? this._memStore.keys() : []);
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k) set.add(k);
+      }
+    } catch (_) {}
+    return Array.from(set).filter(k => k.startsWith(prefix));
+  }
+
   _localStore(method, path, body) {
     const prefix = `orto_rec:${this.username || 'local'}:`;
     const ok = (json) => ({
@@ -318,24 +341,23 @@ export class Orto {
       const coll = m[1], soul = m[2] ? decodeURIComponent(m[2]) : null;
       if (method === 'GET' && !soul) {
         const out = [];
-        if (typeof localStorage !== 'undefined') {
-          for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i);
-            if (k && k.startsWith(`${prefix}${coll}:`)) {
-              try { out.push(JSON.parse(localStorage.getItem(k))); } catch (_) {}
-            }
+        const keys = this._safeStorageKeys(`${prefix}${coll}:`);
+        for (const k of keys) {
+          const val = this._safeStorageGet(k);
+          if (val) {
+            try { out.push(JSON.parse(val)); } catch (_) {}
           }
         }
         return ok(out);
       }
       if (method === 'GET' && soul) {
-        const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(`${prefix}${coll}:${soul}`) : null;
+        const raw = this._safeStorageGet(`${prefix}${coll}:${soul}`);
         if (!raw) { const err = new Error('Not found'); err.status = 404; throw err; }
         return ok(JSON.parse(raw));
       }
       if (method === 'PUT' && soul) {
         const rec = { soul, data: body.data, updatedAt: Date.now() };
-        if (typeof localStorage !== 'undefined') localStorage.setItem(`${prefix}${coll}:${soul}`, JSON.stringify(rec));
+        this._safeStorageSet(`${prefix}${coll}:${soul}`, JSON.stringify(rec));
         if (this._subs) {
           for (const s of this._subs) {
             if (s.coll === coll || s.coll === '_spaces') {
@@ -346,7 +368,7 @@ export class Orto {
         return ok({ status: 'saved' });
       }
       if (method === 'DELETE' && soul) {
-        if (typeof localStorage !== 'undefined') localStorage.removeItem(`${prefix}${coll}:${soul}`);
+        this._safeStorageRemove(`${prefix}${coll}:${soul}`);
         if (this._subs) {
           for (const s of this._subs) {
             if (s.coll === coll) {

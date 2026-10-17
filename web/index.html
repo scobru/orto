@@ -2823,9 +2823,9 @@
           <button id="fn-create-btn" class="login-btn">
             <i class="ti ti-sparkles"></i> Crea nuova identità Freenet
           </button>
-          <button id="fn-viso-btn" class="cal-btn" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border-radius:8px;background:rgba(0,180,216,0.12);color:#0096c7;border:1px solid rgba(0,180,216,0.3);font-weight:600;font-size:13px;cursor:pointer;">
+          <a id="fn-viso-btn" href="#" target="_blank" class="cal-btn" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border-radius:8px;background:rgba(0,180,216,0.12);color:#0096c7;border:1px solid rgba(0,180,216,0.3);font-weight:600;font-size:13px;cursor:pointer;text-decoration:none;">
             <i class="ti ti-user-check" style="font-size:16px;"></i> Accedi con Viso / Whoiam
-          </button>
+          </a>
           <div style="display:flex;align-items:center;gap:10px;margin:6px 0;">
             <div style="flex:1;height:1px;background:var(--border-color);"></div>
             <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">oppure</span>
@@ -3444,11 +3444,27 @@
 
   <!-- Theme Script -->
   <script>
+    const _memStore = new Map();
+    const safeStore = {
+      getItem(k) {
+        try { return localStorage.getItem(k); } catch (_) { return _memStore.get(k) ?? null; }
+      },
+      setItem(k, v) {
+        _memStore.set(k, String(v));
+        try { localStorage.setItem(k, String(v)); } catch (_) {}
+      },
+      removeItem(k) {
+        _memStore.delete(k);
+        try { localStorage.removeItem(k); } catch (_) {}
+      }
+    };
+    window.safeStore = safeStore;
+
     // settings saved before the rename (ZenOS): copied once to the new keys
     for (const [old, now] of [['zenos_theme', 'orto_theme'], ['zenvault_theme', 'orto_theme'], ['zenosServer', 'ortoServer'], ['zenosServers', 'ortoServers']]) {
-      try { const v = localStorage.getItem(old); if (v !== null && localStorage.getItem(now) === null) localStorage.setItem(now, v); } catch (_) { }
+      try { const v = safeStore.getItem(old); if (v !== null && safeStore.getItem(now) === null) safeStore.setItem(now, v); } catch (_) { }
     }
-    let currentTheme = localStorage.getItem('orto_theme') || 'light';
+    let currentTheme = safeStore.getItem('orto_theme') || 'light';
 
     function applyTheme() {
       document.documentElement.setAttribute('data-theme', currentTheme);
@@ -3460,7 +3476,7 @@
 
     function toggleTheme() {
       currentTheme = currentTheme === 'light' ? 'dark' : 'light';
-      localStorage.setItem('orto_theme', currentTheme);
+      safeStore.setItem('orto_theme', currentTheme);
       applyTheme();
     }
 
@@ -3493,7 +3509,7 @@
     // Orto server: on Freenet there is no remote server!
     let serverUrl = '';
     if (!isFreenet) {
-      try { serverUrl = normalizeServer(localStorage.getItem('ortoServer') || ''); } catch (_) { }
+      try { serverUrl = normalizeServer(safeStore.getItem('ortoServer') || ''); } catch (_) { }
       if (!serverUrl) {
         const sameOrigin = await fetch('/api/health').then(r => r.json()).then(j => j && ['orto', 'zenos'].includes(j.name)).catch(() => false);
         if (!sameOrigin) serverUrl = DEFAULT_SERVER;
@@ -3651,12 +3667,18 @@
       }
     }
 
+    const safeStore = window.safeStore || {
+      getItem(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
+      setItem(k, v) { try { localStorage.setItem(k, String(v)); } catch (_) {} },
+      removeItem(k) { try { localStorage.removeItem(k); } catch (_) {} }
+    };
+
     async function loginWithFreenetKey(secretHex) {
       try {
         const kp = await ed25519KeyPair(secretHex);
-        localStorage.setItem('orto_freenet_secret', kp.secretHex);
-        localStorage.setItem('orto_freenet_pub', kp.pubHex);
-        localStorage.setItem('orto_freenet_persona', kp.persona);
+        safeStore.setItem('orto_freenet_secret', kp.secretHex);
+        safeStore.setItem('orto_freenet_pub', kp.pubHex);
+        safeStore.setItem('orto_freenet_persona', kp.persona);
 
         const userInput = 'fn_' + kp.pubHex.slice(0, 16);
         const passInput = kp.secretHex;
@@ -3692,9 +3714,9 @@
         if (classicForm) classicForm.classList.add('hidden');
         if (toggleBtn) toggleBtn.textContent = 'Passa al login classico (server)';
 
-        const storedSecret = localStorage.getItem('orto_freenet_secret');
-        const storedPub = localStorage.getItem('orto_freenet_pub');
-        const storedPersona = localStorage.getItem('orto_freenet_persona');
+        const storedSecret = safeStore.getItem('orto_freenet_secret');
+        const storedPub = safeStore.getItem('orto_freenet_pub');
+        const storedPersona = safeStore.getItem('orto_freenet_persona');
 
         const hasKeyBox = document.getElementById('fn-has-key');
         const noKeyBox = document.getElementById('fn-no-key');
@@ -3743,7 +3765,7 @@
     const fnUnlockBtn = document.getElementById('fn-unlock-btn');
     if (fnUnlockBtn) {
       fnUnlockBtn.onclick = async () => {
-        const sk = localStorage.getItem('orto_freenet_secret');
+        const sk = safeStore.getItem('orto_freenet_secret');
         if (!sk) return alert('Nessuna chiave trovata.');
         await loginWithFreenetKey(sk);
       };
@@ -3771,7 +3793,7 @@
     if (fnBackupBtn) {
       fnBackupBtn.onclick = (e) => {
         e.preventDefault();
-        const sk = localStorage.getItem('orto_freenet_secret');
+        const sk = safeStore.getItem('orto_freenet_secret');
         if (!sk) return;
         const blob = new Blob([`Orto Sovereign Freenet Key: Keep this safe!\n${sk}\n`], { type: 'text/plain' });
         const a = document.createElement('a');
@@ -3785,14 +3807,25 @@
     const ORTO_KEY = "9eBjDkH6ZXA6ehUyWBBjT6Xg4tQE4ALZjSsgXERds4yZ";
     const fnVisoBtn = document.getElementById('fn-viso-btn');
     if (fnVisoBtn) {
+      const challenge = `wd1.orto.${Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('')}`;
+      const origin = (location.origin && location.origin !== 'null') ? location.origin : `${location.protocol}//${location.host}`;
+      const returnUrl = `${origin}/v1/contract/web/${ORTO_KEY}/`;
+      const target = `${origin}/v1/contract/web/${VISO_KEY}/?connect=v1&challenge=${challenge}&return=${encodeURIComponent(returnUrl)}`;
+      
+      fnVisoBtn.href = target;
+      fnVisoBtn.setAttribute('target', '_blank');
+
       fnVisoBtn.onclick = (e) => {
-        e.preventDefault();
-        const challenge = `wd1.orto.${Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('')}`;
-        const returnUrl = `/v1/contract/web/${ORTO_KEY}/`;
-        const target = `/v1/contract/web/${VISO_KEY}/?connect=v1&challenge=${challenge}&return=${encodeURIComponent(returnUrl)}`;
         console.log('[Orto] Navigating to Viso:', target);
         if (window.parent !== window) {
-          parent.postMessage({ __freenet_shell__: true, type: "navigate", href: target }, "*");
+          // Send message to Freenet shell for in-place navigation
+          try {
+            parent.postMessage({ __freenet_shell__: true, type: "navigate", href: target }, "*");
+          } catch (_) {}
+          // Fallback: if in-place navigate is ignored by the shell, open in new tab
+          setTimeout(() => {
+            window.open(target, '_blank');
+          }, 350);
         } else {
           location.href = target;
         }
@@ -3803,7 +3836,7 @@
     const urlParams = new URLSearchParams(location.search);
     if (urlParams.has('pk')) {
       const pk = urlParams.get('pk');
-      let sk = localStorage.getItem('orto_freenet_secret');
+      let sk = safeStore.getItem('orto_freenet_secret');
       if (!sk) {
         sk = Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
       }
@@ -6519,16 +6552,16 @@ print("Welcome to Orto!")
     window.demoLogin = demoLogin;
 
     function serverConfig() {
-      let saved = []; try { saved = JSON.parse(localStorage.getItem('ortoServers') || '[]'); } catch (_) { }
+      let saved = []; try { saved = JSON.parse(safeStore.getItem('ortoServers') || '[]'); } catch (_) { }
       const bg = openModal(`<b>Orto server</b><p class="hint">Empty = automatic (this site if it runs a server, else ${escapeHtml(DEFAULT_SERVER)}). Current: ${escapeHtml(serverUrl || location.origin)}</p>
-        <input type="url" id="srv-url" list="srv-list" placeholder="https://orto.example.com" value="${escapeHtml(localStorage.getItem('ortoServer') || '')}"><datalist id="srv-list">${saved.map(u => `<option value="${escapeHtml(u)}">`).join('')}</datalist>
+        <input type="url" id="srv-url" list="srv-list" placeholder="https://orto.example.com" value="${escapeHtml(safeStore.getItem('ortoServer') || '')}"><datalist id="srv-list">${saved.map(u => `<option value="${escapeHtml(u)}">`).join('')}</datalist>
         <div class="cal-actions"><button class="cal-btn" id="srv-cancel">Cancel</button><button class="cal-btn primary" id="srv-save">Use this server</button></div>`);
       bg.querySelector('#srv-cancel').onclick = () => closeModal();
       bg.querySelector('#srv-save').onclick = () => {
         try {
           const u = normalizeServer(bg.querySelector('#srv-url').value);
-          if (u) { localStorage.setItem('ortoServer', u); localStorage.setItem('ortoServers', JSON.stringify([u, ...saved.filter(x => x !== u)].slice(0, 8))); }
-          else localStorage.removeItem('ortoServer');
+          if (u) { safeStore.setItem('ortoServer', u); safeStore.setItem('ortoServers', JSON.stringify([u, ...saved.filter(x => x !== u)].slice(0, 8))); }
+          else safeStore.removeItem('ortoServer');
         } catch (e) { return alert(e.message); }
         location.reload();
       };
