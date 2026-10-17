@@ -3605,6 +3605,51 @@
       return { secretHex: sk, pubHex, persona };
     }
 
+    // Per-collection cache of decrypted records
+    const idb = (mode, fn) => new Promise((resolve, reject) => {
+      try {
+        if (typeof indexedDB === 'undefined') return reject(new Error('no indexedDB'));
+        const req = indexedDB.open('orto', 1);
+        req.onupgradeneeded = () => { try { req.result.createObjectStore('cache'); } catch (_) {} };
+        req.onerror = () => reject(req.error);
+        req.onsuccess = () => {
+          try {
+            const tx = req.result.transaction('cache', mode), q = fn(tx.objectStore('cache'));
+            tx.oncomplete = () => resolve(q && q.result);
+            tx.onerror = () => reject(tx.error);
+          } catch (e) { reject(e); }
+        };
+      } catch (err) {
+        reject(err);
+      }
+    });
+    function createCache(name) {
+      const entries = {}; // soul -> { c: signature, b: record }
+      let timer = null;
+      const key = () => name + ':' + (pair ? pair.pub : 'anon') + (os && os._space ? '#' + os._space : '');
+      const save = () => {
+        clearTimeout(timer);
+        timer = setTimeout(async () => {
+          try { const blob = await ZEN.encrypt(entries, pair); await idb('readwrite', s => s.put(blob, key())); } catch (_) { }
+        }, 1500);
+      };
+      return {
+        async load() {
+          try {
+            const blob = await idb('readonly', s => s.get(key())), cached = blob && await ZEN.decrypt(blob, pair);
+            if (cached) Object.assign(entries, cached);
+          } catch (_) { }
+          return Object.fromEntries(Object.entries(entries).map(([soul, e]) => [soul, e.b]));
+        },
+        reset() { clearTimeout(timer); for (const k of Object.keys(entries)) delete entries[k]; },
+        same: (soul, sig) => !!entries[soul] && entries[soul].c === sig,
+        fresh: (soul, updatedAt) => entries[soul]?.b.updatedAt === updatedAt,
+        set(soul, sig, record) { entries[soul] = { c: sig, b: structuredClone(record) }; save(); },
+        del(soul) { delete entries[soul]; save(); }
+      };
+    }
+    const bmCache = createCache('bookmarks'), notesCache = createCache('vault'), calCache = createCache('calendar'), tasksCache = createCache('tasks');
+
     function initDashboard() {
       document.getElementById('login-screen').classList.add('hidden');
       document.getElementById('dashboard').classList.remove('hidden');
@@ -3830,18 +3875,6 @@
           location.href = target;
         }
       };
-    }
-
-    // Check Viso callback on page load
-    const urlParams = new URLSearchParams(location.search);
-    if (urlParams.has('pk')) {
-      const pk = urlParams.get('pk');
-      let sk = safeStore.getItem('orto_freenet_secret');
-      if (!sk) {
-        sk = Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
-      }
-      history.replaceState(null, '', location.pathname + (location.hash || ''));
-      loginWithFreenetKey(sk);
     }
 
     // ── Load encrypted notes ──
@@ -5388,45 +5421,7 @@ print("Welcome to Orto!")
       showToast('Exported ' + list.length + ' bookmarks');
     }
 
-    // Per-collection cache of decrypted records: one blob per collection in IndexedDB, encrypted with the user's own
-    // pair (never plaintext at rest). Each entry keeps a signature of the ciphertext it came from, so an update with
-    // unchanged data is not decrypted again, and a refresh renders from the cache before any decrypt happens.
-    const idb = (mode, fn) => new Promise((resolve, reject) => {
-      const req = indexedDB.open('orto', 1);
-      req.onupgradeneeded = () => req.result.createObjectStore('cache');
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => {
-        const tx = req.result.transaction('cache', mode), q = fn(tx.objectStore('cache'));
-        tx.oncomplete = () => resolve(q && q.result);
-        tx.onerror = () => reject(tx.error);
-      };
-    });
-    function createCache(name) {
-      const entries = {}; // soul -> { c: signature, b: record }
-      let timer = null;
-      const key = () => name + ':' + pair.pub + (os._space ? '#' + os._space : ''); // one cache per space
-      const save = () => {
-        clearTimeout(timer);
-        timer = setTimeout(async () => {
-          try { const blob = await ZEN.encrypt(entries, pair); await idb('readwrite', s => s.put(blob, key())); } catch (_) { }
-        }, 1500);
-      };
-      return {
-        async load() { // -> { soul: record } ; empty if there is no (readable) cache yet
-          try {
-            const blob = await idb('readonly', s => s.get(key())), cached = blob && await ZEN.decrypt(blob, pair);
-            if (cached) Object.assign(entries, cached);
-          } catch (_) { }
-          return Object.fromEntries(Object.entries(entries).map(([soul, e]) => [soul, e.b]));
-        },
-        reset() { clearTimeout(timer); for (const k of Object.keys(entries)) delete entries[k]; },
-        same: (soul, sig) => !!entries[soul] && entries[soul].c === sig,
-        fresh: (soul, updatedAt) => entries[soul]?.b.updatedAt === updatedAt, // the cached record is the server's current version
-        set(soul, sig, record) { entries[soul] = { c: sig, b: structuredClone(record) }; save(); },
-        del(soul) { delete entries[soul]; save(); }
-      };
-    }
-    const bmCache = createCache('bookmarks'), notesCache = createCache('vault'), calCache = createCache('calendar'), tasksCache = createCache('tasks');
+    // Caches are defined above initDashboard
 
     async function loadBookmarks() {
       const cached = await bmCache.load();
@@ -6133,7 +6128,7 @@ print("Welcome to Orto!")
     }
 
     // music: one <audio> that keeps playing while you move around the app; the mini player is its remote
-    const $a = () => document.getElementById('media-audio');
+    function $a() { return document.getElementById('media-audio'); }
     async function mediaPlay(id) {
       const f = filesCache.find(x => x.id === id); if (!f) return;
       if (isVideo(f)) return videoOpen(f);
@@ -6143,6 +6138,7 @@ print("Welcome to Orto!")
     async function mediaStart() {
       const f = mediaQueue[mediaIdx]; if (!f) return;
       const a = $a();
+      if (!a) return;
       document.getElementById('mini-player').classList.remove('hidden'); document.body.classList.add('has-player');
       document.getElementById('mp-title').textContent = mediaTitle(f);
       a.pause(); mediaFree();
@@ -6151,10 +6147,17 @@ print("Welcome to Orto!")
       if (mediaMode) renderMedia();
     }
     function stopMedia() {
-      const a = $a(); a.pause(); a.removeAttribute('src'); a.load(); mediaFree();
+      try {
+        const a = $a();
+        if (a) { a.pause(); a.removeAttribute('src'); a.load(); }
+        mediaFree();
+      } catch (_) {}
       mediaQueue = []; mediaIdx = -1;
-      document.getElementById('mini-player').classList.add('hidden'); document.body.classList.remove('has-player');
+      const mp = document.getElementById('mini-player');
+      if (mp) mp.classList.add('hidden');
+      document.body.classList.remove('has-player');
     }
+    window.stopMedia = stopMedia;
     function initMediaPlayer() {
       const a = $a(), $ = (x) => document.getElementById(x); let drag = false;
       $('mp-play').onclick = () => a.src ? (a.paused ? a.play() : a.pause()) : null;
@@ -6423,6 +6426,7 @@ print("Welcome to Orto!")
       };
       drawShares();
     }
+    window.openSettings = openSettings;
 
 
     // ═══════════════════════════════════════════════════════════════
@@ -6541,7 +6545,9 @@ print("Welcome to Orto!")
     // Servers: remember the ones you use; the choice is stored in this browser only
     // Public demo account (server started with ORTO_DEMO=1): the server says so in /api/config
     let demoCfg = null;
-    try { demoCfg = (await (await fetch((serverUrl || '') + '/api/config')).json()).demo || null; } catch (_) { }
+    if (!isFreenet) {
+      try { demoCfg = (await (await fetch((serverUrl || '') + '/api/config')).json()).demo || null; } catch (_) { }
+    }
     if (demoCfg) document.getElementById('demo-row').classList.remove('hidden');
     function demoLogin() {
       if (!demoCfg) return;
@@ -7158,6 +7164,18 @@ print("Welcome to Orto!")
       if (e.key === 'Enter') login();
     });
     document.getElementById('login-btn').addEventListener('click', login);
+
+    // Check Viso callback on page load (executed at the very end when all components and caches are ready)
+    const urlParams = new URLSearchParams(location.search);
+    if (urlParams.has('pk')) {
+      const pk = urlParams.get('pk');
+      let sk = safeStore.getItem('orto_freenet_secret');
+      if (!sk) {
+        sk = Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
+      }
+      history.replaceState(null, '', location.pathname + (location.hash || ''));
+      loginWithFreenetKey(sk);
+    }
   </script>
 </body>
 
