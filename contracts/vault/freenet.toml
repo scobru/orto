@@ -1,0 +1,3 @@
+[contract]
+lang = "rust"
+output_dir = "build/freenet/"

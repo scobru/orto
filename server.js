@@ -682,11 +682,37 @@ ${posts.map((p) => {
     fs.cpSync(filesDir, path.join(out, 'files'), { recursive: true, filter: (f) => !f.endsWith('.part') });
     return out;
   };
+  // Optional Freenet replication (see freenet-sync.js): SQLite stays the primary store, this only merges rows in and out.
+  server.freenetSync = async (userName) => {
+    const user = q.userByName.get(String(userName || '').trim().toLowerCase());
+    if (!user || user.name.startsWith('~')) throw new Error('Unknown user: ' + userName);
+    return (await import('./freenet-sync.js')).sync(db, dataDir, user.id);
+  };
+  server.dataDir = dataDir;
   return server;
 }
 
 // realpath: npx / npm link start us through a symlink in node_modules/.bin
 if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))) {
+  if (process.argv[2]?.startsWith('freenet-')) { // node server.js freenet-identity [--new | --import <64 hex>] | freenet-sync --user <name>
+    const fs_ = await import('./freenet-sync.js'), arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : undefined; };
+    const srv = createServer();
+    try {
+      if (process.argv[2] === 'freenet-identity') {
+        let id = fs_.loadIdentity(srv.dataDir);
+        if (process.argv.includes('--new') || arg('--import')) {
+          if (id && !process.argv.includes('--force')) throw new Error('An identity already exists (add --force to replace it; back up its key first).');
+          id = fs_.createIdentity(srv.dataDir, arg('--import'));
+        }
+        if (!id) throw new Error('No identity yet: use --new or --import <64 hex>');
+        console.log(JSON.stringify({ publicKey: id.pub, secretKey: process.argv.includes('--show-secret') ? id.secret : '(hidden: add --show-secret to print it, then back it up)' }, null, 2));
+      } else if (process.argv[2] === 'freenet-sync') {
+        console.log(JSON.stringify(await srv.freenetSync(arg('--user')), null, 2));
+      } else throw new Error('Unknown command: ' + process.argv[2]);
+    } catch (e) { console.error(e.message); process.exitCode = 1; }
+    srv.close(); // closes the database
+    process.exit(process.exitCode || 0);
+  }
   if (process.argv[2] === 'backup') { // node server.js backup <folder>
     if (!process.argv[3]) { console.error('Usage: node server.js backup <folder>'); process.exit(1); }
     console.log('Backup written to ' + createServer().backup(process.argv[3]));

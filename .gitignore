@@ -4,3 +4,6 @@
 node_modules/
 scratch_*.js
 data/
+
+target/
+contracts/vault/build/

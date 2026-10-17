@@ -94,6 +94,21 @@ It is still encrypted like any account; the password is just public. For the dem
 - **Public links**: `node cli.js share-note --soul <soul>` / `share-file --id <id>` (or **Share** in the web app) give `https://<server>/s/<id>#<key>`. The item is encrypted with a fresh key that lives only in the `#fragment`, so the server never sees it; anyone with the link can read it. `share-revoke` deletes it.
 - **Change password**: `node cli.js password-change --new '…'` (or Settings). It re-encrypts everything, then signs out your other sessions. Export first.
 
+## Freenet sync (optional)
+
+SQLite stays the primary store. Freenet is only a replication channel between your own devices: no VPS, no open ports. Rows are replicated exactly as the server holds them (already AES-GCM ciphertext), so Freenet never sees plaintext. Public blog posts are not replicated.
+
+Needs a local [Freenet](https://freenet.org) node and its `fdev` tool on the PATH.
+
+```bash
+node server.js freenet-identity --new --show-secret   # a new Ed25519 identity: back up the 64 hex chars
+node server.js freenet-identity --import <64 hex>     # on another device: same key = same vault
+node server.js freenet-sync --user <name>             # pull what others wrote, push what changed here
+```
+
+The identity file is `<data>/freenet-identity.json` (keep it private). The vault contract is `contracts/vault` (Rust, `cargo test`; package with `fdev build` from that folder, output in `build/freenet/`; `ORTO_VAULT_WASM` overrides the path). Every record is signed on its own with the identity key (or a Viso delegation, supported by the contract), merged last-write-wins. Limits: deletions made on the server are not propagated yet (the server hard-deletes rows), and one identity per data folder.
+
+
 ## Shared spaces
 
 With several accounts on one server, a **space** is a shared folder: notes, tasks, calendar, bookmarks, contacts, secrets, files, photos and media, together, live. Open **Shared spaces** at the top of the sidebar of the web app (or use `space-*` in the CLI, `openSpace()` in the SDK).
