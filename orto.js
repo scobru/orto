@@ -1207,6 +1207,19 @@ export class Orto {
     try { return (await this._json('GET', '/u/' + encodeURIComponent(alias.trim().toLowerCase()))).name; }
     catch (e) { if (e.status === 404) return null; throw e; }
   }
+
+  // ─── Freenet sync & identity ──────────────────────────────────────────
+  async freenetIdentity() {
+    return this._json('GET', '/freenet/identity');
+  }
+
+  async freenetCreateIdentity(options = {}) {
+    return this._json('POST', '/freenet/identity', options);
+  }
+
+  async freenetSync() {
+    return this._json('POST', '/freenet/sync', {});
+  }
 }
 
 export { Orto as ZenOS }; // old name, for existing callers

@@ -355,6 +355,38 @@ export function createServer(opts = {}) {
       }
     }
 
+    if (a === 'freenet') {
+      const fs_ = await import('./freenet-sync.js');
+      if (b === 'identity') {
+        if (req.method === 'GET') {
+          const id = fs_.loadIdentity(dataDir);
+          return json(200, id ? { hasIdentity: true, publicKey: id.pub, lastPull: id.lastPull || 0, lastPush: id.lastPush || 0 } : { hasIdentity: false });
+        }
+        if (req.method === 'POST') {
+          const body = await readJson(req, 1e4);
+          let id = fs_.loadIdentity(dataDir);
+          if (body.action === 'new' || body.action === 'import') {
+            if (id && !body.force) throw new HttpError(409, 'An identity already exists');
+            id = fs_.createIdentity(dataDir, body.secretHex);
+            return json(200, { publicKey: id.pub, secretKey: id.secret });
+          }
+          if (body.action === 'show-secret') {
+            if (!id) throw new HttpError(404, 'No identity configured');
+            return json(200, { secretKey: id.secret, publicKey: id.pub });
+          }
+          throw new HttpError(400, 'Invalid action');
+        }
+      }
+      if (b === 'sync' && req.method === 'POST') {
+        try {
+          const res_ = await server.freenetSync(u.name);
+          return json(200, res_);
+        } catch (err) {
+          throw new HttpError(500, err.message || 'Freenet sync failed');
+        }
+      }
+    }
+
     // Shared spaces: a space is a set of collections and files under its own key, handed to members wrapped for their public key.
     // Roles: owner (everything), editor (read + write), viewer (read). The server enforces roles; it never sees a key.
     if (a === 'sp') {

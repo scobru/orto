@@ -6002,6 +6002,9 @@ print("Welcome to Orto!")
         <p class="hint">Export saves everything decrypted as one file (plain text: keep it safe). Import it into any account on any server.</p>
         <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="st-files" checked> Include file contents</label>
         <div class="cal-actions" style="justify-content:flex-start"><button class="cal-btn" id="st-export">Export everything</button><button class="cal-btn" id="st-import">Import…</button><input type="file" id="st-import-file" accept=".json,application/json" class="hidden"></div>
+        <h4>Freenet Sync (P2P Sovereign)</h4>
+        <p class="hint">Replica crittografata peer-to-peer tra i tuoi dispositivi tramite rete Freenet (zero VPS, zero porte aperte).</p>
+        <div id="st-freenet"><p class="hint">Caricamento stato Freenet…</p></div>
         <h4>Tag and emoji suggestions</h4>
         <p class="hint">Suggests tags for notes and bookmarks (<b>Gist</b>) and an emoji for a note's title (<b>Emo</b>), small models by <a href="https://desertant.com/models/gist/" target="_blank" rel="noopener">Desert Ant Labs</a> that run in this browser: your text is not sent anywhere. The first time, the browser downloads about 75 MB from huggingface.co. The server admin installs it once (<code>scripts/install-gist.mjs</code>).</p>
         <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="st-ai"> Suggest tags and emoji on this device</label>
@@ -6027,6 +6030,101 @@ print("Welcome to Orto!")
         try { const r = await os.importAll(JSON.parse(await file.text())); showToast(`Imported ${r.records} items, ${r.posts} posts, ${r.files} files`); if (filesMode) renderFiles(); }
         catch (err) { showToast(err.message); }
       };
+
+      // ── Freenet Sync UI ──
+      const fnBox = $('st-freenet');
+      const drawFreenet = async () => {
+        let fn;
+        try { fn = await (root.freenetIdentity ? root.freenetIdentity() : { hasIdentity: false }); }
+        catch (e) { fnBox.innerHTML = '<p class="hint">Sync non disponibile: ' + escapeHtml(e.message) + '</p>'; return; }
+        if (!fn || !fn.hasIdentity) {
+          fnBox.innerHTML = `
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div class="cal-actions" style="justify-content:flex-start">
+                <button class="cal-btn primary" id="st-fn-new"><i class="ti ti-key"></i> Crea nuova identità Freenet</button>
+              </div>
+              <div style="display:flex;gap:6px;align-items:center;">
+                <input type="password" id="st-fn-import-key" placeholder="Oppure incolla chiave segreta (64 hex)" style="flex:1;font-family:var(--font-mono);font-size:12px;padding:6px 8px;border-radius:6px;border:1px solid var(--border-color);">
+                <button class="cal-btn" id="st-fn-import">Importa</button>
+              </div>
+            </div>`;
+          const btnNew = fnBox.querySelector('#st-fn-new');
+          const btnImp = fnBox.querySelector('#st-fn-import');
+          if (btnNew) btnNew.onclick = async () => {
+            showToast('Creazione identità…');
+            try {
+              const res = await root.freenetCreateIdentity({ action: 'new' });
+              showToast('Identità creata!');
+              alert('Identità Freenet creata con successo!\n\nSalva la tua chiave segreta per il backup:\n' + res.secretKey);
+              drawFreenet();
+            } catch (err) { showToast(err.message); }
+          };
+          if (btnImp) btnImp.onclick = async () => {
+            const val = fnBox.querySelector('#st-fn-import-key')?.value?.trim();
+            if (!val || val.length !== 64) return showToast('La chiave deve essere di 64 caratteri esadecimali.');
+            showToast('Importazione identità…');
+            try {
+              await root.freenetCreateIdentity({ action: 'import', secretHex: val, force: true });
+              showToast('Identità importata!');
+              drawFreenet();
+            } catch (err) { showToast(err.message); }
+          };
+        } else {
+          fnBox.innerHTML = `
+            <div style="font-size:12.5px;display:flex;flex-direction:column;gap:6px;">
+              <div><b>Chiave Pubblica:</b> <code style="font-size:11px;word-break:break-all;user-select:all;">${escapeHtml(fn.publicKey)}</code></div>
+              <div class="hint">Ultimo sync: ${fn.lastPush ? new Date(fn.lastPush).toLocaleString() : 'mai'}</div>
+              <div class="cal-actions" style="justify-content:flex-start;margin-top:2px;">
+                <button class="cal-btn primary" id="st-fn-sync"><i class="ti ti-refresh"></i> Sincronizza ora</button>
+                <button class="cal-btn" id="st-fn-secret">Copia chiave di backup</button>
+                <button class="cal-btn" id="st-fn-reset" style="color:var(--text-muted)">Cambia chiave</button>
+              </div>
+              <p id="st-fn-msg" class="hint" style="margin-top:2px;"></p>
+            </div>`;
+          const btnSync = fnBox.querySelector('#st-fn-sync');
+          const btnSec = fnBox.querySelector('#st-fn-secret');
+          const btnReset = fnBox.querySelector('#st-fn-reset');
+          const msg = fnBox.querySelector('#st-fn-msg');
+          if (btnSync) btnSync.onclick = async () => {
+            btnSync.disabled = true;
+            if (msg) msg.textContent = 'Sincronizzazione P2P con Freenet in corso…';
+            showToast('Sincronizzazione Freenet…');
+            try {
+              const res = await root.freenetSync();
+              if (msg) msg.textContent = `Sync completato: +${res.pulled} scaricati, +${res.pushed} inviati`;
+              showToast(`Sync completato: +${res.pulled} scaricati, +${res.pushed} inviati`);
+              drawFreenet();
+            } catch (err) {
+              if (msg) msg.textContent = 'Errore sync: ' + err.message;
+              showToast('Errore sync: ' + err.message);
+            } finally {
+              btnSync.disabled = false;
+            }
+          };
+          if (btnSec) btnSec.onclick = async () => {
+            try {
+              const res = await root.freenetCreateIdentity({ action: 'show-secret' });
+              await navigator.clipboard.writeText(res.secretKey);
+              showToast('Chiave segreta copiata negli appunti!');
+              alert('La tua chiave segreta Freenet (salvala in un posto sicuro):\n\n' + res.secretKey);
+            } catch (err) { showToast(err.message); }
+          };
+          if (btnReset) btnReset.onclick = async () => {
+            if (!confirm('Sostituire la chiave Freenet esistente? Assicurati di aver salvato la chiave attuale!')) return;
+            const newKey = prompt('Incolla la nuova chiave segreta (64 hex) oppure lascia vuoto per generarne una nuova:');
+            if (newKey === null) return;
+            try {
+              const action = newKey.trim() ? 'import' : 'new';
+              const res = await root.freenetCreateIdentity({ action, secretHex: newKey.trim() || undefined, force: true });
+              showToast('Identità aggiornata!');
+              if (action === 'new') alert('Nuova chiave generata:\n\n' + res.secretKey);
+              drawFreenet();
+            } catch (err) { showToast(err.message); }
+          };
+        }
+      };
+      drawFreenet();
+
       if ($('st-pw')) $('st-pw').onclick = async () => {
         const p1 = $('st-pw1').value;
         if (p1.length < 8) return showToast('Use at least 8 characters');
