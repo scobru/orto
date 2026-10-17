@@ -356,11 +356,20 @@ export function createServer(opts = {}) {
     }
 
     if (a === 'freenet') {
-      const fs_ = await import('./freenet-sync.js');
+      let fs_;
+      try {
+        fs_ = await import('./freenet-sync.js');
+      } catch (err) {
+        return json(200, { hasIdentity: false, available: false, error: err.message });
+      }
       if (b === 'identity') {
         if (req.method === 'GET') {
-          const id = fs_.loadIdentity(dataDir);
-          return json(200, id ? { hasIdentity: true, publicKey: id.pub, lastPull: id.lastPull || 0, lastPush: id.lastPush || 0 } : { hasIdentity: false });
+          try {
+            const id = fs_.loadIdentity(dataDir);
+            return json(200, id ? { hasIdentity: true, available: true, publicKey: id.pub, lastPull: id.lastPull || 0, lastPush: id.lastPush || 0 } : { hasIdentity: false, available: true });
+          } catch (e) {
+            return json(200, { hasIdentity: false, available: false, error: e.message });
+          }
         }
         if (req.method === 'POST') {
           const body = await readJson(req, 1e4);
@@ -385,6 +394,7 @@ export function createServer(opts = {}) {
           throw new HttpError(500, err.message || 'Freenet sync failed');
         }
       }
+      throw new HttpError(404, 'Not found');
     }
 
     // Shared spaces: a space is a set of collections and files under its own key, handed to members wrapped for their public key.

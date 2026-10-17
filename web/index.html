@@ -6035,8 +6035,12 @@ print("Welcome to Orto!")
       const fnBox = $('st-freenet');
       const drawFreenet = async () => {
         let fn;
-        try { fn = await (root.freenetIdentity ? root.freenetIdentity() : { hasIdentity: false }); }
-        catch (e) { fnBox.innerHTML = '<p class="hint">Sync non disponibile: ' + escapeHtml(e.message) + '</p>'; return; }
+        try { fn = await (root.freenetIdentity ? root.freenetIdentity() : { hasIdentity: false, available: true }); }
+        catch (e) { fnBox.innerHTML = '<p class="hint">Freenet sync non disponibile su questo server.</p>'; return; }
+        if (fn && fn.available === false) {
+          fnBox.innerHTML = '<p class="hint">Freenet sync non configurato su questo server host.</p>';
+          return;
+        }
         if (!fn || !fn.hasIdentity) {
           fnBox.innerHTML = `
             <div style="display:flex;flex-direction:column;gap:8px;">

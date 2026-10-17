@@ -1,7 +1,8 @@
 FROM node:22-slim
 WORKDIR /app
-COPY server.js orto.js demo.js ./
+COPY server.js orto.js demo.js freenet-sync.js ./
 COPY web ./web
+COPY contracts ./contracts
 COPY scripts ./scripts
 # Optional on-device tag and emoji suggestions (Gist and Emo by Desert Ant Labs, source-available licence). On by default, which also covers hosts that build
 # this Dockerfile directly and ignore compose.yml; leave it out with: --build-arg ORTO_GIST=0 (about 130 MB smaller, no npm at build time).

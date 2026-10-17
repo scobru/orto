@@ -16,7 +16,7 @@ jobs:
           set -e
           for t in win-x64 darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
             d=orto-$t; mkdir -p $d/app
-            cp server.js orto.js demo.js desktop.js package.json $d/app/; cp -r web $d/app/web
+            cp server.js orto.js demo.js freenet-sync.js desktop.js package.json $d/app/; cp -r web contracts $d/app/
             n=node-v$NODE_VERSION-$t
             if [ $t = win-x64 ]; then
               curl -fsSLO https://nodejs.org/dist/v$NODE_VERSION/$n.zip; unzip -q $n.zip

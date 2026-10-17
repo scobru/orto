@@ -20,7 +20,14 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PKCS8 = Buffer.from('302e020100300506032b657004220420', 'hex');
 const SYNC_COLLS = ['vault', 'calendar', 'tasks', 'bookmarks', 'contacts', 'secrets', 'feeds', 'files', 'shares']; // encrypted ones; public `posts` are not replicated
-const WASM = () => process.env.ORTO_VAULT_WASM || path.join(here, 'contracts', 'vault', 'build', 'freenet', 'orto_vault');
+const WASM = () => {
+  if (process.env.ORTO_VAULT_WASM && fs.existsSync(process.env.ORTO_VAULT_WASM)) return process.env.ORTO_VAULT_WASM;
+  const p1 = path.join(here, 'contracts', 'orto_vault.wasm');
+  if (fs.existsSync(p1)) return p1;
+  const p2 = path.join(here, 'contracts', 'vault', 'build', 'freenet', 'orto_vault');
+  if (fs.existsSync(p2)) return p2;
+  return p1;
+};
 
 const keyFromSecret = (hex) => {
   if (!/^[0-9a-f]{64}$/i.test(hex || '')) throw new Error('The key must be 64 hexadecimal characters.');
