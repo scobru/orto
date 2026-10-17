@@ -3506,6 +3506,15 @@
     // Freenet environment detection
     const isFreenet = location.pathname.includes('/v1/contract/') || location.port === '7509' || !!window.__freenet__;
 
+    function hasServiceWorker() {
+      if (isFreenet) return false;
+      try {
+        return typeof navigator !== 'undefined' && 'serviceWorker' in navigator && !!navigator.serviceWorker;
+      } catch (_) {
+        return false;
+      }
+    }
+
     // Orto server: on Freenet there is no remote server!
     let serverUrl = '';
     if (!isFreenet) {
@@ -4943,7 +4952,7 @@ print("Welcome to Orto!")
 
     function logout() {
       stopMedia();
-      try { navigator.serviceWorker?.controller?.postMessage({ type: 'orto-media-clear' }); } catch (_) { } // the worker must not keep the key
+      try { if (hasServiceWorker()) navigator.serviceWorker.controller?.postMessage({ type: 'orto-media-clear' }); } catch (_) { } // the worker must not keep the key
       window.location.reload();
     }
 
@@ -6069,10 +6078,14 @@ print("Welcome to Orto!")
     const mediaClock = (t) => isFinite(t) ? Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0') : '0:00';
     let mediaTab = 'music', mediaQuery = '', mediaQueue = [], mediaIdx = -1, mediaBlobUrl = null;
     const mediaParams = new Map(); // file id -> what the service worker needs; re-sent if the worker was stopped
-    if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', (e) => { if (e.data?.type === 'orto-media-need') e.ports[0]?.postMessage(mediaParams.get(e.data.id) || null); });
+    if (hasServiceWorker()) {
+      try {
+        navigator.serviceWorker.addEventListener('message', (e) => { if (e.data?.type === 'orto-media-need') e.ports[0]?.postMessage(mediaParams.get(e.data.id) || null); });
+      } catch (_) {}
+    }
 
     async function mediaUrl(f) {
-      if (f.chunked && 'serviceWorker' in navigator) {
+      if (f.chunked && hasServiceWorker()) {
         try {
           const reg = await navigator.serviceWorker.ready;
           const p = { type: 'orto-media', id: f.id, meta: { id: f.id, size: f.size, chunked: f.chunked, type: mediaType(f) }, key: os.key, token: os.token, base: serverUrl || location.origin, pre: os._space ? '/sp/' + os._space : '' };
@@ -6457,7 +6470,7 @@ print("Welcome to Orto!")
     async function switchSpace(id) {
       let next;
       try { next = id ? await root.openSpace(id) : root.personal(); } catch (e) { return showToast(e.message); }
-      stopMedia(); try { navigator.serviceWorker?.controller?.postMessage({ type: 'orto-media-clear' }); } catch (_) { }
+      stopMedia(); try { if (hasServiceWorker()) navigator.serviceWorker.controller?.postMessage({ type: 'orto-media-clear' }); } catch (_) { }
       os.close(); // no more callbacks from the old view
       os = next; window.os = os;
       currentSpace = id ? { id: next.spaceId, name: next.spaceName, role: next.spaceRole } : null;
@@ -7155,7 +7168,9 @@ print("Welcome to Orto!")
     });
 
     if (demoCfg && new URLSearchParams(location.search).has('demo')) demoLogin(); // e.g. https://my-server/?demo
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
+    if (hasServiceWorker()) {
+      try { navigator.serviceWorker.register('sw.js').catch(() => { }); } catch (_) {}
+    }
 
     document.getElementById('user-input').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') document.getElementById('pass-input').focus();
