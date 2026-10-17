@@ -271,6 +271,7 @@ export class Orto {
   constructor(options = {}) {
     const fallback = globalThis.window ? '' : DEFAULT_SERVER;
     this.server = normalizeServer(options.server ?? env.ORTO_SERVER ?? env.ZENOS_SERVER ?? fallback);
+    this.mode = options.mode || ((globalThis.location && (globalThis.location.pathname.includes('/v1/contract/') || globalThis.location.port === '7509')) ? 'freenet' : 'server');
     this.token = options.token || null;
     this.key = null;
     this.username = null;
@@ -286,6 +287,11 @@ export class Orto {
    */
   async login(username, password, { create = false } = {}) {
     const { name, key, auth } = await deriveKeys(username, password);
+    if (this.mode === 'freenet') {
+      const token = 'fn-' + name;
+      Object.assign(this, { key, token, username: name, pair: { pub: name }, _auth: auth });
+      return this.pair;
+    }
     const { token } = await this._json('POST', create ? '/register' : '/login', { name, auth });
     Object.assign(this, { key, token, username: name, pair: { pub: name }, _auth: auth });
     await this._kp().catch(() => {}); // the key pair that lets others invite you to shared spaces (not available on the demo account)
@@ -297,7 +303,76 @@ export class Orto {
 
   // ─── transport ──────────────────────────────────────────────────────
 
+  _localStore(method, path, body) {
+    const prefix = `orto_rec:${this.username || 'local'}:`;
+    const ok = (json) => ({
+      ok: true,
+      status: 200,
+      json: async () => json,
+      arrayBuffer: async () => new Uint8Array(),
+      body: (async function* () {})()
+    });
+
+    const m = path.match(/^\/c\/([^/?]+)(?:\/([^/?]+))?/);
+    if (m) {
+      const coll = m[1], soul = m[2] ? decodeURIComponent(m[2]) : null;
+      if (method === 'GET' && !soul) {
+        const out = [];
+        if (typeof localStorage !== 'undefined') {
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith(`${prefix}${coll}:`)) {
+              try { out.push(JSON.parse(localStorage.getItem(k))); } catch (_) {}
+            }
+          }
+        }
+        return ok(out);
+      }
+      if (method === 'GET' && soul) {
+        const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(`${prefix}${coll}:${soul}`) : null;
+        if (!raw) { const err = new Error('Not found'); err.status = 404; throw err; }
+        return ok(JSON.parse(raw));
+      }
+      if (method === 'PUT' && soul) {
+        const rec = { soul, data: body.data, updatedAt: Date.now() };
+        if (typeof localStorage !== 'undefined') localStorage.setItem(`${prefix}${coll}:${soul}`, JSON.stringify(rec));
+        if (this._subs) {
+          for (const s of this._subs) {
+            if (s.coll === coll || s.coll === '_spaces') {
+              try { s.handle({ coll, soul, data: rec.data, updated_at: rec.updatedAt }); } catch (_) {}
+            }
+          }
+        }
+        return ok({ status: 'saved' });
+      }
+      if (method === 'DELETE' && soul) {
+        if (typeof localStorage !== 'undefined') localStorage.removeItem(`${prefix}${coll}:${soul}`);
+        if (this._subs) {
+          for (const s of this._subs) {
+            if (s.coll === coll) {
+              try { s.handle({ coll, soul, deleted: true, updated_at: Date.now() }); } catch (_) {}
+            }
+          }
+        }
+        return ok({ status: 'deleted' });
+      }
+    }
+
+    if (path.startsWith('/events')) {
+      return { ok: true, status: 200, body: (async function* () {})() };
+    }
+    if (path.startsWith('/sp')) return ok([]);
+    if (path.startsWith('/keys')) return ok({});
+    if (path.startsWith('/shares')) return ok([]);
+    if (path.startsWith('/files')) return ok({});
+
+    return ok({});
+  }
+
   async _fetch(method, path, body, signal, headers) {
+    if (this.mode === 'freenet') {
+      return this._localStore(method, path, body);
+    }
     const isBytes = body instanceof Uint8Array;
     if (this._space && /^\/(c|files|events)(\/|\?|$)/.test(path)) path = '/sp/' + this._space + path; // a space view: same calls, the space's data
     const r = await fetch(this.server + '/api' + path, {

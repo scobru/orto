@@ -2797,9 +2797,48 @@
       </div>
       <div class="login-title-group">
         <h1>Orto</h1>
-        <p>Self-hosted Workspace<br>Enter your master credentials to unlock.</p>
+        <p id="login-subtitle">Self-hosted Workspace<br>Enter your master credentials to unlock.</p>
       </div>
-      <div class="login-form">
+
+      <!-- Freenet Sovereign Identity Section (active in Freenet mode) -->
+      <div id="fn-login-section" class="hidden" style="display:flex;flex-direction:column;gap:12px;width:100%;">
+        <!-- If already has key in localStorage -->
+        <div id="fn-has-key" class="hidden" style="background:var(--input-bg);padding:14px;border-radius:10px;border:1px solid var(--border-color);display:flex;flex-direction:column;gap:8px;text-align:left;">
+          <div style="font-size:12px;color:var(--text-secondary);display:flex;justify-content:space-between;align-items:center;">
+            <span>Identità Freenet:</span>
+            <span id="fn-persona-badge" style="font-size:11px;background:var(--tag-bg);color:var(--tag-text);padding:2px 6px;border-radius:4px;font-weight:600;"></span>
+          </div>
+          <code id="fn-pub-display" style="font-size:11px;font-family:var(--font-mono);word-break:break-all;color:var(--text-primary);user-select:all;background:var(--code-bg);padding:6px;border-radius:6px;"></code>
+          <button id="fn-unlock-btn" class="login-btn" style="margin-top:6px;">
+            <i class="ti ti-lock-open"></i> Sblocca Orto
+          </button>
+          <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-top:4px;">
+            <a href="#" id="fn-backup-btn" style="color:var(--bear-red);text-decoration:none;"><i class="ti ti-download"></i> Backup chiave</a>
+            <a href="#" id="fn-switch-key-btn" style="color:var(--text-muted);text-decoration:none;">Cambia chiave</a>
+          </div>
+        </div>
+
+        <!-- If no key in localStorage -->
+        <div id="fn-no-key" style="display:flex;flex-direction:column;gap:10px;">
+          <button id="fn-create-btn" class="login-btn">
+            <i class="ti ti-sparkles"></i> Crea nuova identità Freenet
+          </button>
+          <button id="fn-viso-btn" class="cal-btn" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border-radius:8px;background:rgba(0,180,216,0.12);color:#0096c7;border:1px solid rgba(0,180,216,0.3);font-weight:600;font-size:13px;cursor:pointer;">
+            <i class="ti ti-user-check" style="font-size:16px;"></i> Accedi con Viso / Whoiam
+          </button>
+          <div style="display:flex;align-items:center;gap:10px;margin:6px 0;">
+            <div style="flex:1;height:1px;background:var(--border-color);"></div>
+            <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">oppure</span>
+            <div style="flex:1;height:1px;background:var(--border-color);"></div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <input type="password" id="fn-import-key" placeholder="Incolla chiave segreta (64 hex)" style="flex:1;padding:8px 10px;border-radius:7px;border:1px solid var(--border-color);background:var(--input-bg);color:var(--text-primary);font-family:var(--font-mono);font-size:12px;">
+            <button id="fn-import-btn" class="cal-btn" style="padding:0 14px;font-size:12px;">Importa</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="login-form" id="classic-login-form">
         <div class="input-wrapper">
           <i class="ti ti-user"></i>
           <input type="text" id="user-input" placeholder="Username" class="login-input" autocomplete="username">
@@ -2814,7 +2853,8 @@
         </button>
       </div>
       <p class="login-footer-desc hidden" id="demo-row"><a href="#" onclick="demoLogin();return false" style="color:inherit"><i class="ti ti-sparkles"></i> Try the demo account</a></p>
-      <p class="login-footer-desc"><a href="#" onclick="serverConfig();return false" style="color:inherit">Server</a></p>
+      <p class="login-footer-desc" id="server-row"><a href="#" onclick="serverConfig();return false" style="color:inherit">Server</a></p>
+      <p class="login-footer-desc" id="toggle-mode-row"><a href="#" id="toggle-mode-btn" style="color:var(--text-muted);font-size:11.5px;text-decoration:none;"></a></p>
       <p class="login-footer-desc">
         <i class="ti ti-shield-check"></i> AES-GCM 256 keys derived locally in your browser. Master credentials never
         leave your device.
@@ -3447,13 +3487,17 @@
     let searchQuery = '';
     let autoSaveTimeout = null;
 
-    // Orto server: the one chosen with the login-screen link; else this site's own origin when it runs an Orto server
-    // (the server also serves this app); else the default public server (e.g. when this page is hosted statically)
+    // Freenet environment detection
+    const isFreenet = location.pathname.includes('/v1/contract/') || location.port === '7509' || !!window.__freenet__;
+
+    // Orto server: on Freenet there is no remote server!
     let serverUrl = '';
-    try { serverUrl = normalizeServer(localStorage.getItem('ortoServer') || ''); } catch (_) { }
-    if (!serverUrl) {
-      const sameOrigin = await fetch('/api/health').then(r => r.json()).then(j => j && ['orto', 'zenos'].includes(j.name)).catch(() => false);
-      if (!sameOrigin) serverUrl = DEFAULT_SERVER;
+    if (!isFreenet) {
+      try { serverUrl = normalizeServer(localStorage.getItem('ortoServer') || ''); } catch (_) { }
+      if (!serverUrl) {
+        const sameOrigin = await fetch('/api/health').then(r => r.json()).then(j => j && ['orto', 'zenos'].includes(j.name)).catch(() => false);
+        if (!sameOrigin) serverUrl = DEFAULT_SERVER;
+      }
     }
 
     // Tag emoji mapping (Like Bear in the screenshot)
@@ -3513,6 +3557,65 @@
       syncTimer = setTimeout(syncDone, 400);
     }
 
+    // Base58 helper for Freenet persona formatting (like FreeTunes / whoiam)
+    const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    function toBase58(bytes) {
+      const d = [];
+      for (const byte of bytes) {
+        let carry = byte;
+        for (let i = 0; i < d.length; i++) { carry += d[i] << 8; d[i] = carry % 58; carry = (carry / 58) | 0; }
+        while (carry) { d.push(carry % 58); carry = (carry / 58) | 0; }
+      }
+      let out = "";
+      for (const byte of bytes) { if (byte) break; out += "1"; }
+      return out + d.reverse().map(x => B58[x]).join("");
+    }
+
+    const PKCS8_PREFIX = new Uint8Array([0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20]);
+    async function ed25519KeyPair(secretHex) {
+      const sk = secretHex.replace(/\s/g, '').toLowerCase();
+      if (!/^[0-9a-f]{64}$/.test(sk)) throw new Error("La chiave deve essere di 64 caratteri esadecimali.");
+      const secretBytes = new Uint8Array(sk.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+      const pkcs8 = new Uint8Array(48);
+      pkcs8.set(PKCS8_PREFIX);
+      pkcs8.set(secretBytes, 16);
+      const priv = await crypto.subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, true, ['sign']);
+      const jwk = await crypto.subtle.exportKey('jwk', priv);
+      const b64 = jwk.x.replace(/-/g, '+').replace(/_/g, '/');
+      const bin = atob(b64);
+      const pubBytes = new Uint8Array(Array.from(bin, c => c.charCodeAt(0)));
+      const pubHex = Array.from(pubBytes, b => b.toString(16).padStart(2, '0')).join('');
+      const persona = toBase58(pubBytes);
+      return { secretHex: sk, pubHex, persona };
+    }
+
+    function initDashboard() {
+      document.getElementById('login-screen').classList.add('hidden');
+      document.getElementById('dashboard').classList.remove('hidden');
+
+      const ping = document.getElementById('status-ping');
+      if (ping) {
+        ping.style.backgroundColor = '#2ec4b6';
+        ping.style.boxShadow = '0 0 8px #2ec4b6';
+      }
+      const statusText = document.getElementById('status-footer-text');
+      if (statusText) {
+        statusText.textContent = isFreenet ? 'Decrypted & Synced (P2P)' : 'Decrypted & Synced';
+      }
+
+      applyTheme();
+      syncStart();
+      loadNotes();
+      loadCalendar();
+      loadBlog();
+      loadBookmarks();
+      loadContacts();
+      loadSecrets();
+      loadFeeds();
+      loadTasks();
+      startSpaces();
+    }
+
     // ── Authentication / Decrypt Master Vault ──
     async function login() {
       const userInput = document.getElementById('user-input').value.trim();
@@ -3521,7 +3624,6 @@
 
       try {
         const btn = document.getElementById('login-btn');
-        const originalHtml = btn.innerHTML;
         btn.innerHTML = '<i class="ti ti-loader animate-spin"></i> Decrypting...';
         btn.disabled = true;
 
@@ -3535,32 +3637,9 @@
         os = root.personal();
         isAuthenticated = true;
         window.os = os; window.pair = pair;
-        if (demoCfg && pair.pub === demoCfg.user) setTimeout(() => showToast(`Demo account: random fake data, reset every ${demoCfg.hours} h. Sharing and the password are off here.`), 800);
+        if (demoCfg && pair.pub === demoCfg.user) setTimeout(() => showToast(`Demo account: random fake data, reset every ${demoCfg.hours} h.`), 800);
 
-        document.getElementById('login-screen').classList.add('hidden');
-        document.getElementById('dashboard').classList.remove('hidden');
-
-        const ping = document.getElementById('status-ping');
-        if (ping) {
-          ping.style.backgroundColor = '#2ec4b6';
-          ping.style.boxShadow = '0 0 8px #2ec4b6';
-        }
-        const statusText = document.getElementById('status-footer-text');
-        if (statusText) {
-          statusText.textContent = 'Decrypted & Synced';
-        }
-
-        applyTheme();
-        syncStart();
-        loadNotes();
-        loadCalendar();
-        loadBlog();
-        loadBookmarks();
-        loadContacts();
-        loadSecrets();
-        loadFeeds();
-        loadTasks();
-        startSpaces();
+        initDashboard();
       } catch (e) {
         console.error("Login Error:", e);
         alert("Login failed: " + e.message);
@@ -3570,6 +3649,163 @@
           btn.disabled = false;
         }
       }
+    }
+
+    async function loginWithFreenetKey(secretHex) {
+      try {
+        const kp = await ed25519KeyPair(secretHex);
+        localStorage.setItem('orto_freenet_secret', kp.secretHex);
+        localStorage.setItem('orto_freenet_pub', kp.pubHex);
+        localStorage.setItem('orto_freenet_persona', kp.persona);
+
+        const userInput = 'fn_' + kp.pubHex.slice(0, 16);
+        const passInput = kp.secretHex;
+
+        root = new Orto({ server: '', mode: 'freenet' });
+        pair = await root.login(userInput, passInput);
+        os = root.personal();
+        isAuthenticated = true;
+        window.os = os; window.pair = pair;
+
+        initDashboard();
+      } catch (err) {
+        alert("Errore sblocco Freenet: " + err.message);
+      }
+    }
+
+    // Setup login UI depending on isFreenet
+    const fnSection = document.getElementById('fn-login-section');
+    const classicForm = document.getElementById('classic-login-form');
+    const serverRow = document.getElementById('server-row');
+    const demoRow = document.getElementById('demo-row');
+    const toggleBtn = document.getElementById('toggle-mode-btn');
+    const subtitle = document.getElementById('login-subtitle');
+
+    let currentModeIsFreenet = isFreenet;
+
+    function renderLoginMode() {
+      if (currentModeIsFreenet) {
+        if (serverRow) serverRow.classList.add('hidden');
+        if (demoRow) demoRow.classList.add('hidden');
+        if (subtitle) subtitle.innerHTML = 'Personal Workspace on Freenet<br>Sign in with your Sovereign Identity.';
+        if (fnSection) fnSection.classList.remove('hidden');
+        if (classicForm) classicForm.classList.add('hidden');
+        if (toggleBtn) toggleBtn.textContent = 'Passa al login classico (server)';
+
+        const storedSecret = localStorage.getItem('orto_freenet_secret');
+        const storedPub = localStorage.getItem('orto_freenet_pub');
+        const storedPersona = localStorage.getItem('orto_freenet_persona');
+
+        const hasKeyBox = document.getElementById('fn-has-key');
+        const noKeyBox = document.getElementById('fn-no-key');
+
+        if (storedSecret && storedPub) {
+          if (hasKeyBox) hasKeyBox.classList.remove('hidden');
+          if (noKeyBox) noKeyBox.classList.add('hidden');
+          const pubDisplay = document.getElementById('fn-pub-display');
+          if (pubDisplay) pubDisplay.textContent = storedPub;
+          const badge = document.getElementById('fn-persona-badge');
+          if (badge) badge.textContent = storedPersona ? 'Viso: ' + storedPersona.slice(0, 8) + '…' : 'Ed25519';
+        } else {
+          if (hasKeyBox) hasKeyBox.classList.add('hidden');
+          if (noKeyBox) noKeyBox.classList.remove('hidden');
+        }
+      } else {
+        if (serverRow) serverRow.classList.remove('hidden');
+        if (fnSection) fnSection.classList.add('hidden');
+        if (classicForm) classicForm.classList.remove('hidden');
+        if (subtitle) subtitle.innerHTML = 'Self-hosted Workspace<br>Enter your master credentials to unlock.';
+        if (toggleBtn) toggleBtn.textContent = 'Passa a Freenet Sovereign Identity';
+      }
+    }
+
+    renderLoginMode();
+
+    if (toggleBtn) {
+      toggleBtn.onclick = (e) => {
+        e.preventDefault();
+        currentModeIsFreenet = !currentModeIsFreenet;
+        renderLoginMode();
+      };
+    }
+
+    const fnCreateBtn = document.getElementById('fn-create-btn');
+    if (fnCreateBtn) {
+      fnCreateBtn.onclick = async () => {
+        try {
+          const secret = Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
+          alert('Nuova identità Freenet creata!\n\nSalva la tua chiave segreta per il backup:\n' + secret);
+          await loginWithFreenetKey(secret);
+        } catch (e) { alert(e.message); }
+      };
+    }
+
+    const fnUnlockBtn = document.getElementById('fn-unlock-btn');
+    if (fnUnlockBtn) {
+      fnUnlockBtn.onclick = async () => {
+        const sk = localStorage.getItem('orto_freenet_secret');
+        if (!sk) return alert('Nessuna chiave trovata.');
+        await loginWithFreenetKey(sk);
+      };
+    }
+
+    const fnImportBtn = document.getElementById('fn-import-btn');
+    if (fnImportBtn) {
+      fnImportBtn.onclick = async () => {
+        const val = document.getElementById('fn-import-key')?.value?.trim();
+        if (!val || val.length !== 64) return alert('La chiave deve essere di 64 caratteri esadecimali.');
+        await loginWithFreenetKey(val);
+      };
+    }
+
+    const fnSwitchBtn = document.getElementById('fn-switch-key-btn');
+    if (fnSwitchBtn) {
+      fnSwitchBtn.onclick = (e) => {
+        e.preventDefault();
+        document.getElementById('fn-has-key')?.classList.add('hidden');
+        document.getElementById('fn-no-key')?.classList.remove('hidden');
+      };
+    }
+
+    const fnBackupBtn = document.getElementById('fn-backup-btn');
+    if (fnBackupBtn) {
+      fnBackupBtn.onclick = (e) => {
+        e.preventDefault();
+        const sk = localStorage.getItem('orto_freenet_secret');
+        if (!sk) return;
+        const blob = new Blob([`Orto Sovereign Freenet Key: Keep this safe!\n${sk}\n`], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `orto-freenet-key.txt`;
+        a.click();
+      };
+    }
+
+    const VISO_KEY = "GzHy3jnEtj26EoGqMsBpoawcY378hK9kp91rTcNYiAac";
+    const fnVisoBtn = document.getElementById('fn-viso-btn');
+    if (fnVisoBtn) {
+      fnVisoBtn.onclick = () => {
+        const visoUrl = `${location.protocol}//${location.host}/v1/contract/web/${VISO_KEY}/`;
+        const challenge = `wd1.orto.${Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('')}`;
+        const target = `${visoUrl}?connect=v1&challenge=${challenge}&return=${encodeURIComponent(location.href)}`;
+        if (window.parent !== window) {
+          parent.postMessage({ __freenet_shell__: true, type: "navigate", href: target }, "*");
+        } else {
+          location.href = target;
+        }
+      };
+    }
+
+    // Check Viso callback on page load
+    const urlParams = new URLSearchParams(location.search);
+    if (urlParams.has('pk')) {
+      const pk = urlParams.get('pk');
+      let sk = localStorage.getItem('orto_freenet_secret');
+      if (!sk) {
+        sk = Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
+      }
+      history.replaceState(null, '', location.pathname + (location.hash || ''));
+      loginWithFreenetKey(sk);
     }
 
     // ── Load encrypted notes ──
