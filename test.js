@@ -734,6 +734,5 @@ console.log('Shared spaces');
 
 console.log('ok - all tests passed');
 clients.forEach(c => c.close());
-server.closeAllConnections();
 server.close();
-fs.rmSync(dir, { recursive: true, force: true });
+try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch (_) {}

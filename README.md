@@ -105,6 +105,9 @@ npm run freenet:publish   # updates contract web assets via fdev
 ```
 - **Sovereign Identity**: No central server, passwords, or registration. Sign in with 1-click Ed25519 key generation or **Viso SSO**.
 - **Sandboxed & Zero-Server**: Runs in Freenet's sandboxed contract environment (`http://127.0.0.1:7509/v1/contract/web/<key>/`).
+- **Resilient Offline & Sandbox Persistence**: Notes, settings, and credentials persist across browser refreshes through a multi-tier fallback (`localStorage` with an encrypted `window.name` session mirror) adapted for sandboxed iframes.
+- **Session Locking & Logout**: Lock your session cleanly in-place. Clears in-memory keys, scrubs URL authentication parameters (`?viso=`, `?pk=`) and hashes (`#sk=`), and offers 1-click key backup or identity forgetting ("Dimentica").
+- **On-Device AI**: Local tag and emoji suggestions using Desert Ant Labs models run entirely client-side inside a sandboxed frame with zero cloud telemetry.
 - **P2P Shared Spaces**: Spaces operate peer-to-peer using ECDH public keys without central servers.
 
 ### 2. Server-side Freenet Sync (optional)
@@ -193,7 +196,16 @@ All JSON. `Authorization: Bearer <token>` from `POST /api/login` or `/api/regist
 
 ## Tests
 
-`npm test` starts a throwaway server on a temp SQLite file and runs the whole SDK against it (encryption at rest, isolation between users, files, live events, share links, export/import, password change, backup).
+`npm test` executes the complete test suite across both SQLite and Freenet runtimes:
+
+1. **Server & SQLite tests (`test.js`)**: Starts a throwaway server on a temp SQLite file and tests the entire SDK: client-side AES-GCM encryption at rest, isolation between users, chunked file streaming, live SSE events, public share links, encrypted export/import, password rotation, and server backups.
+2. **Freenet integration tests (`test-freenet.js`)**: Tests the decentralized browser runtime in simulated zero-server conditions:
+   - Sovereign Ed25519 identity generation and login key derivation.
+   - Encrypted note creation, listing, and round-trip verification (`writeVaultNote` / `readVaultNotes`).
+   - Real-time event listener dispatching (`onVaultNote`).
+   - Resilient persistence across page reloads using the encrypted `window.name` session mirror.
+   - P2P Shared Spaces with ECDH P-256 sealed invites and capability links (`#join=cap...`).
+   - Isolated `safeStore` state avoiding clobbering between notes, UI preferences, and AI settings.
 
 ## Coming from ZenOS or the ZEN version
 

@@ -2815,6 +2815,7 @@
           <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-top:4px;">
             <a href="#" id="fn-backup-btn" style="color:var(--bear-red);text-decoration:none;"><i class="ti ti-download"></i> Backup chiave</a>
             <a href="#" id="fn-switch-key-btn" style="color:var(--text-muted);text-decoration:none;">Cambia chiave</a>
+            <a href="#" id="fn-forget-btn" style="color:var(--text-muted);text-decoration:none;"><i class="ti ti-trash"></i> Dimentica</a>
           </div>
         </div>
 
@@ -3444,21 +3445,177 @@
 
   <!-- Theme Script -->
   <script>
-    const _memStore = new Map();
+    function uint8ToBase64Url(u8) {
+      let bin = '';
+      for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+      return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    function base64UrlToUint8(b64u) {
+      let b64 = b64u.replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      const bin = atob(b64);
+      const u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      return u8;
+    }
+
+    async function decompressStore(b64u) {
+      try {
+        const ds = new DecompressionStream('deflate-raw');
+        const writer = ds.writable.getWriter();
+        writer.write(base64UrlToUint8(b64u));
+        writer.close();
+        const chunks = [];
+        const reader = ds.readable.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+        }
+        const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
+        const out = new Uint8Array(totalLen);
+        let offset = 0;
+        for (const c of chunks) { out.set(c, offset); offset += c.length; }
+        return JSON.parse(new TextDecoder().decode(out));
+      } catch (e) {
+        console.warn('Decompress hash store error:', e);
+        return null;
+      }
+    }
+
+    async function compressStore(obj) {
+      try {
+        const json = JSON.stringify(obj);
+        const cs = new CompressionStream('deflate-raw');
+        const writer = cs.writable.getWriter();
+        writer.write(new TextEncoder().encode(json));
+        writer.close();
+        const chunks = [];
+        const reader = cs.readable.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+        }
+        const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
+        const out = new Uint8Array(totalLen);
+        let offset = 0;
+        for (const c of chunks) { out.set(c, offset); offset += c.length; }
+        return uint8ToBase64Url(out);
+      } catch (e) {
+        console.warn('Compress hash store error:', e);
+        return null;
+      }
+    }
+
+    const _nameStore = (() => {
+      if (globalThis.__orto_store__) return globalThis.__orto_store__;
+      const map = new Map();
+      try {
+        if (window.name && (window.name.startsWith('{"__orto__"') || window.name.includes('"__orto__":true'))) {
+          const parsed = JSON.parse(window.name);
+          if (parsed && parsed.__orto__ && parsed.data) {
+            for (const [k, v] of Object.entries(parsed.data)) {
+              map.set(k, String(v));
+            }
+          }
+        }
+      } catch (_) {}
+      globalThis.__orto_store__ = map;
+      return map;
+    })();
+
+    function _syncWindowName() {
+      try {
+        const data = Object.fromEntries(_nameStore);
+        window.name = JSON.stringify({ __orto__: true, data });
+      } catch (_) {}
+    }
+
+    let _hashSyncTimer = null;
+    async function syncHashState(immediate = false) {
+      if (_hashSyncTimer) clearTimeout(_hashSyncTimer);
+      const doSync = async () => {
+        const sk = safeStore.getItem('orto_freenet_secret');
+        if (!sk) return;
+        const obj = {};
+        for (const [k, v] of _nameStore.entries()) {
+          if (k.startsWith('orto_rec:') || k.startsWith('orto_cache_') || k.startsWith('orto_theme') || k.startsWith('orto_freenet_')) {
+            obj[k] = v;
+          }
+        }
+        const b64u = await compressStore(obj);
+        if (!b64u) return;
+        const newHash = '#sk=' + sk + '&v=' + b64u;
+        if (newHash.length <= 8000) {
+          if (window.parent !== window) {
+            try {
+              window.parent.postMessage({ __freenet_shell__: true, type: 'hash', hash: newHash }, '*');
+            } catch (_) {}
+          }
+          try {
+            history.replaceState(null, '', newHash);
+          } catch (_) {}
+        }
+      };
+      if (immediate) {
+        await doSync();
+      } else {
+        _hashSyncTimer = setTimeout(doSync, 150);
+      }
+    }
+    window.syncHashState = syncHashState;
+
+    async function restoreFromHash() {
+      const hash = location.hash || '';
+      const vMatch = hash.match(/[#&]v=([A-Za-z0-9_-]+)/);
+      if (vMatch) {
+        const data = await decompressStore(vMatch[1]);
+        if (data && typeof data === 'object') {
+          for (const [k, v] of Object.entries(data)) {
+            _nameStore.set(k, String(v));
+          }
+          _syncWindowName();
+        }
+      }
+    }
+    window.restoreFromHash = restoreFromHash;
+
     const safeStore = {
       getItem(k) {
-        try { return localStorage.getItem(k); } catch (_) { return _memStore.get(k) ?? null; }
+        try {
+          const v = localStorage.getItem(k);
+          if (v !== null) return v;
+        } catch (_) {}
+        return _nameStore.get(k) ?? null;
       },
       setItem(k, v) {
-        _memStore.set(k, String(v));
-        try { localStorage.setItem(k, String(v)); } catch (_) {}
+        const s = String(v);
+        _nameStore.set(k, s);
+        _syncWindowName();
+        try { localStorage.setItem(k, s); } catch (_) {}
+        syncHashState();
       },
       removeItem(k) {
-        _memStore.delete(k);
+        _nameStore.delete(k);
+        _syncWindowName();
         try { localStorage.removeItem(k); } catch (_) {}
+        syncHashState();
+      },
+      keys(prefix = '') {
+        const set = new Set(_nameStore.keys());
+        try {
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k) set.add(k);
+          }
+        } catch (_) {}
+        return Array.from(set).filter(k => k.startsWith(prefix));
       }
     };
     window.safeStore = safeStore;
+    globalThis.safeStore = safeStore;
 
     // settings saved before the rename (ZenOS): copied once to the new keys
     for (const [old, now] of [['zenos_theme', 'orto_theme'], ['zenvault_theme', 'orto_theme'], ['zenosServer', 'ortoServer'], ['zenosServers', 'ortoServers']]) {
@@ -3639,13 +3796,22 @@
       const save = () => {
         clearTimeout(timer);
         timer = setTimeout(async () => {
-          try { const blob = await ZEN.encrypt(entries, pair); await idb('readwrite', s => s.put(blob, key())); } catch (_) { }
-        }, 1500);
+          try {
+            const blob = await ZEN.encrypt(entries, pair);
+            try { await idb('readwrite', s => s.put(blob, key())); } catch (_) {}
+            safeStore.setItem('orto_cache_' + key(), blob);
+          } catch (_) { }
+        }, 250);
       };
       return {
         async load() {
           try {
-            const blob = await idb('readonly', s => s.get(key())), cached = blob && await ZEN.decrypt(blob, pair);
+            let blob = null;
+            try { blob = await idb('readonly', s => s.get(key())); } catch (_) {}
+            if (!blob) {
+              blob = safeStore.getItem('orto_cache_' + key());
+            }
+            const cached = blob && await ZEN.decrypt(blob, pair);
             if (cached) Object.assign(entries, cached);
           } catch (_) { }
           return Object.fromEntries(Object.entries(entries).map(([soul, e]) => [soul, e.b]));
@@ -3654,6 +3820,14 @@
         same: (soul, sig) => !!entries[soul] && entries[soul].c === sig,
         fresh: (soul, updatedAt) => entries[soul]?.b.updatedAt === updatedAt,
         set(soul, sig, record) { entries[soul] = { c: sig, b: structuredClone(record) }; save(); },
+        async flush() {
+          clearTimeout(timer);
+          try {
+            const blob = await ZEN.encrypt(entries, pair);
+            try { await idb('readwrite', s => s.put(blob, key())); } catch (_) {}
+            safeStore.setItem('orto_cache_' + key(), blob);
+          } catch (_) { }
+        },
         del(soul) { delete entries[soul]; save(); }
       };
     }
@@ -3721,11 +3895,7 @@
       }
     }
 
-    const safeStore = window.safeStore || {
-      getItem(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
-      setItem(k, v) { try { localStorage.setItem(k, String(v)); } catch (_) {} },
-      removeItem(k) { try { localStorage.removeItem(k); } catch (_) {} }
-    };
+    const safeStore = window.safeStore;
 
     async function loginWithFreenetKey(secretHex) {
       try {
@@ -3733,6 +3903,13 @@
         safeStore.setItem('orto_freenet_secret', kp.secretHex);
         safeStore.setItem('orto_freenet_pub', kp.pubHex);
         safeStore.setItem('orto_freenet_persona', kp.persona);
+        safeStore.removeItem('orto_locked');
+
+        if (window.parent !== window) {
+          try {
+            window.parent.postMessage({ __freenet_shell__: true, type: 'hash', hash: '#sk=' + kp.secretHex }, '*');
+          } catch (_) {}
+        }
 
         const userInput = 'fn_' + kp.pubHex.slice(0, 16);
         const passInput = kp.secretHex;
@@ -3857,6 +4034,18 @@
       };
     }
 
+    const fnForgetBtn = document.getElementById('fn-forget-btn');
+    if (fnForgetBtn) {
+      fnForgetBtn.onclick = (e) => {
+        e.preventDefault();
+        if (!confirm('Vuoi rimuovere questa identità da questo dispositivo? Assicurati di averne fatto il backup!')) return;
+        safeStore.removeItem('orto_freenet_secret');
+        safeStore.removeItem('orto_freenet_pub');
+        safeStore.removeItem('orto_freenet_persona');
+        renderLoginMode();
+      };
+    }
+
     const VISO_KEY = "GzHy3jnEtj26EoGqMsBpoawcY378hK9kp91rTcNYiAac";
     const ORTO_KEY = "9eBjDkH6ZXA6ehUyWBBjT6Xg4tQE4ALZjSsgXERds4yZ";
     const fnVisoBtn = document.getElementById('fn-viso-btn');
@@ -3911,7 +4100,8 @@
         notesCache.set(id, sig, note);
         triggerRender();
       }, (souls) => { // drop cached notes that were deleted from another device
-        const gone = Object.keys(localNotes).filter((id) => !souls.has(id));
+        if (!souls || souls.size === 0) return;
+        const gone = Object.keys(localNotes).filter((id) => id !== 'new' && !souls.has(id));
         gone.forEach((id) => { delete localNotes[id]; notesCache.del(id); if (selectedNoteId === id) selectedNoteId = null; });
         if (gone.length) triggerRender();
       });
@@ -4253,15 +4443,18 @@
 
       let note = localNotes[selectedNoteId];
       if (selectedNoteId === 'new') {
-        note = { title: '', body: '', timestamp: Date.now(), pinned: false };
+        if (!localNotes['new']) {
+          localNotes['new'] = { id: 'new', title: '', body: '', timestamp: Date.now(), pinned: false, cat: '' };
+        }
+        note = localNotes['new'];
       }
 
       if (note) {
-        if (!titleInput.dataset.focused) {
-          titleInput.value = note.title;
+        if (document.activeElement !== titleInput && !titleInput.dataset.focused) {
+          titleInput.value = note.title || '';
         }
-        if (!textarea.dataset.focused) {
-          textarea.value = note.body;
+        if (document.activeElement !== textarea && !textarea.dataset.focused) {
+          textarea.value = note.body || '';
         }
 
         // Render preview with marked and custom interactive checkboxes
@@ -4459,7 +4652,16 @@
           timestamp: Date.now()
         };
         if (isNew) {
+          delete localNotes['new'];
           selectedNoteId = soul;
+        }
+        const sig = JSON.stringify([title, body, currentNote.cat || '', isPinned, false, Date.now()]);
+        notesCache.set(soul, sig, localNotes[soul]);
+        if (typeof notesCache.flush === 'function') {
+          await notesCache.flush();
+        }
+        if (typeof window.syncHashState === 'function') {
+          await window.syncHashState(true);
         }
         if (!silent) showToast(isNew ? "Note encrypted & secured" : "Note saved");
         triggerRender();
@@ -4479,7 +4681,10 @@
 
     function handleTitleInput(val) {
       if (selectedNoteId) {
-        if (localNotes[selectedNoteId]) localNotes[selectedNoteId].title = val;
+        if (!localNotes[selectedNoteId]) {
+          localNotes[selectedNoteId] = { id: selectedNoteId, title: '', body: '', timestamp: Date.now(), pinned: false, cat: '' };
+        }
+        localNotes[selectedNoteId].title = val;
         queueAutoSave();
         triggerRender();
       }
@@ -4487,7 +4692,10 @@
 
     function handleBodyInput(val) {
       if (selectedNoteId) {
-        if (localNotes[selectedNoteId]) localNotes[selectedNoteId].body = val;
+        if (!localNotes[selectedNoteId]) {
+          localNotes[selectedNoteId] = { id: selectedNoteId, title: '', body: '', timestamp: Date.now(), pinned: false, cat: '' };
+        }
+        localNotes[selectedNoteId].body = val;
         updateStats(val);
         queueAutoSave();
       }
@@ -4710,6 +4918,9 @@ print("Welcome to Orto!")
 
     // ── Helper Actions ──
     function selectNote(id) {
+      if (selectedNoteId === 'new' && id !== 'new') {
+        delete localNotes['new'];
+      }
       selectedNoteId = id;
       isEditMode = false;
       triggerRender();
@@ -4724,16 +4935,17 @@ print("Welcome to Orto!")
     function createNewNote() {
       selectedNoteId = 'new';
       isEditMode = true;
+      localNotes['new'] = { id: 'new', title: '', body: '', timestamp: Date.now(), pinned: false, cat: '' };
 
       const titleInput = document.getElementById('editor-title');
       const textarea = document.getElementById('editor-textarea');
-      titleInput.value = '';
-      textarea.value = '';
+      if (titleInput) titleInput.value = '';
+      if (textarea) textarea.value = '';
 
       triggerRender();
 
       setTimeout(() => {
-        titleInput.focus();
+        titleInput?.focus();
       }, 50);
 
       if (window.innerWidth <= 768) {
@@ -4815,6 +5027,12 @@ print("Welcome to Orto!")
         await os.deleteVaultNote(soul);
         delete localNotes[soul];
         notesCache.del(soul);
+        if (typeof notesCache.flush === 'function') {
+          await notesCache.flush();
+        }
+        if (typeof window.syncHashState === 'function') {
+          await window.syncHashState(true);
+        }
         selectedNoteId = null;
         showToast("Note erased from network");
         closePopovers();
@@ -4952,8 +5170,56 @@ print("Welcome to Orto!")
 
     function logout() {
       stopMedia();
-      try { if (hasServiceWorker()) navigator.serviceWorker.controller?.postMessage({ type: 'orto-media-clear' }); } catch (_) { } // the worker must not keep the key
-      window.location.reload();
+      safeStore.setItem('orto_locked', '1');
+      try { if (hasServiceWorker()) navigator.serviceWorker.controller?.postMessage({ type: 'orto-media-clear' }); } catch (_) { }
+
+      // Close active sessions
+      if (os) { try { os.close(); } catch (_) {} }
+      if (root) { try { root.close(); } catch (_) {} }
+      os = null;
+      root = null;
+      pair = null;
+      isAuthenticated = false;
+      window.os = null;
+      window.pair = null;
+
+      // Reset caches and active note
+      for (const c of [bmCache, notesCache, calCache, tasksCache]) {
+        try { c.reset(); } catch (_) {}
+      }
+      for (const k of Object.keys(localNotes)) {
+        delete localNotes[k];
+      }
+      selectedNoteId = null;
+
+      // In Freenet mode, remove #sk= from parent hash so reload doesn't auto-unlock
+      if (window.parent !== window) {
+        const curHash = location.hash || '';
+        const vMatch = curHash.match(/([#&]v=[A-Za-z0-9_-]+)/);
+        const cleanHash = vMatch ? '#' + vMatch[1].replace(/^[#&]/, '') : '#';
+        try {
+          window.parent.postMessage({ __freenet_shell__: true, type: 'hash', hash: cleanHash }, '*');
+        } catch (_) {}
+
+        // Strip ?viso=... and ?pk=... from top-level URL
+        if (location.search.includes('pk=') || location.search.includes('viso=')) {
+          try {
+            const cleanOrigin = (location.origin && location.origin !== 'null') ? location.origin : `${location.protocol}//${location.host}`;
+            window.parent.postMessage({ __freenet_shell__: true, type: 'navigate', href: cleanOrigin + location.pathname + (cleanHash !== '#' ? cleanHash : '') }, '*');
+          } catch (_) {}
+        }
+      }
+
+      try {
+        history.replaceState(null, '', location.pathname);
+      } catch (_) {}
+
+      // Transition UI to locked login screen
+      document.getElementById('dashboard')?.classList.add('hidden');
+      document.getElementById('login-screen')?.classList.remove('hidden');
+      renderLoginMode();
+
+      showToast("Orto bloccato");
     }
 
     function showToast(message) {
@@ -6217,15 +6483,77 @@ print("Welcome to Orto!")
 
     // On-device tag suggestions (web/classifier.js, optional add-on). Off by default; the model is only fetched on first use.
     const aiMod = () => import('./classifier.js');
-    async function aiSettings(box, status) {
-      const ai = await aiMod();
-      const installed = await ai.aiInstalled(serverUrl || '');
-      box.checked = installed && ai.aiEnabled(); box.disabled = !installed;
-      status.textContent = installed ? 'Installed on this server. Credit: Gist and Emo by Desert Ant Labs.' : 'Not installed on this server. Admin: run scripts/install-gist.mjs, or rebuild the Docker image (docker compose up -d --build).';
-      box.onchange = () => {
-        if (box.checked && !confirm('The first suggestion downloads about 75 MB from huggingface.co (then it is cached). The text you tag never leaves this browser. Turn it on?')) { box.checked = false; return; }
-        ai.setAiEnabled(box.checked);
-      };
+    async function aiSettings(box, status, btnDl) {
+      try {
+        const ai = await aiMod();
+        const installed = await ai.aiInstalled(serverUrl || '');
+        box.checked = installed && ai.aiEnabled();
+        box.disabled = !installed;
+
+        const updateStatus = () => {
+          if (!installed) {
+            status.textContent = isFreenet ? 'Pacchetto modelli non trovato su Freenet.' : 'Not installed on this server.';
+            if (btnDl) btnDl.style.display = 'none';
+            return;
+          }
+          const isDownloaded = safeStore.getItem('orto_ai_downloaded') === '1';
+          if (isDownloaded) {
+            status.textContent = '✓ Modelli scaricati e pronti all\'uso offline.';
+            if (btnDl) {
+              btnDl.innerHTML = '<i class="ti ti-check"></i> Modelli scaricati (100%)';
+              btnDl.disabled = true;
+              btnDl.style.display = 'inline-flex';
+            }
+          } else {
+            status.textContent = box.checked
+              ? (isFreenet ? 'Attivo. Clicca "Scarica modelli adesso" per precaricarli, oppure verranno scaricati al primo utilizzo nella nota.' : 'Enabled. Models will download on first use in a note.')
+              : (isFreenet ? 'Pronto all\'attivazione.' : 'Ready to enable.');
+            if (btnDl) {
+              btnDl.style.display = box.checked ? 'inline-flex' : 'none';
+              btnDl.disabled = false;
+              btnDl.innerHTML = '<i class="ti ti-download"></i> Scarica modelli adesso (~75 MB)';
+            }
+          }
+        };
+
+        updateStatus();
+
+        box.onchange = () => {
+          ai.setAiEnabled(box.checked);
+          updateStatus();
+        };
+
+        if (btnDl) {
+          btnDl.onclick = async () => {
+            btnDl.disabled = true;
+            status.textContent = 'Avvio caricamento modelli…';
+            try {
+              await ai.preloadModels({
+                base: serverUrl || '',
+                onProgress: (p) => {
+                  if (typeof p === 'number' && p >= 0 && p <= 1) {
+                    const pct = Math.round(p * 100);
+                    status.textContent = `Scaricamento modelli da HuggingFace: ${pct}%`;
+                    btnDl.textContent = `Scaricamento… ${pct}%`;
+                  }
+                }
+              });
+              safeStore.setItem('orto_ai_downloaded', '1');
+              box.checked = true;
+              ai.setAiEnabled(true);
+              updateStatus();
+              showToast('Modelli scaricati e pronti all\'uso offline!');
+            } catch (err) {
+              status.textContent = 'Errore: ' + err.message;
+              btnDl.disabled = false;
+              btnDl.innerHTML = '<i class="ti ti-download"></i> Riprova download';
+              showToast('Errore download modelli: ' + err.message);
+            }
+          };
+        }
+      } catch (err) {
+        status.textContent = 'Errore inizializzazione AI: ' + err.message;
+      }
     }
     async function aiSuggest({ text, existing = [], apply, title = 'Suggest tags' }) {
       const ai = await aiMod();
@@ -6294,10 +6622,15 @@ print("Welcome to Orto!")
         <h4>${isFreenet ? 'Freenet Sovereign Identity' : 'Freenet Sync (P2P Sovereign)'}</h4>
         <p class="hint">${isFreenet ? 'Orto è in esecuzione come app nativa sovrana direttamente sul tuo nodo Freenet locale.' : 'Replica crittografata peer-to-peer tra i tuoi dispositivi tramite rete Freenet (zero VPS, zero porte aperte).'}</p>
         <div id="st-freenet"><p class="hint">Caricamento stato Freenet…</p></div>
-        ${isFreenet ? '' : `<h4>Tag and emoji suggestions</h4>
-        <p class="hint">Suggests tags for notes and bookmarks (<b>Gist</b>) and an emoji for a note's title (<b>Emo</b>), small models by <a href="https://desertant.com/models/gist/" target="_blank" rel="noopener">Desert Ant Labs</a> that run in this browser: your text is not sent anywhere. The first time, the browser downloads about 75 MB from huggingface.co.</p>
-        <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="st-ai"> Suggest tags and emoji on this device</label>
-        <p class="hint" id="st-ai-status"></p>`}
+        <h4>${isFreenet ? 'Suggerimenti Tag ed Emoji (Desert Ant Labs)' : 'Tag and emoji suggestions'}</h4>
+        <p class="hint">${isFreenet ? 'Suggerimenti di tag (<b>Gist</b>) ed emoji (<b>Emo</b>) eseguiti localmente nel browser tramite WebAssembly. Il testo non esce mai dal dispositivo. Al primo avvio o premendo il pulsante sotto, vengono scaricati ~75 MB da huggingface.co e memorizzati nella cache locale.' : 'Suggests tags for notes and bookmarks (<b>Gist</b>) and an emoji for a note\'s title (<b>Emo</b>), small models by <a href="https://desertant.com/models/gist/" target="_blank" rel="noopener">Desert Ant Labs</a> that run in this browser: your text is not sent anywhere. The first time, the browser downloads about 75 MB from huggingface.co.'}</p>
+        <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="st-ai"> ${isFreenet ? 'Attiva suggerimenti tag ed emoji su questo dispositivo' : 'Suggest tags and emoji on this device'}</label>
+        <div id="st-ai-ctrl" style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <button class="cal-btn" id="st-ai-download" style="font-size:12px;display:none;"><i class="ti ti-download"></i> Scarica modelli adesso (~75 MB)</button>
+          <span class="hint" id="st-ai-status" style="font-size:12px;"></span>
+        </div>
+        <p class="hint" style="font-size:11.5px;color:var(--text-muted);margin-top:4px;">
+          <i class="ti ti-info-circle"></i> ${isFreenet ? 'Una volta attivati, troverai i pulsanti <b>Suggest tags</b> e <b>Suggest emoji</b> nel menu (···) in alto a destra all\'interno di ogni nota.' : 'Once enabled, you will find <b>Suggest tags</b> and <b>Suggest emoji</b> in the note options menu (···).'}</p>
         ${isFreenet ? '' : '<h4>Shared links</h4><div id="st-shares"><p class="hint">Loading…</p></div>'}
         ${isFreenet || isDemo ? '' : `<h4>Password</h4>
         <p class="hint">Changes the encryption key: everything is re-encrypted and your other sessions are signed out. Export first; it can take a while with many files.</p>
@@ -6467,7 +6800,7 @@ print("Welcome to Orto!")
         try { await root.changePassword(p1); if (!os._space) Object.assign(os, { key: root.key, _auth: root._auth }); showToast('Password changed'); closeModal(); }
         catch (e) { showToast(e.message + ' (nothing is lost: you can retry with the same new password)'); $('st-pw').disabled = false; }
       };
-      if ($('st-ai') && $('st-ai-status')) aiSettings($('st-ai'), $('st-ai-status'));
+      if ($('st-ai') && $('st-ai-status')) aiSettings($('st-ai'), $('st-ai-status'), $('st-ai-download'));
       const box = $('st-shares');
       if (box) {
         const drawShares = async () => {
@@ -7257,16 +7590,63 @@ print("Welcome to Orto!")
     });
     document.getElementById('login-btn').addEventListener('click', login);
 
-    // Check Viso callback on page load (executed at the very end when all components and caches are ready)
-    const urlParams = new URLSearchParams(location.search);
-    if (urlParams.has('pk')) {
-      const pk = urlParams.get('pk');
-      let sk = safeStore.getItem('orto_freenet_secret');
-      if (!sk) {
-        sk = Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
+    const editorTitleEl = document.getElementById('editor-title');
+    const editorTextareaEl = document.getElementById('editor-textarea');
+    if (editorTitleEl) {
+      editorTitleEl.addEventListener('focus', () => { editorTitleEl.dataset.focused = '1'; });
+      editorTitleEl.addEventListener('blur', () => { delete editorTitleEl.dataset.focused; });
+    }
+    if (editorTextareaEl) {
+      editorTextareaEl.addEventListener('focus', () => { editorTextareaEl.dataset.focused = '1'; });
+      editorTextareaEl.addEventListener('blur', () => { delete editorTextareaEl.dataset.focused; });
+    }
+
+    // Flush notes on page hide / tab close
+    window.addEventListener('beforeunload', () => {
+      if (selectedNoteId && isEditMode) {
+        saveActiveNote(true);
       }
-      history.replaceState(null, '', location.pathname + (location.hash || ''));
-      loginWithFreenetKey(sk);
+    });
+    window.addEventListener('pagehide', () => {
+      if (selectedNoteId && isEditMode) {
+        saveActiveNote(true);
+      }
+    });
+
+    // Check Viso callback or saved Freenet identity on page load (executed at the very end when all components and caches are ready)
+    const urlParams = new URLSearchParams(location.search);
+    const hashStr = location.hash || '';
+
+    // Restore state from hash parameter v= if present
+    if (typeof window.restoreFromHash === 'function') {
+      await window.restoreFromHash();
+    }
+
+    const isLocked = safeStore.getItem('orto_locked') === '1';
+
+    if (!isLocked) {
+      if (urlParams.has('pk')) {
+        const pk = urlParams.get('pk');
+        let sk = safeStore.getItem('orto_freenet_secret');
+        if (!sk) {
+          sk = Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
+        }
+        history.replaceState(null, '', location.pathname + (location.hash || ''));
+        await loginWithFreenetKey(sk);
+      } else if (isFreenet) {
+        const hashMatch = hashStr.match(/#sk=([0-9a-fA-F]{64})/);
+        let sk = hashMatch ? hashMatch[1] : null;
+        if (!sk) {
+          sk = safeStore.getItem('orto_freenet_secret');
+        }
+        if (sk && /^[0-9a-fA-F]{64}$/.test(sk)) {
+          await loginWithFreenetKey(sk);
+        }
+      }
+    } else {
+      document.getElementById('dashboard')?.classList.add('hidden');
+      document.getElementById('login-screen')?.classList.remove('hidden');
+      renderLoginMode();
     }
   </script>
 </body>

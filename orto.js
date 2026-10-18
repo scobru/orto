@@ -304,20 +304,71 @@ export class Orto {
 
   // ─── transport ──────────────────────────────────────────────────────
 
+  _initMemStore() {
+    if (this._memStore) return;
+    this._memStore = new Map();
+    if (typeof globalThis.window !== 'undefined' && globalThis.window.name) {
+      try {
+        const raw = globalThis.window.name;
+        if (raw.startsWith('{"__orto__"') || raw.includes('"__orto__":true')) {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.__orto__ && parsed.data) {
+            for (const [k, v] of Object.entries(parsed.data)) {
+              this._memStore.set(k, String(v));
+            }
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  _persistNameStore() {
+    if (typeof globalThis.window === 'undefined') return;
+    try {
+      if (!this._memStore) return;
+      const data = Object.fromEntries(this._memStore);
+      globalThis.window.name = JSON.stringify({ __orto__: true, data });
+    } catch (_) {}
+  }
+
   _safeStorageGet(k) {
-    try { return localStorage.getItem(k); } catch (_) { return this._memStore ? this._memStore.get(k) : null; }
+    if (typeof globalThis.safeStore !== 'undefined' && typeof globalThis.safeStore.getItem === 'function') {
+      return globalThis.safeStore.getItem(k);
+    }
+    this._initMemStore();
+    try {
+      const v = localStorage.getItem(k);
+      if (v !== null) return v;
+    } catch (_) {}
+    return this._memStore.get(k) ?? null;
   }
   _safeStorageSet(k, v) {
-    if (!this._memStore) this._memStore = new Map();
-    this._memStore.set(k, v);
-    try { localStorage.setItem(k, v); } catch (_) {}
+    if (typeof globalThis.safeStore !== 'undefined' && typeof globalThis.safeStore.setItem === 'function') {
+      globalThis.safeStore.setItem(k, v);
+      return;
+    }
+    this._initMemStore();
+    const strVal = String(v);
+    this._memStore.set(k, strVal);
+    this._persistNameStore();
+    try { localStorage.setItem(k, strVal); } catch (_) {}
   }
   _safeStorageRemove(k) {
-    if (this._memStore) this._memStore.delete(k);
+    if (typeof globalThis.safeStore !== 'undefined' && typeof globalThis.safeStore.removeItem === 'function') {
+      globalThis.safeStore.removeItem(k);
+      return;
+    }
+    this._initMemStore();
+    this._memStore.delete(k);
+    this._persistNameStore();
     try { localStorage.removeItem(k); } catch (_) {}
   }
-  _safeStorageKeys(prefix) {
-    const set = new Set(this._memStore ? this._memStore.keys() : []);
+  _safeStorageKeys(prefix = '') {
+    if (typeof globalThis.safeStore !== 'undefined' && typeof globalThis.safeStore.keys === 'function') {
+      return globalThis.safeStore.keys(prefix);
+    }
+    this._initMemStore();
+    const set = new Set(this._memStore.keys());
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
@@ -363,7 +414,7 @@ export class Orto {
         if (this._subs) {
           for (const s of this._subs) {
             if (s.coll === coll || s.coll === '_spaces') {
-              try { s.handle({ coll, soul, data: rec.data, updated_at: rec.updatedAt }); } catch (_) {}
+              try { s.handle({ coll, record: rec, soul, data: rec.data, updated_at: rec.updatedAt }); } catch (_) {}
             }
           }
         }
@@ -1133,7 +1184,7 @@ export class Orto {
     // 3. Fallback: legacy server link
     const [token, payload] = hash.split('.');
     let p; try { p = JSON.parse(new TextDecoder().decode(fromB64u(payload))); } catch (_) {}
-    if (p?.k) {
+    if (base.mode === 'freenet' && p?.k) {
       const spaceId = 'sp_' + Date.now().toString(36);
       let list = [];
       try { list = JSON.parse(base._safeStorageGet('orto_freenet_spaces') || '[]'); } catch (_) {}

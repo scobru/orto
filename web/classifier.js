@@ -4,25 +4,65 @@
 // it with postMessage. The text never leaves the browser; the model files (Gist about 75 MB) come from huggingface.co on first use.
 const FLAG = 'orto_ai_tags';
 
-export function aiEnabled() { try { return localStorage.getItem(FLAG) === '1'; } catch (_) { return false; } }
-export function setAiEnabled(on) { try { if (on) localStorage.setItem(FLAG, '1'); else localStorage.removeItem(FLAG); } catch (_) { } }
+const _memStore = new Map();
+function getStore() {
+  if (typeof globalThis !== 'undefined' && globalThis.safeStore) return globalThis.safeStore;
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem) return localStorage;
+  } catch (_) {}
+  return {
+    getItem: (k) => _memStore.get(k) ?? null,
+    setItem: (k, v) => _memStore.set(k, String(v)),
+    removeItem: (k) => _memStore.delete(k),
+  };
+}
+
+export function aiEnabled() {
+  try {
+    const s = getStore();
+    return s ? s.getItem(FLAG) === '1' : false;
+  } catch (_) {
+    return false;
+  }
+}
+
+export function setAiEnabled(on) {
+  try {
+    const s = getStore();
+    if (!s) return;
+    if (on) s.setItem(FLAG, '1');
+    else s.removeItem(FLAG);
+  } catch (_) { }
+}
+
+const resolveUrl = (base, path) => {
+  if (base) return base + path;
+  if (globalThis.location?.pathname?.includes('/v1/contract/')) {
+    const clean = path.replace(/^\//, '');
+    const m = globalThis.location.pathname.match(/^(\/v1\/contract\/[^/]+(?:\/[^/]+)?)/);
+    if (m) return m[1].replace(/\/$/, '') + '/' + clean;
+    return './' + clean;
+  }
+  return path;
+};
 
 /** Is the add-on installed on the server the app talks to? `base` is that server's URL ('' = same origin). */
 export async function aiInstalled(base = '') {
-  try { return (await fetch(base + '/models/gist/manifest.json', { cache: 'no-store' })).ok; } catch (_) { return false; }
+  try { return (await fetch(resolveUrl(base, '/models/gist/manifest.json'), { cache: 'no-store' })).ok; } catch (_) { return false; }
 }
 
 /** Does the installed add-on include this model ('gist' | 'emo')? Installs from before Emo only have Gist. */
 export async function aiHas(name, base = '') {
-  try { const m = await (await fetch(base + '/models/gist/manifest.json', { cache: 'no-store' })).json(); return (m.models || ['gist']).includes(name); } catch (_) { return false; }
+  try { const m = await (await fetch(resolveUrl(base, '/models/gist/manifest.json'), { cache: 'no-store' })).json(); return (m.models || ['gist']).includes(name); } catch (_) { return false; }
 }
 
 // A classifier is { classify(text, topK) -> [{ slug, name, score }], emoji(text, limit) -> [{ emoji, confidence }] }. loadClassifier() makes
 // the iframe one (each model is loaded on its first use); tests plug their own.
-let current = null, loading = null;
+let current = null, loading = null, activeOnProgress = null;
 export function setClassifier(c) { current = c; loading = null; }
 
 export function loadClassifier({ base = '', onProgress } = {}) {
+  if (onProgress) activeOnProgress = onProgress;
   if (current) return Promise.resolve(current);
   return loading ||= (async () => {
     if (!(await aiInstalled(base))) throw new Error('Tag suggestions are not installed on this server (run scripts/install-gist.mjs).');
@@ -30,14 +70,17 @@ export function loadClassifier({ base = '', onProgress } = {}) {
     frame.setAttribute('sandbox', 'allow-scripts'); // no allow-same-origin: opaque origin, cannot read the app's storage
     frame.setAttribute('aria-hidden', 'true');
     frame.style.cssText = 'position:absolute;width:0;height:0;border:0;visibility:hidden';
-    frame.src = base + '/models/gist/host.html';
+    frame.src = resolveUrl(base, '/models/gist/host.html');
     const pending = new Map(); let seq = 0, ready;
     const isReady = new Promise((res) => { ready = res; });
     addEventListener('message', (e) => {
       if (e.source !== frame.contentWindow) return;
       const m = e.data || {};
       if (m.event === 'ready') ready();
-      else if (m.event === 'progress') onProgress?.(m.p);
+      else if (m.event === 'progress') {
+        onProgress?.(m.p);
+        activeOnProgress?.(m.p);
+      }
       else if (m.event === 'error') { for (const p of pending.values()) p.rej(new Error(m.error)); pending.clear(); }
       else if (pending.has(m.id)) { const p = pending.get(m.id); pending.delete(m.id); m.ok ? p.res(m) : p.rej(new Error(m.error || 'failed')); }
     });
@@ -59,8 +102,18 @@ export function loadClassifier({ base = '', onProgress } = {}) {
     return (current = {
       classify: async (text, topK = 4) => (await use('load', { text, topK })).topics,
       emoji: async (text, limit = 5) => (await use('loadEmo', { text, topK: limit })).emoji,
+      preload: async () => {
+        await (loaded['loadEmo'] ||= call('loadEmo'));
+        await (loaded['load'] ||= call('load'));
+      }
     });
   })().catch((err) => { loading = null; throw err; });
+}
+
+export async function preloadModels(opts = {}) {
+  const c = await loadClassifier(opts);
+  if (c.preload) await c.preload();
+  return true;
 }
 
 // Gist's topic names are only known at run time, so the emoji are matched on the name, with a neutral fallback.
