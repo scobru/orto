@@ -8,3 +8,4 @@ data/
 target/
 contracts/vault/build/
 web/models/
+graphify-out/

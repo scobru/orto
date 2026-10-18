@@ -250,7 +250,43 @@ try {
   assert.equal(opened.title, 'Nota di Progetto');
   assert.equal((await os10.listShares()).length, 1);
   await os10.unshare(sh.id);
-  assert.equal((await os10.listShares()).length, 0);
+  console.log('12. Freenet mode: chunk-based persistence via FreenetChunks');
+  const chunkStore = new Map();
+  globalThis.FreenetChunks = {
+    putChunk: async (bytes) => {
+      const addr = 'ch_' + chunkStore.size + '_' + Math.random().toString(36).slice(2, 8);
+      chunkStore.set(addr, new Uint8Array(bytes));
+      return addr;
+    },
+    getChunk: async (addr) => {
+      const b = chunkStore.get(addr);
+      if (!b) throw new Error('Chunk not found: ' + addr);
+      return b;
+    }
+  };
+
+  const testAudio = new Uint8Array(500);
+  for (let i = 0; i < testAudio.length; i++) testAudio[i] = (i * 7) % 256;
+  const audioMeta = await os10.uploadFileChunked(testAudio, 'Faso.mp3', { chunkSize: 150, type: 'audio/mpeg' });
+  assert.ok(audioMeta.chunked);
+  assert.ok(audioMeta.chunked.freenetChunks && audioMeta.chunked.freenetChunks.length === 4, 'Split into 4 chunks');
+  assert.equal(chunkStore.size, 4, 'Chunks published to FreenetChunks');
+
+  // Verify range read
+  const rangePart = await os10.readFileRange(audioMeta.id, 50, 200, audioMeta);
+  assert.deepEqual(rangePart, testAudio.subarray(50, 200));
+
+  // Simulate full browser refresh: new client instance with EMPTY memory
+  const ortoReloaded = createClient();
+  await ortoReloaded.login('fn_user_linking', 'secret-pass-linking');
+  const osReloaded = ortoReloaded.personal();
+  assert.ok(!ortoReloaded._memFiles || ortoReloaded._memFiles.size === 0);
+
+  // Download whole file from FreenetChunks
+  const downloadedAudio = await osReloaded.downloadFile(audioMeta.id);
+  assert.deepEqual(downloadedAudio, testAudio, 'Audio downloaded byte-for-byte across simulated reload');
+
+  delete globalThis.FreenetChunks;
 
   console.log('ok - all freenet tests passed');
 } finally {

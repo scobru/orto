@@ -860,6 +860,9 @@ export class Orto {
    */
   async uploadFile(data, name, { encrypt = true, type, thumb, addedAt, folder, album, playlist } = {}) {
     this._needKey();
+    if (this.mode === 'freenet' && typeof globalThis !== 'undefined' && globalThis.FreenetChunks) {
+      return this.uploadFileChunked(data, name, { type, thumb, addedAt, folder, album, playlist });
+    }
     const body = encrypt ? new TextEncoder().encode(await this.encrypt(toB64(data))) : data;
     const { id } = await (await this._fetch('POST', '/files', body)).json();
     const meta = { id, name, size: data.length, encrypted: encrypt, addedAt: addedAt ?? Date.now(), ...(type && { type }), ...(thumb && { thumb }),
@@ -932,18 +935,36 @@ export class Orto {
     this._needKey();
     const blob = data instanceof Blob ? data : new Blob([data]);
     const size = blob.size, n = Math.max(1, Math.ceil(size / chunkSize)), nonce = crypto.getRandomValues(new Uint8Array(16));
-    const { id: tmp } = await this._json('POST', '/files/begin');
-    let sent = 0;
-    for (let i = 0; i < n; i++) {
-      const plain = new Uint8Array(await blob.slice(i * chunkSize, (i + 1) * chunkSize).arrayBuffer());
-      const body = await sealChunk(this.key, plain, nonce, i, n);
-      await this._fetch('PUT', `/files/${tmp}/append`, body, undefined, { 'X-Offset': String(sent) });
-      sent += body.length;
-      onProgress?.((i + 1) / n);
+    const fnChunks = this.mode === 'freenet' && typeof globalThis !== 'undefined' && globalThis.FreenetChunks ? globalThis.FreenetChunks : null;
+    let chunkAddrs = null;
+    let id;
+
+    if (fnChunks) {
+      chunkAddrs = [];
+      for (let i = 0; i < n; i++) {
+        const plain = new Uint8Array(await blob.slice(i * chunkSize, (i + 1) * chunkSize).arrayBuffer());
+        const body = await sealChunk(this.key, plain, nonce, i, n);
+        const addr = await fnChunks.putChunk(body);
+        chunkAddrs.push(addr);
+        onProgress?.((i + 1) / n);
+      }
+      id = 'fn_' + chunkAddrs[0].slice(0, 16) + '_' + Date.now().toString(36);
+    } else {
+      const { id: tmp } = await this._json('POST', '/files/begin');
+      let sent = 0;
+      for (let i = 0; i < n; i++) {
+        const plain = new Uint8Array(await blob.slice(i * chunkSize, (i + 1) * chunkSize).arrayBuffer());
+        const body = await sealChunk(this.key, plain, nonce, i, n);
+        await this._fetch('PUT', `/files/${tmp}/append`, body, undefined, { 'X-Offset': String(sent) });
+        sent += body.length;
+        onProgress?.((i + 1) / n);
+      }
+      const fin = await this._json('POST', `/files/${tmp}/finish`);
+      id = fin.id;
     }
-    const { id } = await this._json('POST', `/files/${tmp}/finish`);
+
     const g = { folder: groupName('folder', folder), album: groupName('album', album), playlist: groupName('playlist', playlist) };
-    const meta = { id, name, size, encrypted: true, chunked: { size: chunkSize, n, nonce: toB64(nonce) }, addedAt: addedAt ?? Date.now(), ...(type && { type }), ...(thumb && { thumb }),
+    const meta = { id, name, size, encrypted: true, chunked: { size: chunkSize, n, nonce: toB64(nonce), ...(chunkAddrs && { freenetChunks: chunkAddrs }) }, addedAt: addedAt ?? Date.now(), ...(type && { type }), ...(thumb && { thumb }),
       ...Object.fromEntries(Object.entries(g).filter(([, v]) => v)) };
     await this.put('files', id, meta);
     return meta;
@@ -954,10 +975,24 @@ export class Orto {
     this._needKey();
     meta ??= await this._get('files', id);
     if (!meta?.chunked) return (await this.downloadFile(id, { meta })).subarray(start, end);
-    const { size: P, n, nonce } = meta.chunked, nonceBytes = fromB64(nonce);
+    const { size: P, n, nonce, freenetChunks } = meta.chunked, nonceBytes = fromB64(nonce);
     end = Math.min(end, meta.size);
     if (start >= end) return new Uint8Array(0);
     const first = Math.floor(start / P), last = Math.floor((end - 1) / P);
+
+    const fnChunks = typeof globalThis !== 'undefined' && globalThis.FreenetChunks ? globalThis.FreenetChunks : null;
+    if (freenetChunks && Array.isArray(freenetChunks) && fnChunks) {
+      const out = new Uint8Array(end - start);
+      for (let i = first; i <= last; i++) {
+        const addr = freenetChunks[i];
+        const encryptedChunk = await fnChunks.getChunk(addr);
+        const plain = await openChunk(this.key, encryptedChunk, nonceBytes, i, n);
+        const a = Math.max(start, i * P), b = Math.min(end, i * P + plain.length);
+        out.set(plain.subarray(a - i * P, b - i * P), a - start);
+      }
+      return out;
+    }
+
     const from = first * (P + GCM), to = last * (P + GCM) + chunkLen(meta, last);
     const whole = first === 0 && last === n - 1;
     const bytes = new Uint8Array(await (await this._fetch('GET', '/files/' + encodeURIComponent(id), undefined, undefined, whole ? undefined : { Range: `bytes=${from}-${to - 1}` })).arrayBuffer());
@@ -974,7 +1009,22 @@ export class Orto {
 
   // Re-encrypt a chunked file with `newKey`, chunk by chunk, and swap it in place. Safe to run twice: a file already on the new key is left alone.
   async _rekeyChunked(id, meta, oldKey, newKey) {
-    const { n, nonce } = meta.chunked, nonceBytes = fromB64(nonce), P = meta.chunked.size;
+    const { n, nonce, freenetChunks } = meta.chunked, nonceBytes = fromB64(nonce), P = meta.chunked.size;
+    const fnChunks = typeof globalThis !== 'undefined' && globalThis.FreenetChunks ? globalThis.FreenetChunks : null;
+    if (freenetChunks && Array.isArray(freenetChunks) && fnChunks) {
+      const firstChunk = await fnChunks.getChunk(freenetChunks[0]);
+      try { await openChunk(newKey, firstChunk, nonceBytes, 0, n); return false; } catch (_) {}
+      const newAddrs = [];
+      for (let i = 0; i < n; i++) {
+        const enc = await fnChunks.getChunk(freenetChunks[i]);
+        const plain = await openChunk(oldKey, enc, nonceBytes, i, n);
+        const body = await sealChunk(newKey, plain, nonceBytes, i, n);
+        newAddrs.push(await fnChunks.putChunk(body));
+      }
+      meta.chunked.freenetChunks = newAddrs;
+      await this.put('files', id, meta);
+      return true;
+    }
     const get = async (i) => new Uint8Array(await (await this._fetch('GET', '/files/' + encodeURIComponent(id), undefined, undefined, { Range: `bytes=${i * (P + GCM)}-${i * (P + GCM) + chunkLen(meta, i) - 1}` })).arrayBuffer());
     try { await openChunk(newKey, await get(0), nonceBytes, 0, n); return false; } catch (_) { } // already done
     const { id: tmp } = await this._json('POST', '/files/begin');
