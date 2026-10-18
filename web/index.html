@@ -6294,10 +6294,10 @@ print("Welcome to Orto!")
         <h4>${isFreenet ? 'Freenet Sovereign Identity' : 'Freenet Sync (P2P Sovereign)'}</h4>
         <p class="hint">${isFreenet ? 'Orto è in esecuzione come app nativa sovrana direttamente sul tuo nodo Freenet locale.' : 'Replica crittografata peer-to-peer tra i tuoi dispositivi tramite rete Freenet (zero VPS, zero porte aperte).'}</p>
         <div id="st-freenet"><p class="hint">Caricamento stato Freenet…</p></div>
-        <h4>Tag and emoji suggestions</h4>
+        ${isFreenet ? '' : `<h4>Tag and emoji suggestions</h4>
         <p class="hint">Suggests tags for notes and bookmarks (<b>Gist</b>) and an emoji for a note's title (<b>Emo</b>), small models by <a href="https://desertant.com/models/gist/" target="_blank" rel="noopener">Desert Ant Labs</a> that run in this browser: your text is not sent anywhere. The first time, the browser downloads about 75 MB from huggingface.co.</p>
         <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="st-ai"> Suggest tags and emoji on this device</label>
-        <p class="hint" id="st-ai-status"></p>
+        <p class="hint" id="st-ai-status"></p>`}
         ${isFreenet ? '' : '<h4>Shared links</h4><div id="st-shares"><p class="hint">Loading…</p></div>'}
         ${isFreenet || isDemo ? '' : `<h4>Password</h4>
         <p class="hint">Changes the encryption key: everything is re-encrypted and your other sessions are signed out. Export first; it can take a while with many files.</p>
@@ -6467,7 +6467,7 @@ print("Welcome to Orto!")
         try { await root.changePassword(p1); if (!os._space) Object.assign(os, { key: root.key, _auth: root._auth }); showToast('Password changed'); closeModal(); }
         catch (e) { showToast(e.message + ' (nothing is lost: you can retry with the same new password)'); $('st-pw').disabled = false; }
       };
-      aiSettings($('st-ai'), $('st-ai-status'));
+      if ($('st-ai') && $('st-ai-status')) aiSettings($('st-ai'), $('st-ai-status'));
       const box = $('st-shares');
       if (box) {
         const drawShares = async () => {
