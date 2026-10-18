@@ -3137,8 +3137,7 @@
     <!-- Blog pane: the user's public posts, with write support -->
     <section class="blog-pane" id="blog-pane">
       <div class="blog-list">
-        <div class="blog-list-head"><span style="display:flex;align-items:center;gap:6px"><button class="mobile-menu-btn" onclick="toggleSidebar()" title="Menu" aria-label="Menu"><i class="ti ti-menu-2"></i></button>Blog</span><span><a id="blog-rss-link" target="_blank" rel="noopener" title="RSS feed of your public posts">RSS</a> · <a id="blog-open-link" target="_blank" rel="noopener">Open public
-            page ↗</a></span></div>
+        <div class="blog-list-head"><span style="display:flex;align-items:center;gap:6px"><button class="mobile-menu-btn" onclick="toggleSidebar()" title="Menu" aria-label="Menu"><i class="ti ti-menu-2"></i></button>Blog</span><span id="blog-header-links"><span id="blog-rss-wrap"><a id="blog-rss-link" target="_blank" rel="noopener" title="RSS feed of your public posts">RSS</a> · </span><a id="blog-open-link" target="_blank" rel="noopener">Open public page ↗</a></span></div>
         <div style="display:flex;gap:8px;padding:8px 12px">
           <button class="cal-btn primary" onclick="blogEdit()"><i class="ti ti-plus"></i> New post</button>
         </div>
@@ -3645,6 +3644,113 @@
   <!-- App logic: talks to the Orto server; all encryption happens here -->
   <script type="module">
     import { Orto, DEFAULT_SERVER, normalizeServer, contactsToVcf, generatePassword, readShare } from './orto.js';
+
+    function encodeB64u(str) {
+      const bytes = new TextEncoder().encode(str);
+      let bin = '';
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+    function decodeB64u(str) {
+      const pad = str.length % 4 === 0 ? '' : '='.repeat(4 - (str.length % 4));
+      const bin = atob(str.replace(/-/g, '+').replace(/_/g, '/') + pad);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new TextDecoder().decode(bytes);
+    }
+    function blogShareUrl(p) {
+      if (isFreenet || (os && os.mode === 'freenet')) {
+        const data = { id: p.id, title: p.title, content: p.content, tags: p.tags, author: p.authorAlias || os?.username || 'user', createdAt: p.createdAt };
+        const payload = encodeB64u(JSON.stringify(data));
+        return `${location.protocol}//${location.host}${location.pathname}#fblog=${payload}`;
+      }
+      return `${serverUrl || location.origin}/blog/${encodeURIComponent(os?.username || 'user')}?post=${encodeURIComponent(p.id)}`;
+    }
+    function showPublicBlogOverlay(p) {
+      if (!p) return;
+      document.querySelector('.public-blog-overlay')?.remove();
+      const ov = document.createElement('div');
+      ov.className = 'public-blog-overlay';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:99999;overflow:auto;background:var(--bg-editor,#fff);color:var(--text-primary,#1c1f24);padding:32px 20px 80px;font:17px/1.65 var(--font-sans,system-ui,sans-serif)';
+      const author = p.authorAlias || p.author || os?.username || 'user';
+      const dateStr = p.createdAt ? new Date(p.createdAt).toLocaleDateString(navigator.language || 'en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
+      const tagsStr = p.tags ? (Array.isArray(p.tags) ? p.tags.join(', ') : String(p.tags)) : '';
+      const shareUrl = blogShareUrl(p);
+
+      const allOtherPosts = Object.values(window.__blogPosts || {}).filter(x => x && x.id !== p.id && !x.deleted).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      let otherHtml = '';
+      if (allOtherPosts.length) {
+        otherHtml = `
+          <div style="margin-top:48px;padding-top:24px;border-top:1px solid var(--border-color,#eaebed)">
+            <div style="font-weight:700;font-size:1.1rem;margin-bottom:16px;color:var(--text-primary)">More posts by ${escapeHtml(author)}</div>
+            <div style="display:flex;flex-direction:column;gap:12px">
+              ${allOtherPosts.map(op => `
+                <div style="padding:10px 14px;background:var(--input-bg,#f8f9fa);border:1px solid var(--border-color,#eaebed);border-radius:8px;cursor:pointer" onclick="showPublicBlogOverlay(window.__blogPosts['${escapeHtml(op.id)}'])">
+                  <div style="font-weight:600;color:var(--bear-red,#c4532f)">${escapeHtml(op.title || 'Untitled')}</div>
+                  <small style="color:var(--text-muted,#959ba6)">${op.createdAt ? new Date(op.createdAt).toLocaleDateString(navigator.language || 'en-US') : ''}${op.tags ? ' · #' + escapeHtml(String(op.tags)) : ''}</small>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      ov.innerHTML = `
+        <div style="max-width:700px;margin:0 auto">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:18px;border-bottom:1px solid var(--border-color,#eaebed);margin-bottom:28px">
+            <div>
+              <div style="font-weight:700;font-size:1.15rem;letter-spacing:-0.01em">${escapeHtml(author)}'s Blog</div>
+              <small style="color:var(--text-muted,#959ba6)">Public post on Orto · Freenet</small>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="cal-btn" id="pb-copy" title="Copy public link"><i class="ti ti-share"></i> Copy link</button>
+              <button class="cal-btn primary" id="pb-close"><i class="ti ti-x"></i> Close</button>
+            </div>
+          </div>
+          <article class="prose" style="line-height:1.75">
+            <h1 style="font-size:2.2rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:8px;line-height:1.25">${escapeHtml(p.title || 'Untitled')}</h1>
+            <div style="color:var(--text-muted,#959ba6);font-size:0.9rem;margin-bottom:32px">
+              ${dateStr ? `<span>${escapeHtml(dateStr)}</span>` : ''}
+              ${tagsStr ? `<span style="margin-left:12px;background:var(--tag-bg,rgba(196,83,47,0.08));color:var(--tag-text,#c4532f);padding:2px 8px;border-radius:4px;font-size:0.8rem">#${escapeHtml(tagsStr)}</span>` : ''}
+            </div>
+            <div id="pb-content" style="font-size:1.1rem">
+              ${window.marked ? DOMPurify.sanitize(window.marked.parse(p.content || '')) : escapeHtml(p.content || '').replace(/\n/g, '<br>')}
+            </div>
+          </article>
+          ${otherHtml}
+        </div>
+      `;
+
+      ov.querySelector('#pb-close').onclick = () => {
+        ov.remove();
+        if (location.hash.startsWith('#fblog=')) history.replaceState(null, '', location.pathname + location.search);
+      };
+      ov.querySelector('#pb-copy').onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+          showToast('Public link copied to clipboard');
+        } catch (_) {
+          showToast('Press Ctrl+C to copy: ' + shareUrl);
+        }
+      };
+      document.body.appendChild(ov);
+    }
+    window.showPublicBlogOverlay = showPublicBlogOverlay;
+
+    // Freenet public blog post link (#fblog=<base64-json>): viewable by anyone with zero login
+    function checkFblogHash() {
+      if (/^#fblog=/.test(location.hash)) {
+        try {
+          const raw = location.hash.slice(7);
+          const data = JSON.parse(decodeB64u(raw));
+          showPublicBlogOverlay(data);
+        } catch (e) {
+          console.warn('Failed to parse #fblog hash:', e);
+        }
+      }
+    }
+    checkFblogHash();
+    window.addEventListener('hashchange', checkFblogHash);
 
     // Freenet share link (#fshare=<ciphertext>~<key>): decrypted entirely in the browser, no login needed
     if (/^#fshare=/.test(location.hash)) (async () => {
@@ -5600,6 +5706,7 @@ print("Welcome to Orto!")
     // Posts are plaintext by design (published in the `posts` collection).
     // ═══════════════════════════════════════════════════════════════
     const blogPosts = {};
+    window.__blogPosts = blogPosts;
     let blogMode = false, blogSelected = null;
 
     function loadBlog() {
@@ -5618,12 +5725,34 @@ print("Welcome to Orto!")
       document.body.classList.add('blog-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
       document.getElementById('nav-blog').classList.add('active');
-      const blogLinks = document.getElementById('blog-open-link')?.parentElement;
-      if (blogLinks) {
-        blogLinks.style.display = (os && os.mode === 'freenet') ? 'none' : '';
+      const rssWrap = document.getElementById('blog-rss-wrap');
+      const rssLink = document.getElementById('blog-rss-link');
+      const openLink = document.getElementById('blog-open-link');
+      const blogHeaderLinks = document.getElementById('blog-header-links');
+      if (blogHeaderLinks) blogHeaderLinks.style.display = '';
+
+      if (isFreenet || (os && os.mode === 'freenet')) {
+        if (rssWrap) rssWrap.style.display = 'none';
+        if (openLink) {
+          openLink.textContent = 'Public view ↗';
+          openLink.removeAttribute('href');
+          openLink.style.cursor = 'pointer';
+          openLink.onclick = (e) => {
+            e.preventDefault();
+            blogPublicView();
+          };
+        }
+      } else {
+        if (rssWrap) rssWrap.style.display = '';
+        if (rssLink) {
+          rssLink.href = (serverUrl || location.origin) + '/blog/' + (os?.username || pair?.pub || '') + '/feed.xml';
+        }
+        if (openLink) {
+          openLink.textContent = 'Open public page ↗';
+          openLink.href = (serverUrl || location.origin) + '/blog/' + (os?.username || pair?.pub || '');
+          openLink.onclick = null;
+        }
       }
-      document.getElementById('blog-open-link').href = (serverUrl || location.origin) + '/blog/' + pair.pub;
-      document.getElementById('blog-rss-link').href = (serverUrl || location.origin) + '/blog/' + pair.pub + '/feed.xml';
       if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('open')) toggleSidebar();
       renderBlog();
     }
@@ -5641,10 +5770,39 @@ print("Welcome to Orto!")
         </div>`).join('') : '<div class="blog-empty">No posts yet.<br>Use New post to publish one.</div>';
       const cur = blogPosts[blogSelected];
       document.getElementById('blog-reader').innerHTML = cur
-        ? `<div style="display:flex;gap:8px;justify-content:flex-end;padding:8px 16px"><button class="cal-btn" onclick="blogEdit('${escapeHtml(cur.id)}')"><i class="ti ti-pencil"></i> Edit</button><button class="cal-btn" onclick="blogDelete('${escapeHtml(cur.id)}')"><i class="ti ti-trash"></i> Delete</button></div><article><h1>${escapeHtml(cur.title)}</h1>${window.marked ? DOMPurify.sanitize(window.marked.parse(cur.content)) : escapeHtml(cur.content).replace(/\n/g, '<br>')}</article>`
+        ? `<div style="display:flex;gap:8px;justify-content:flex-end;padding:8px 16px">
+            <button class="cal-btn" onclick="blogPublicView('${escapeHtml(cur.id)}')"><i class="ti ti-external-link"></i> Public view</button>
+            <button class="cal-btn" onclick="blogShareLink('${escapeHtml(cur.id)}')"><i class="ti ti-share"></i> Public link</button>
+            <button class="cal-btn" onclick="blogEdit('${escapeHtml(cur.id)}')"><i class="ti ti-pencil"></i> Edit</button>
+            <button class="cal-btn" onclick="blogDelete('${escapeHtml(cur.id)}')"><i class="ti ti-trash"></i> Delete</button>
+          </div>
+          <article>
+            <h1>${escapeHtml(cur.title)}</h1>
+            ${window.marked ? DOMPurify.sanitize(window.marked.parse(cur.content || '')) : escapeHtml(cur.content || '').replace(/\n/g, '<br>')}
+          </article>`
         : '';
     }
     function blogSelect(id) { blogSelected = id; renderBlog(); }
+    function blogPublicView(id) {
+      const p = blogPosts[id || blogSelected] || Object.values(blogPosts)[0];
+      if (!p) return showToast('No post published yet');
+      if (isFreenet || (os && os.mode === 'freenet')) {
+        showPublicBlogOverlay(p);
+      } else {
+        window.open(`${serverUrl || location.origin}/blog/${encodeURIComponent(os?.username || pair.pub)}?post=${encodeURIComponent(p.id)}`, '_blank', 'noopener');
+      }
+    }
+    async function blogShareLink(id) {
+      const p = blogPosts[id || blogSelected] || Object.values(blogPosts)[0];
+      if (!p) return showToast('No post selected');
+      const url = blogShareUrl(p);
+      try {
+        await navigator.clipboard.writeText(url);
+        showToast('Public link copied to clipboard');
+      } catch (_) {
+        prompt('Copy public link:', url);
+      }
+    }
     function blogEdit(id) {
       const p = id ? blogPosts[id] : null;
       document.getElementById('cal-modal-bg')?.remove();
@@ -5672,7 +5830,7 @@ print("Welcome to Orto!")
       if (!confirm('Delete this post?')) return;
       try { await os.deleteBlogPost(id); delete blogPosts[id]; renderBlog(); showToast('Post deleted'); } catch (e) { showToast(e.message); }
     }
-    Object.assign(window, { openBlog, blogSelect, blogEdit, blogDelete });
+    Object.assign(window, { openBlog, blogSelect, blogEdit, blogDelete, blogPublicView, blogShareLink });
 
 
     // ═══════════════════════════════════════════════════════════════
