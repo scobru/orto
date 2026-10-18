@@ -4307,10 +4307,17 @@
 
       // Update active nav item highlight
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
-      if (calMode) document.getElementById('nav-calendar').classList.add('active');
-      if (blogMode) document.getElementById('nav-blog').classList.add('active');
-      if (bmMode) document.getElementById('nav-bookmarks').classList.add('active');
-      if (!currentFilter.startsWith('tag:')) {
+      if (calMode) document.getElementById('nav-calendar')?.classList.add('active');
+      else if (blogMode) document.getElementById('nav-blog')?.classList.add('active');
+      else if (bmMode) document.getElementById('nav-bookmarks')?.classList.add('active');
+      else if (typeof tasksMode !== 'undefined' && tasksMode) document.getElementById('nav-tasks')?.classList.add('active');
+      else if (typeof filesMode !== 'undefined' && filesMode) document.getElementById(filesView === 'photos' ? 'nav-photos' : 'nav-files')?.classList.add('active');
+      else if (typeof contactsMode !== 'undefined' && contactsMode) document.getElementById('nav-contacts')?.classList.add('active');
+      else if (typeof secretsMode !== 'undefined' && secretsMode) document.getElementById('nav-secrets')?.classList.add('active');
+      else if (typeof feedsMode !== 'undefined' && feedsMode) document.getElementById('nav-feeds')?.classList.add('active');
+      else if (typeof mediaMode !== 'undefined' && mediaMode) document.getElementById('nav-media')?.classList.add('active');
+      else if (typeof gardenOpen === 'function' && gardenOpen()) document.getElementById('nav-garden')?.classList.add('active');
+      else if (!currentFilter.startsWith('tag:')) {
         const activeNavEl = document.getElementById(`filter-${currentFilter}`);
         if (activeNavEl) activeNavEl.classList.add('active');
       }

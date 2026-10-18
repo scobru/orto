@@ -128,7 +128,35 @@ try {
   assert.equal(reloadedNotes.length, 1);
   assert.equal(reloadedNotes[0].soul, n7.soul);
   assert.equal(reloadedNotes[0].title, 'Nota Shared Store');
-  delete globalThis.safeStore;
+  console.log('8. Freenet mode: file and photo upload, listing, range read, and download');
+  const orto8 = createClient();
+  await orto8.login('fn_user_files', 'secret-pass-files');
+  const os8 = orto8.personal();
+  const testBytes = new Uint8Array([10, 20, 30, 40, 50, 60, 70, 80, 90, 100]);
+  const upMeta = await os8.uploadFileChunked(testBytes, 'vacanza.jpg', {
+    type: 'image/jpeg',
+    thumb: 'data:image/jpeg;base64,abc123thumb',
+    album: 'Vacanze 2026'
+  });
+  assert.ok(upMeta.id, 'File received a valid ID');
+  assert.equal(upMeta.name, 'vacanza.jpg');
+  assert.equal(upMeta.album, 'Vacanze 2026');
+  assert.equal(upMeta.thumb, 'data:image/jpeg;base64,abc123thumb');
+
+  const filesList = await os8.listFiles();
+  assert.equal(filesList.length, 1);
+  assert.equal(filesList[0].id, upMeta.id);
+  assert.equal(filesList[0].name, 'vacanza.jpg');
+
+  const downloaded = await os8.downloadFile(upMeta.id);
+  assert.deepEqual(downloaded, testBytes, 'Downloaded bytes match uploaded bytes');
+
+  const rangeBytes = await os8.readFileRange(upMeta.id, 2, 6);
+  assert.deepEqual(rangeBytes, testBytes.subarray(2, 6), 'Range read matches byte range');
+
+  await os8.deleteFile(upMeta.id);
+  const afterDel = await os8.listFiles();
+  assert.equal(afterDel.length, 0, 'File successfully deleted');
 
   console.log('ok - all freenet tests passed');
 } finally {

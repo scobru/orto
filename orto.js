@@ -378,7 +378,92 @@ export class Orto {
     return Array.from(set).filter(k => k.startsWith(prefix));
   }
 
-  _localStore(method, path, body) {
+  async _localStorePutFile(id, bytes) {
+    if (!this._memFiles) this._memFiles = new Map();
+    this._memFiles.set(id, bytes);
+    if (bytes.length <= 4 * 1024 * 1024) {
+      try { this._safeStorageSet('orto_blob:' + id, toB64(bytes)); } catch (_) {}
+    }
+    try {
+      if (typeof globalThis.indexedDB !== 'undefined') {
+        const db = await new Promise((res) => {
+          const req = indexedDB.open('orto_files_db', 1);
+          req.onupgradeneeded = () => req.result.createObjectStore('files');
+          req.onsuccess = () => res(req.result);
+          req.onerror = () => res(null);
+        });
+        if (db) {
+          await new Promise((res) => {
+            const tx = db.transaction('files', 'readwrite');
+            tx.objectStore('files').put(bytes, id);
+            tx.oncomplete = () => res();
+            tx.onerror = () => res();
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  async _localStoreGetFile(id) {
+    if (!this._memFiles) this._memFiles = new Map();
+    if (this._memFiles.has(id)) return this._memFiles.get(id);
+    try {
+      if (typeof globalThis.indexedDB !== 'undefined') {
+        const db = await new Promise((res) => {
+          const req = indexedDB.open('orto_files_db', 1);
+          req.onupgradeneeded = () => req.result.createObjectStore('files');
+          req.onsuccess = () => res(req.result);
+          req.onerror = () => res(null);
+        });
+        if (db) {
+          const bytes = await new Promise((res) => {
+            const tx = db.transaction('files', 'readonly');
+            const req = tx.objectStore('files').get(id);
+            req.onsuccess = () => res(req.result || null);
+            req.onerror = () => res(null);
+          });
+          if (bytes) {
+            this._memFiles.set(id, bytes);
+            return bytes;
+          }
+        }
+      }
+    } catch (_) {}
+    try {
+      const b64 = this._safeStorageGet('orto_blob:' + id);
+      if (b64) {
+        const bytes = fromB64(b64);
+        this._memFiles.set(id, bytes);
+        return bytes;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  async _localStoreDeleteFile(id) {
+    if (this._memFiles) this._memFiles.delete(id);
+    try { this._safeStorageRemove('orto_blob:' + id); } catch (_) {}
+    try {
+      if (typeof globalThis.indexedDB !== 'undefined') {
+        const db = await new Promise((res) => {
+          const req = indexedDB.open('orto_files_db', 1);
+          req.onupgradeneeded = () => req.result.createObjectStore('files');
+          req.onsuccess = () => res(req.result);
+          req.onerror = () => res(null);
+        });
+        if (db) {
+          await new Promise((res) => {
+            const tx = db.transaction('files', 'readwrite');
+            tx.objectStore('files').delete(id);
+            tx.oncomplete = () => res();
+            tx.onerror = () => res();
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  async _localStore(method, path, body, headers) {
     const spacePrefix = this._space ? `sp:${this._space}:` : '';
     const prefix = `orto_rec:${this.username || 'local'}:${spacePrefix}`;
     const ok = (json) => ({
@@ -433,20 +518,111 @@ export class Orto {
       }
     }
 
+    if (path === '/files/begin' && method === 'POST') {
+      const id = 'f_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+      if (!this._fileUploads) this._fileUploads = new Map();
+      this._fileUploads.set(id, []);
+      return ok({ id });
+    }
+
+    const appendMatch = path.match(/^\/files\/([^/?]+)\/append$/);
+    if (appendMatch && method === 'PUT') {
+      const id = decodeURIComponent(appendMatch[1]);
+      if (!this._fileUploads) this._fileUploads = new Map();
+      let chunks = this._fileUploads.get(id);
+      if (!chunks) { chunks = []; this._fileUploads.set(id, chunks); }
+      const chunkBytes = body instanceof Uint8Array ? body : (body ? new Uint8Array(await (body.arrayBuffer?.() ?? [])) : new Uint8Array(0));
+      chunks.push(chunkBytes);
+      const size = chunks.reduce((acc, c) => acc + c.length, 0);
+      return ok({ size });
+    }
+
+    const finishMatch = path.match(/^\/files\/([^/?]+)\/finish/);
+    if (finishMatch && method === 'POST') {
+      const id = decodeURIComponent(finishMatch[1]);
+      const chunks = this._fileUploads?.get(id) || [];
+      this._fileUploads?.delete(id);
+      const total = chunks.reduce((acc, c) => acc + c.length, 0);
+      const all = new Uint8Array(total);
+      let offset = 0;
+      for (const c of chunks) { all.set(c, offset); offset += c.length; }
+      await this._localStorePutFile(id, all);
+      return ok({ id, size: total });
+    }
+
+    if (path === '/files' && method === 'POST') {
+      const id = 'f_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+      const fileBytes = body instanceof Uint8Array ? body : (body ? new Uint8Array(await (body.arrayBuffer?.() ?? [])) : new Uint8Array(0));
+      await this._localStorePutFile(id, fileBytes);
+      return ok({ id, size: fileBytes.length });
+    }
+
+    const fileMatch = path.match(/^\/files\/([^/?]+)$/);
+    if (fileMatch) {
+      const id = decodeURIComponent(fileMatch[1]);
+      if (method === 'GET') {
+        const bytes = await this._localStoreGetFile(id);
+        if (!bytes) {
+          const err = new Error('File not found'); err.status = 404; throw err;
+        }
+        const rangeHeader = headers?.['Range'] || headers?.['range'] || (typeof headers?.get === 'function' ? headers.get('range') : null);
+        if (rangeHeader) {
+          const rm = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+          if (rm) {
+            const start = parseInt(rm[1], 10);
+            const end = rm[2] ? parseInt(rm[2], 10) : bytes.length - 1;
+            const slice = bytes.subarray(start, end + 1);
+            return {
+              ok: true,
+              status: 206,
+              headers: {
+                get: (h) => {
+                  const k = h.toLowerCase();
+                  if (k === 'content-range') return `bytes ${start}-${end}/${bytes.length}`;
+                  if (k === 'accept-ranges') return 'bytes';
+                  if (k === 'content-length') return String(slice.length);
+                  return null;
+                }
+              },
+              arrayBuffer: async () => slice.buffer.slice(slice.byteOffset, slice.byteOffset + slice.byteLength),
+              json: async () => ({})
+            };
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          headers: {
+            get: (h) => {
+              const k = h.toLowerCase();
+              if (k === 'accept-ranges') return 'bytes';
+              if (k === 'content-length') return String(bytes.length);
+              return null;
+            }
+          },
+          arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+          json: async () => ({})
+        };
+      }
+      if (method === 'DELETE') {
+        await this._localStoreDeleteFile(id);
+        return ok({ status: 'deleted' });
+      }
+    }
+
     if (path.startsWith('/events')) {
       return { ok: true, status: 200, body: (async function* () {})() };
     }
     if (path.startsWith('/sp')) return ok([]);
     if (path.startsWith('/keys')) return ok({});
     if (path.startsWith('/shares')) return ok([]);
-    if (path.startsWith('/files')) return ok({});
 
     return ok({});
   }
 
   async _fetch(method, path, body, signal, headers) {
     if (this.mode === 'freenet') {
-      return this._localStore(method, path, body);
+      return await this._localStore(method, path, body, headers);
     }
     const isBytes = body instanceof Uint8Array;
     if (this._space && /^\/(c|files|events)(\/|\?|$)/.test(path)) path = '/sp/' + this._space + path; // a space view: same calls, the space's data
