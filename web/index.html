@@ -6364,13 +6364,21 @@ print("Welcome to Orto!")
       bg.firstChild.style.maxWidth = 'min(94vw, 900px)';
       const $ = (x) => bg.querySelector('#' + x);
       let url, bytes;
+      if (f.thumb) $('photo-full').src = f.thumb; // Show instant thumbnail preview immediately while full file loads
       $('ph-close').onclick = () => { closeModal('photo-modal-bg'); if (url) URL.revokeObjectURL(url); };
       $('ph-del').onclick = () => filesDelete(id);
       $('ph-album').onclick = () => { $('ph-close').onclick(); filesMove(id, 'album'); };
       $('ph-share').onclick = () => filesShare(id);
       $('ph-dl').onclick = () => bytes && download(new Blob([bytes]), f.name);
-      try { bytes = await os.downloadFile(id, { meta: f }); url = URL.createObjectURL(new Blob([bytes], { type: /^image\/(png|jpe?g|gif|webp|avif|bmp)$/.test(f.type || '') ? f.type : '' })); $('photo-full').src = url; }
-      catch (e) { showToast(e.message); }
+      try {
+        bytes = await os.downloadFile(id, { meta: f });
+        const mime = f.type || (/\.webp$/i.test(f.name) ? 'image/webp' : /\.png$/i.test(f.name) ? 'image/png' : /\.jpe?g$/i.test(f.name) ? 'image/jpeg' : /\.gif$/i.test(f.name) ? 'image/gif' : /\.svg$/i.test(f.name) ? 'image/svg+xml' : 'image/jpeg');
+        url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+        $('photo-full').src = url;
+      }
+      catch (e) {
+        if (!f.thumb) showToast('File preview unavailable: ' + e.message);
+      }
     }
 
     // ── Media: music and video from the files collection, played while they download ──
@@ -6392,7 +6400,7 @@ print("Welcome to Orto!")
     }
 
     async function mediaUrl(f) {
-      if (f.chunked && hasServiceWorker()) {
+      if (f.chunked && hasServiceWorker() && (!os || os.mode !== 'freenet')) {
         try {
           const reg = await navigator.serviceWorker.ready;
           const p = { type: 'orto-media', id: f.id, meta: { id: f.id, size: f.size, chunked: f.chunked, type: mediaType(f) }, key: os.key, token: os.token, base: serverUrl || location.origin, pre: os._space ? '/sp/' + os._space : '' };

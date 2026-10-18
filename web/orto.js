@@ -384,29 +384,31 @@ export class Orto {
   }
 
   async _localStorePutFile(id, bytes) {
+    const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     if (!this._memFiles) this._memFiles = new Map();
-    this._memFiles.set(id, bytes);
-    if (bytes.length <= 4 * 1024 * 1024) {
-      try { this._safeStorageSet('orto_blob:' + id, toB64(bytes)); } catch (_) {}
-    }
+    this._memFiles.set(id, u8);
     try {
       if (typeof globalThis.indexedDB !== 'undefined') {
         const db = await new Promise((res) => {
           const req = indexedDB.open('orto_files_db', 1);
-          req.onupgradeneeded = () => req.result.createObjectStore('files');
+          req.onupgradeneeded = () => { try { req.result.createObjectStore('files'); } catch (_) {} };
           req.onsuccess = () => res(req.result);
           req.onerror = () => res(null);
+          req.onblocked = () => res(null);
         });
         if (db) {
           await new Promise((res) => {
             const tx = db.transaction('files', 'readwrite');
-            tx.objectStore('files').put(bytes, id);
-            tx.oncomplete = () => res();
-            tx.onerror = () => res();
+            tx.objectStore('files').put(u8, id);
+            tx.oncomplete = () => { try { db.close(); } catch (_) {} res(); };
+            tx.onerror = () => { try { db.close(); } catch (_) {} res(); };
           });
         }
       }
     } catch (_) {}
+    if (u8.length <= 4 * 1024 * 1024) {
+      try { this._safeStorageSet('orto_blob:' + id, toB64(u8)); } catch (_) {}
+    }
   }
 
   async _localStoreGetFile(id) {
@@ -416,20 +418,22 @@ export class Orto {
       if (typeof globalThis.indexedDB !== 'undefined') {
         const db = await new Promise((res) => {
           const req = indexedDB.open('orto_files_db', 1);
-          req.onupgradeneeded = () => req.result.createObjectStore('files');
+          req.onupgradeneeded = () => { try { req.result.createObjectStore('files'); } catch (_) {} };
           req.onsuccess = () => res(req.result);
           req.onerror = () => res(null);
+          req.onblocked = () => res(null);
         });
         if (db) {
-          const bytes = await new Promise((res) => {
+          const raw = await new Promise((res) => {
             const tx = db.transaction('files', 'readonly');
             const req = tx.objectStore('files').get(id);
-            req.onsuccess = () => res(req.result || null);
-            req.onerror = () => res(null);
+            req.onsuccess = () => { const r = req.result; try { db.close(); } catch (_) {} res(r || null); };
+            req.onerror = () => { try { db.close(); } catch (_) {} res(null); };
           });
-          if (bytes) {
-            this._memFiles.set(id, bytes);
-            return bytes;
+          if (raw) {
+            const u8 = raw instanceof Uint8Array ? raw : new Uint8Array(raw);
+            this._memFiles.set(id, u8);
+            return u8;
           }
         }
       }
@@ -437,9 +441,9 @@ export class Orto {
     try {
       const b64 = this._safeStorageGet('orto_blob:' + id);
       if (b64) {
-        const bytes = fromB64(b64);
-        this._memFiles.set(id, bytes);
-        return bytes;
+        const u8 = fromB64(b64);
+        this._memFiles.set(id, u8);
+        return u8;
       }
     } catch (_) {}
     return null;
