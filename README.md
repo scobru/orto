@@ -94,31 +94,45 @@ It is still encrypted like any account; the password is just public. For the dem
 - **Public links**: `node cli.js share-note --soul <soul>` / `share-file --id <id>` (or **Share** in the web app) give `https://<server>/s/<id>#<key>`. The item is encrypted with a fresh key that lives only in the `#fragment`, so the server never sees it; anyone with the link can read it. `share-revoke` deletes it.
 - **Change password**: `node cli.js password-change --new '…'` (or Settings). It re-encrypts everything, then signs out your other sessions. Export first.
 
-## Freenet sync (optional)
+## Freenet: Web dApp & P2P Sync
 
-SQLite stays the primary store. Freenet is only a replication channel between your own devices: no VPS, no open ports. Rows are replicated exactly as the server holds them (already AES-GCM ciphertext), so Freenet never sees plaintext. Public blog posts are not replicated.
+Orto can run as a **native decentralized web dApp** published directly onto [Freenet](https://freenet.org), as well as provide P2P replication between your devices.
 
-Needs a local [Freenet](https://freenet.org) node and its `fdev` tool on the PATH.
+### 1. Web dApp on Freenet
+The frontend can be deployed directly as a sovereign web contract:
+```bash
+npm run freenet:publish   # updates contract web assets via fdev
+```
+- **Sovereign Identity**: No central server, passwords, or registration. Sign in with 1-click Ed25519 key generation or **Viso SSO**.
+- **Sandboxed & Zero-Server**: Runs in Freenet's sandboxed contract environment (`http://127.0.0.1:7509/v1/contract/web/<key>/`).
+- **P2P Shared Spaces**: Spaces operate peer-to-peer using ECDH public keys without central servers.
 
+### 2. Server-side Freenet Sync (optional)
+When self-hosting the Node.js server, Freenet can also be used as a P2P replication channel between your own servers:
 ```bash
 node server.js freenet-identity --new --show-secret   # a new Ed25519 identity: back up the 64 hex chars
 node server.js freenet-identity --import <64 hex>     # on another device: same key = same vault
 node server.js freenet-sync --user <name>             # pull what others wrote, push what changed here
 ```
 
-The identity file is `<data>/freenet-identity.json` (keep it private). The vault contract is `contracts/vault` (Rust, `cargo test`; package with `fdev build` from that folder, output in `build/freenet/`; `ORTO_VAULT_WASM` overrides the path). Every record is signed on its own with the identity key (or a Viso delegation, supported by the contract), merged last-write-wins. Limits: deletions made on the server are not propagated yet (the server hard-deletes rows), and one identity per data folder.
-
+The identity file is `<data>/freenet-identity.json` (keep it private). The vault contract is `contracts/vault` (Rust, `cargo test`; package with `fdev build` from that folder, output in `build/freenet/`; `ORTO_VAULT_WASM` overrides the path). Every record is signed on its own with the identity key (or a Viso delegation, supported by the contract), merged last-write-wins.
 
 ## Shared spaces
 
-With several accounts on one server, a **space** is a shared folder: notes, tasks, calendar, bookmarks, contacts, secrets, files, photos and media, together, live. Open **Shared spaces** at the top of the sidebar of the web app (or use `space-*` in the CLI, `openSpace()` in the SDK).
+A **space** is a shared folder: notes, tasks, calendar, bookmarks, contacts, secrets, files, photos and media, together, live. Open **Shared spaces** at the top of the sidebar of the web app (or use `space-*` in the CLI, `openSpace()` in the SDK).
 
-- **Invite** a registered user by username: they see the invitation (badge in the sidebar), accept, and the space appears. Roles: **owner**, **editor** (read and write), **viewer** (read-only, enforced by the server).
-- **Invite link** (like "anyone with the link" in Google Docs, but only for registered users): `https://<server>/app#join=...`, with a role. Whoever opens it signs in and joins. Revoke it at any time (people who already joined stay).
+- **On Freenet (P2P)**:
+  - **Public Key Identity**: Your ECDH (P-256) public key and fingerprint are displayed right in the modal.
+  - **Direct Public Key Invites**: Enter the recipient's Public Key (`wrapFor`). The space AES key is sealed for their public key: `#join=dir.<payload>` — only the recipient's private key can open it.
+  - **Capability Links**: Create fast shareable links (`#join=cap.<token>.<payload>`) with editor or viewer roles.
+  - **Segregated Vault**: Space notes and records are partitioned under `sp:<spaceId>:`, isolated from your personal vault.
+- **On Centralized Server**:
+  - **Invite by username**: Registered users see invitations in their sidebar badge.
+  - **Invite links**: `https://<server>/app#join=...` with a role. Revoke at any time.
 - **Copy** a note or a file into a space (note menu, Files list; `space-copy` in the CLI) or back to Personal.
 - CLI and MCP: add `--space <id>` (or `ORTO_SPACE=<id>`) to any command to work inside a space.
 
-Still end-to-end encrypted: each space has its own random AES key. Every member holds it wrapped (ECDH P-256) for their own public key, and invite links carry it in the `#fragment`, so the server never sees it. Your private key is sealed with your own key (it follows a password change). Removing a member **changes the space key** and re-encrypts the space, so what they kept cannot open anything written afterwards; the others pick up the new key when they open the space again. Limits: the server hands out public keys, so compare the **fingerprint** shown when you invite someone if you do not trust it; a person you removed keeps whatever they already decrypted; notes are last-write-wins (two people editing the same note at once: the last save wins); storage and quota of a space are counted for the space, not per member; spaces have no public blog.
+Still end-to-end encrypted: each space has its own random AES key. Every member holds it wrapped (ECDH P-256) for their own public key, and invite links carry it in the `#fragment`, so the server/network never sees it. Your private key is sealed with your own key. Removing a member **changes the space key** and re-encrypts the space, so what they kept cannot open anything written afterwards. Notes are last-write-wins; storage of a space is counted for the space, not per member.
 
 ## How it stays private
 

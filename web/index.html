@@ -6535,28 +6535,50 @@ print("Welcome to Orto!")
       let members, links = [];
       try { members = await os.members(); if (owner) links = await os.listLinks(); } catch (e) { return `<p class="hint">${escapeHtml(e.message)}</p>`; }
       const roleSel = (cur, extra = '') => `<select ${extra} style="flex:none"><option${cur === 'editor' ? ' selected' : ''}>editor</option><option${cur === 'viewer' ? ' selected' : ''}>viewer</option></select>`;
-      let h = `<h4>${escapeHtml(currentSpace.name)}</h4><p class="hint">Your role: ${currentSpace.role}.${currentSpace.role === 'viewer' ? ' Read-only: the server refuses changes.' : ''} Everything in here (notes, tasks, calendar, files, media) is shared with the members and encrypted with a key the server never sees.</p>`;
-      h += members.map((m) => `<div class="share-row"><i class="ti ti-user"></i><span title="Key fingerprint ${escapeHtml(m.fingerprint || '')}: compare it with them to be sure the key is theirs">${escapeHtml(m.name)} <small class="hint">${m.status === 'pending' ? 'invited · ' : ''}${m.role}</small></span>${owner && m.role !== 'owner' ? roleSel(m.role, `data-role="${escapeHtml(m.name)}"`) + spBtn('remove', m.name, 'Remove') : ''}</div>`).join('');
+      let h = `<h4>${escapeHtml(currentSpace.name)}</h4><p class="hint">Your role: ${currentSpace.role}.${currentSpace.role === 'viewer' ? ' Read-only.' : ''} Everything in here (notes, tasks, calendar, files, media) is shared with the members and end-to-end encrypted.</p>`;
+      h += members.map((m) => `<div class="share-row"><i class="ti ti-user"></i><span title="Key fingerprint ${escapeHtml(m.fingerprint || '')}">${escapeHtml(m.name)} <small class="hint">${m.status === 'pending' ? 'invited · ' : ''}${m.role}</small></span>${owner && m.role !== 'owner' ? roleSel(m.role, `data-role="${escapeHtml(m.name)}"`) + spBtn('remove', m.name, 'Remove') : ''}</div>`).join('');
       if (owner) {
-        h += `<div class="row"><input type="text" id="sp-inv" placeholder="Orto username to invite" autocapitalize="none" spellcheck="false">${roleSel('editor', 'id="sp-inv-role"')}${spBtn('invite', '', 'Invite')}</div>`;
-        h += `<h4>Invite links</h4><p class="hint">Any registered Orto user who opens the link joins with its role. The key is in the link after the #: the server never sees it. Share it only with people you trust.</p>`;
+        h += `<div class="row"><input type="text" id="sp-inv" placeholder="${isFreenet ? "Recipient's Public Key" : 'Orto username to invite'}" autocapitalize="none" spellcheck="false">${roleSel('editor', 'id="sp-inv-role"')}${spBtn('invite', '', 'Invite')}</div>`;
+        h += `<h4>Invite links</h4><p class="hint">${isFreenet ? 'Self-contained peer-to-peer invite link. Anyone who opens or pastes it joins with its role. Share only with people you trust.' : 'Any registered Orto user who opens the link joins with its role. The key is in the link after the #: the server never sees it.'}</p>`;
         h += links.map((l) => `<div class="share-row"><i class="ti ti-link"></i><span>${l.role} link</span><button class="cal-btn" data-act="copy" data-id="${escapeHtml(l.url)}">Copy</button>${spBtn('revoke', l.token, 'Revoke')}</div>`).join('');
         h += `<div class="cal-actions" style="justify-content:flex-start">${spBtn('link', 'viewer', 'New viewer link')}${spBtn('link', 'editor', 'New editor link')}</div>`;
-        h += `<div class="cal-actions">${spBtn('delete', '', 'Delete this space')}</div><p class="hint">Removing a member also changes the space key, so they cannot open anything written afterwards. Others get the new key the next time they open the space.</p>`;
+        h += `<div class="cal-actions">${spBtn('delete', '', 'Delete this space')}</div><p class="hint">Removing a member changes the space key, so they cannot open anything written afterwards.</p>`;
       } else h += `<div class="cal-actions">${spBtn('leave', currentSpace.id, 'Leave this space')}</div>`;
       return h;
     }
     async function drawSpaces() {
       const body = document.getElementById('sp-body'); if (!body) return;
       const active = spaceList.filter((x) => x.status === 'active'), pending = spaceList.filter((x) => x.status === 'pending');
-      let h = `<h4>Open</h4><div class="share-row"><i class="ti ti-user"></i><span>Personal</span>${currentSpace ? spBtn('go', '', 'Open') : '<small class="hint">open now</small>'}</div>`;
+      
+      let pubkeyBox = '';
+      if (isFreenet) {
+        try {
+          const kp = await root._kp();
+          if (kp?.pub) {
+            const fp = await root.fingerprint(kp.pub).catch(() => '');
+            pubkeyBox = `<div style="background:var(--bg-card);border:1px solid var(--border);padding:10px 12px;border-radius:8px;margin-bottom:14px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                <span style="font-weight:600;font-size:12px;"><i class="ti ti-key"></i> Your Public Key (Freenet)</span>
+                <button class="cal-btn" data-act="copy-pubkey" data-id="${escapeHtml(kp.pub)}" style="font-size:11px;padding:2px 8px;">Copy</button>
+              </div>
+              <div style="font-family:monospace;font-size:11px;word-break:break-all;color:var(--text-muted);user-select:all;">${escapeHtml(kp.pub)}</div>
+              ${fp ? `<small class="hint" style="margin-top:4px;display:block;">Fingerprint: <b>${escapeHtml(fp)}</b> (share this so others can invite you)</small>` : ''}
+            </div>`;
+          }
+        } catch (_) {}
+      }
+
+      let h = pubkeyBox + `<h4>Open</h4><div class="share-row"><i class="ti ti-user"></i><span>Personal</span>${currentSpace ? spBtn('go', '', 'Open') : '<small class="hint">open now</small>'}</div>`;
       h += active.map((x) => `<div class="share-row"><i class="ti ti-users-group"></i><span title="${escapeHtml(x.name)}">${escapeHtml(x.name)} <small class="hint">${x.role}</small></span>${currentSpace?.id === x.id ? '<small class="hint">open now</small>' : spBtn('go', x.id, 'Open')}</div>`).join('');
       if (pending.length) h += '<h4>Invitations</h4>' + pending.map((x) => `<div class="share-row"><i class="ti ti-mail"></i><span>${escapeHtml(x.name)} <small class="hint">${x.role} · from ${escapeHtml(x.invitedBy || '?')}</small></span>${spBtn('accept', x.id, 'Accept', 'primary')}${spBtn('decline', x.id, 'Decline')}</div>`).join('');
-      h += `<h4>New</h4><div class="row"><input type="text" id="sp-new" placeholder="Name of a new space">${spBtn('create', '', 'Create')}</div><div class="row"><input type="text" id="sp-join" placeholder="Paste an invite link">${spBtn('join', '', 'Join')}</div>`;
+      h += `<h4>New</h4><div class="row"><input type="text" id="sp-new" placeholder="Name of a new space">${spBtn('create', '', 'Create')}</div><div class="row"><input type="text" id="sp-join" placeholder="Paste an invite link or code">${spBtn('join', '', 'Join')}</div>`;
       body.innerHTML = h + (currentSpace ? await spManage() : '');
     }
     function openSpaces() {
-      const bg = openModal(`<b>Shared spaces</b><p class="hint">Share notes, tasks, calendar and files with other Orto users on this server, like a shared folder.</p><div id="sp-body"><p class="hint">Loading…</p></div><div class="cal-actions"><button class="cal-btn primary" id="sp-close">Close</button></div>`, 'sp-modal');
+      const modalDesc = isFreenet
+        ? 'Share encrypted notes, tasks, calendar and files with other Freenet users peer-to-peer. Zero server, full cryptographic privacy.'
+        : 'Share notes, tasks, calendar and files with other Orto users on this server, like a shared folder.';
+      const bg = openModal(`<b>Shared spaces</b><p class="hint">${modalDesc}</p><div id="sp-body"><p class="hint">Loading…</p></div><div class="cal-actions"><button class="cal-btn primary" id="sp-close">Close</button></div>`, 'sp-modal');
       if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('open')) toggleSidebar();
       bg.querySelector('#sp-close').onclick = () => closeModal('sp-modal');
       const input = (id) => (bg.querySelector('#' + id)?.value || '').trim();
@@ -6565,17 +6587,29 @@ print("Welcome to Orto!")
         const b = e.target.closest('[data-act]'); if (!b) return;
         const id = b.dataset.id;
         switch (b.dataset.act) {
-          case 'go': return switchSpace(id ? Number(id) : null);
-          case 'accept': return run(async () => { const sp = await root.acceptInvite(Number(id)); await switchSpace(sp.spaceId); }, 'Joined');
-          case 'decline': return run(() => root.leaveSpace(Number(id)), 'Declined');
+          case 'copy-pubkey': try { await navigator.clipboard.writeText(b.dataset.id); showToast('Public key copied'); } catch (_) { showToast('Copy not allowed'); } return;
+          case 'go': return switchSpace(id ? (isFreenet ? id : Number(id)) : null);
+          case 'accept': return run(async () => { const sp = await root.acceptInvite(isFreenet ? id : Number(id)); await switchSpace(sp.spaceId); }, 'Joined');
+          case 'decline': return run(() => root.leaveSpace(isFreenet ? id : Number(id)), 'Declined');
           case 'create': { const name = input('sp-new'); if (!name) return; return run(async () => { const sp = await root.createSpace(name); await switchSpace(sp.spaceId); }, 'Space created'); }
           case 'join': { const link = input('sp-join'); if (link) return run(() => joinSpace(link)); return; }
-          case 'invite': { const who = input('sp-inv'); if (!who) return; return run(() => os.invite(who, bg.querySelector('#sp-inv-role').value), (r) => `Invited ${r.user}. Their key fingerprint: ${r.fingerprint}`); }
+          case 'invite': {
+            const who = input('sp-inv'); if (!who) return;
+            return run(async () => {
+              const r = await os.invite(who, bg.querySelector('#sp-inv-role').value);
+              if (r.inviteUrl) {
+                try { await navigator.clipboard.writeText(r.inviteUrl); showToast(`Encrypted invite generated & copied for ${r.fingerprint}!`); }
+                catch (_) { prompt('Copy this invite link for the user:', r.inviteUrl); }
+              } else {
+                showToast(`Invited ${r.user}. Key fingerprint: ${r.fingerprint}`);
+              }
+            });
+          }
           case 'remove': if (confirm('Remove ' + id + ' from this space? The key is changed and everything is re-encrypted; it can take a while with many files.')) return run(() => os.removeMember(id), 'Removed'); return;
           case 'link': return run(() => os.createLink(id), 'Link created');
           case 'copy': try { await navigator.clipboard.writeText(id); showToast('Link copied'); } catch (_) { showToast('Copy not allowed here'); } return;
           case 'revoke': if (confirm('Revoke this link? It stops working at once (members who already joined stay).')) return run(() => os.revokeLink(id), 'Link revoked'); return;
-          case 'leave': if (confirm('Leave this space?')) return run(async () => { await root.leaveSpace(Number(id)); await switchSpace(null); }, 'Left'); return;
+          case 'leave': if (confirm('Leave this space?')) return run(async () => { await root.leaveSpace(isFreenet ? id : Number(id)); await switchSpace(null); }, 'Left'); return;
           case 'delete': if (confirm('Delete "' + currentSpace.name + '" and everything in it, for every member? This cannot be undone.')) return run(async () => { const sp = os; await switchSpace(null); await sp.deleteSpace(); }, 'Space deleted'); return;
         }
       });
@@ -6593,7 +6627,7 @@ print("Welcome to Orto!")
       bg.onclick = async (e) => {
         const b = e.target.closest('[data-act="to"]'); if (!b) return;
         closeModal(); showToast('Copying…');
-        try { await os.copyTo(b.dataset.id ? await root.openSpace(Number(b.dataset.id)) : root.personal(), coll, soul); showToast('Copied'); }
+        try { await os.copyTo(b.dataset.id ? await root.openSpace(isFreenet ? b.dataset.id : Number(b.dataset.id)) : root.personal(), coll, soul); showToast('Copied'); }
         catch (err) { showToast(err.message); }
       };
     }
