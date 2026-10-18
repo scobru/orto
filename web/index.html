@@ -6284,25 +6284,26 @@ print("Welcome to Orto!")
 
     // Settings: backup (export/import), shared links, password
     async function openSettings() {
-      const isDemo = !!demoCfg && pair.pub === demoCfg.user;
-      const bg = openModal(`<b>Settings</b><p class="hint">${escapeHtml(pair.pub)} on ${escapeHtml(serverUrl || location.origin)}</p>
+      const isDemo = !isFreenet && !!demoCfg && pair.pub === demoCfg.user;
+      const subtitle = isFreenet ? `${escapeHtml(pair.pub)} · Native Sovereign Freenet` : `${escapeHtml(pair.pub)} on ${escapeHtml(serverUrl || location.origin)}`;
+      const bg = openModal(`<b>Settings</b><p class="hint">${subtitle}</p>
         <h4>Backup &amp; migration</h4>
         <p class="hint">Export saves everything decrypted as one file (plain text: keep it safe). Import it into any account on any server.</p>
         <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="st-files" checked> Include file contents</label>
         <div class="cal-actions" style="justify-content:flex-start"><button class="cal-btn" id="st-export">Export everything</button><button class="cal-btn" id="st-import">Import…</button><input type="file" id="st-import-file" accept=".json,application/json" class="hidden"></div>
-        <h4>Freenet Sync (P2P Sovereign)</h4>
-        <p class="hint">Replica crittografata peer-to-peer tra i tuoi dispositivi tramite rete Freenet (zero VPS, zero porte aperte).</p>
+        <h4>${isFreenet ? 'Freenet Sovereign Identity' : 'Freenet Sync (P2P Sovereign)'}</h4>
+        <p class="hint">${isFreenet ? 'Orto è in esecuzione come app nativa sovrana direttamente sul tuo nodo Freenet locale.' : 'Replica crittografata peer-to-peer tra i tuoi dispositivi tramite rete Freenet (zero VPS, zero porte aperte).'}</p>
         <div id="st-freenet"><p class="hint">Caricamento stato Freenet…</p></div>
         <h4>Tag and emoji suggestions</h4>
-        <p class="hint">Suggests tags for notes and bookmarks (<b>Gist</b>) and an emoji for a note's title (<b>Emo</b>), small models by <a href="https://desertant.com/models/gist/" target="_blank" rel="noopener">Desert Ant Labs</a> that run in this browser: your text is not sent anywhere. The first time, the browser downloads about 75 MB from huggingface.co. The server admin installs it once (<code>scripts/install-gist.mjs</code>).</p>
+        <p class="hint">Suggests tags for notes and bookmarks (<b>Gist</b>) and an emoji for a note's title (<b>Emo</b>), small models by <a href="https://desertant.com/models/gist/" target="_blank" rel="noopener">Desert Ant Labs</a> that run in this browser: your text is not sent anywhere. The first time, the browser downloads about 75 MB from huggingface.co.</p>
         <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="st-ai"> Suggest tags and emoji on this device</label>
         <p class="hint" id="st-ai-status"></p>
-        <h4>Shared links</h4><div id="st-shares"><p class="hint">Loading…</p></div>
-        ${isDemo ? '' : `<h4>Password</h4>
+        ${isFreenet ? '' : '<h4>Shared links</h4><div id="st-shares"><p class="hint">Loading…</p></div>'}
+        ${isFreenet || isDemo ? '' : `<h4>Password</h4>
         <p class="hint">Changes the encryption key: everything is re-encrypted and your other sessions are signed out. Export first; it can take a while with many files.</p>
         <input type="password" id="st-pw1" placeholder="New password" autocomplete="new-password"><input type="password" id="st-pw2" placeholder="Repeat new password" autocomplete="new-password">`}
         <p class="hint">Orto is free and open source. <a href="https://buymeacoffee.com/scobru" target="_blank" rel="noopener">Buy me a coffee</a> if it is useful to you.</p>
-        <div class="cal-actions">${isDemo ? '' : '<button class="cal-btn" id="st-pw">Change password</button>'}<button class="cal-btn primary" id="st-close">Close</button></div>`);
+        <div class="cal-actions">${isFreenet || isDemo ? '' : '<button class="cal-btn" id="st-pw">Change password</button>'}<button class="cal-btn primary" id="st-close">Close</button></div>`);
       const $ = (x) => bg.querySelector('#' + x);
       $('st-close').onclick = () => closeModal();
       $('st-export').onclick = async () => {
@@ -6322,6 +6323,46 @@ print("Welcome to Orto!")
       // ── Freenet Sync UI ──
       const fnBox = $('st-freenet');
       const drawFreenet = async () => {
+        if (isFreenet) {
+          const storedSecret = safeStore.getItem('orto_freenet_secret');
+          const storedPub = safeStore.getItem('orto_freenet_pub');
+          const storedPersona = safeStore.getItem('orto_freenet_persona');
+          fnBox.innerHTML = `
+            <div style="font-size:12.5px;display:flex;flex-direction:column;gap:8px;">
+              <div><b>Identità / Persona:</b> <code style="font-size:11.5px;word-break:break-all;user-select:all;">${escapeHtml(storedPersona || pair.pub)}</code></div>
+              <div><b>Chiave Pubblica:</b> <code style="font-size:11px;word-break:break-all;user-select:all;">${escapeHtml(storedPub || pair.pub)}</code></div>
+              <div class="hint" style="display:flex;align-items:center;gap:6px;color:#2ec4b6;">
+                <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#2ec4b6;"></span>
+                Connesso nativamente al nodo locale Freenet
+              </div>
+              ${storedSecret ? `
+              <div class="cal-actions" style="justify-content:flex-start;margin-top:2px;">
+                <button class="cal-btn" id="st-fn-copy-key"><i class="ti ti-copy"></i> Copia chiave segreta</button>
+                <button class="cal-btn" id="st-fn-dl-key"><i class="ti ti-download"></i> Scarica backup (.txt)</button>
+              </div>` : `
+              <p class="hint" style="color:var(--text-muted);margin-top:2px;">
+                <i class="ti ti-shield-check" style="color:#0096c7;"></i> Sessione delegata tramite Viso / Whoiam.
+              </p>`}
+            </div>`;
+          const btnCopy = fnBox.querySelector('#st-fn-copy-key');
+          const btnDl = fnBox.querySelector('#st-fn-dl-key');
+          if (btnCopy) btnCopy.onclick = async () => {
+            try {
+              await navigator.clipboard.writeText(storedSecret);
+              showToast('Chiave segreta copiata negli appunti!');
+            } catch (_) {
+              alert('Chiave segreta Freenet:\n\n' + storedSecret);
+            }
+          };
+          if (btnDl) btnDl.onclick = () => {
+            const blob = new Blob([`Orto Sovereign Freenet Key: Keep this safe!\n${storedSecret}\n`], { type: 'text/plain' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `orto-freenet-key.txt`;
+            a.click();
+          };
+          return;
+        }
         let fn;
         try { fn = await (root.freenetIdentity ? root.freenetIdentity() : { hasIdentity: false, available: true }); }
         catch (e) { fnBox.innerHTML = '<p class="hint">Freenet sync non disponibile su questo server.</p>'; return; }
@@ -6428,16 +6469,18 @@ print("Welcome to Orto!")
       };
       aiSettings($('st-ai'), $('st-ai-status'));
       const box = $('st-shares');
-      const drawShares = async () => {
-        let list; try { list = await os.listShares(); } catch (e) { box.innerHTML = '<p class="hint">' + escapeHtml(e.message) + '</p>'; return; }
-        box.innerHTML = list.length ? list.map(x => `<div class="share-row"><i class="ti ti-${x.kind === 'file' ? 'file' : 'note'}"></i><span title="${escapeHtml(x.title || '')}">${escapeHtml(x.title || x.id)}</span><button class="cal-btn" data-copy="${escapeHtml(x.url)}">Copy</button><button class="cal-btn" data-revoke="${escapeHtml(x.id)}">Revoke</button></div>`).join('') : '<p class="hint">No public links.</p>';
-      };
-      box.onclick = async (e) => {
-        const t = e.target.closest('button'); if (!t) return;
-        if (t.dataset.copy) { try { await navigator.clipboard.writeText(t.dataset.copy); showToast('Link copied'); } catch (_) { showToast('Copy not allowed here'); } }
-        else if (t.dataset.revoke && confirm('Revoke this link? It stops working immediately.')) { try { await os.unshare(t.dataset.revoke); showToast('Link revoked'); } catch (err) { showToast(err.message); } drawShares(); }
-      };
-      drawShares();
+      if (box) {
+        const drawShares = async () => {
+          let list; try { list = await os.listShares(); } catch (e) { box.innerHTML = '<p class="hint">' + escapeHtml(e.message) + '</p>'; return; }
+          box.innerHTML = list.length ? list.map(x => `<div class="share-row"><i class="ti ti-${x.kind === 'file' ? 'file' : 'note'}"></i><span title="${escapeHtml(x.title || '')}">${escapeHtml(x.title || x.id)}</span><button class="cal-btn" data-copy="${escapeHtml(x.url)}">Copy</button><button class="cal-btn" data-revoke="${escapeHtml(x.id)}">Revoke</button></div>`).join('') : '<p class="hint">No public links.</p>';
+        };
+        box.onclick = async (e) => {
+          const t = e.target.closest('button'); if (!t) return;
+          if (t.dataset.copy) { try { await navigator.clipboard.writeText(t.dataset.copy); showToast('Link copied'); } catch (_) { showToast('Copy not allowed here'); } }
+          else if (t.dataset.revoke && confirm('Revoke this link? It stops working immediately.')) { try { await os.unshare(t.dataset.revoke); showToast('Link revoked'); } catch (err) { showToast(err.message); } drawShares(); }
+        };
+        drawShares();
+      }
     }
     window.openSettings = openSettings;
 
