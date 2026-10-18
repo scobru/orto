@@ -5461,12 +5461,12 @@ print("Welcome to Orto!")
     function renderEvLinks() {
       const box = document.getElementById('ev-links'); if (!box) return;
       const linked = new Set(evLinks.filter(l => l.kind === 'note').map(l => l.soul));
-      const options = Object.entries(localNotes).filter(([id, n]) => !n.trash && !linked.has(id)).sort((a, b) => (b[1].timestamp || 0) - (a[1].timestamp || 0)).slice(0, 300);
+      const options = Object.entries(localNotes).filter(([id, n]) => id !== 'new' && !n.trash && !linked.has(id)).sort((a, b) => (b[1].timestamp || 0) - (a[1].timestamp || 0)).slice(0, 300);
       box.innerHTML = `<div class="note-events">${evLinks.filter(l => l.kind === 'note').map(l => {
         const t = noteTitle(l.soul);
         return `<span class="ev-chip" ${t ? `onclick="openLinkedNote('${escapeHtml(l.soul)}')"` : ''}><i class="ti ti-notes"></i>${escapeHtml(t || '(deleted note)')}<button class="ev-link-x" title="Unlink" onclick="event.stopPropagation();unlinkNoteFromModal('${escapeHtml(l.soul)}')">&times;</button></span>`;
       }).join('')}</div>
-        <div class="row"><select id="ev-note-pick"><option value="">Link a note…</option>${options.map(([id, n]) => `<option value="${escapeHtml(id)}">${escapeHtml(n.title || 'Untitled Note')}</option>`).join('')}</select>
+        <div class="row"><select id="ev-note-pick" onchange="linkNoteFromModal()"><option value="">Link a note…</option>${options.map(([id, n]) => `<option value="${escapeHtml(id)}">${escapeHtml(n.title || 'Untitled Note')}</option>`).join('')}</select>
         <button class="cal-btn" style="flex:0 0 auto" onclick="linkNoteFromModal()">Link</button></div>`;
     }
     function linkNoteFromModal() {
@@ -5475,7 +5475,7 @@ print("Welcome to Orto!")
     }
     function unlinkNoteFromModal(soul) { evLinks = evLinks.filter(l => !(l.kind === 'note' && l.soul === soul)); renderEvLinks(); }
     function openLinkedNote(soul) {
-      closeEventModal(); if (typeof closeTaskModal === 'function') closeTaskModal(); closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia(); if (typeof closeTasks === 'function') closeTasks(); selectNote(soul);
+      closeEventModal(); if (typeof closeTaskModal === 'function') closeTaskModal(); closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia(); if (typeof closeTasks === 'function') closeTasks(); if (typeof setFilter === 'function') setFilter('all'); selectNote(soul);
     }
     // events & tasks linked to the open note, shown under its title; click one to open it
     function renderNoteEvents() {
@@ -5536,6 +5536,10 @@ print("Welcome to Orto!")
       if (!title) return showToast('Title required');
       if (Number.isNaN(start)) return showToast('Invalid start date');
       if (Number.isNaN(end) || end < start) end = start;
+      const pickSoul = $('ev-note-pick')?.value;
+      if (pickSoul && !evLinks.some(l => l.kind === 'note' && l.soul === pickSoul)) {
+        evLinks.push({ kind: 'note', soul: pickSoul });
+      }
       const ev = { title, start, end, allDay, location: $('ev-loc').value.trim(), notes: $('ev-notes').value.trim(), color: $('ev-colors').querySelector('.sel')?.dataset.c || CAL_COLORS[0], links: evLinks };
       try {
         const res = await os.writeCalendarEvent({ ...ev, soul });
@@ -5546,7 +5550,6 @@ print("Welcome to Orto!")
         closeEventModal(); renderCalendar(); renderNoteEvents(); showToast('Event encrypted & saved');
       } catch (err) {
         showToast('Save failed: ' + err.message);
-      }
     }
 
     async function deleteCalEvent(soul) {
@@ -5587,6 +5590,10 @@ print("Welcome to Orto!")
       document.body.classList.add('blog-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
       document.getElementById('nav-blog').classList.add('active');
+      const blogLinks = document.getElementById('blog-open-link')?.parentElement;
+      if (blogLinks) {
+        blogLinks.style.display = (os && os.mode === 'freenet') ? 'none' : '';
+      }
       document.getElementById('blog-open-link').href = (serverUrl || location.origin) + '/blog/' + pair.pub;
       document.getElementById('blog-rss-link').href = (serverUrl || location.origin) + '/blog/' + pair.pub + '/feed.xml';
       if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('open')) toggleSidebar();
@@ -7505,7 +7512,7 @@ print("Welcome to Orto!")
       }).join('');
 
       const addRow = unlinkedNotes.length ? `<div class="row" style="gap:6px;margin-top:4px;">
-        <select id="tsk-add-note-select">
+        <select id="tsk-add-note-select" onchange="linkTaskNoteFromSelect()">
           <option value="">Link a note…</option>
           ${unlinkedNotes.map(n => `<option value="${escapeHtml(n.soul)}">${escapeHtml(n.title)}</option>`).join('')}
         </select>
@@ -7540,6 +7547,11 @@ print("Welcome to Orto!")
       if (dueInput) {
         dueDate = new Date(dueInput).getTime();
         if (Number.isNaN(dueDate)) dueDate = null;
+      }
+
+      const pickTaskSoul = document.getElementById('tsk-add-note-select')?.value;
+      if (pickTaskSoul && !currentTaskLinks.some(l => l.kind === 'note' && l.soul === pickTaskSoul)) {
+        currentTaskLinks.push({ kind: 'note', soul: pickTaskSoul });
       }
 
       const taskObj = {

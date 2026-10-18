@@ -494,7 +494,7 @@ export class Orto {
         return ok(JSON.parse(raw));
       }
       if (method === 'PUT' && soul) {
-        const rec = { soul, data: body.data, updatedAt: Date.now() };
+        const rec = { soul, ...body, updatedAt: body?.updatedAt || Date.now() };
         this._safeStorageSet(`${prefix}${coll}:${soul}`, JSON.stringify(rec));
         if (this._subs) {
           for (const s of this._subs) {
@@ -515,6 +515,27 @@ export class Orto {
           }
         }
         return ok({ status: 'deleted' });
+      }
+    }
+
+    const uMatch = path.match(/^\/u\/([^/?]+)(?:\/([^/?]+))?/);
+    if (uMatch) {
+      const username = decodeURIComponent(uMatch[1]).toLowerCase();
+      const sub = uMatch[2];
+      if (!sub && method === 'GET') {
+        return ok({ name: username, pub: username });
+      }
+      if (sub === 'posts' && method === 'GET') {
+        const out = [];
+        const userPrefix = `orto_rec:${username}:`;
+        const keys = this._safeStorageKeys(`${userPrefix}posts:`);
+        for (const k of keys) {
+          const val = this._safeStorageGet(k);
+          if (val) {
+            try { out.push(JSON.parse(val)); } catch (_) {}
+          }
+        }
+        return ok(out);
       }
     }
 

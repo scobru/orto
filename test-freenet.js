@@ -158,6 +158,89 @@ try {
   const afterDel = await os8.listFiles();
   assert.equal(afterDel.length, 0, 'File successfully deleted');
 
+  console.log('9. Freenet mode: blog post publish, streaming, read, and delete');
+  const orto9 = createClient();
+  await orto9.login('fn_user_blog', 'secret-pass-blog');
+  const blogEvents = [];
+  const unsubBlog = orto9.onPost('fn_user_blog', (post, id, isDeleted) => {
+    blogEvents.push({ post, id, isDeleted });
+  });
+
+  const pubRes = await orto9.publishBlogPost({
+    title: 'Benvenuti su Freenet',
+    content: '# Freenet\nUn blog sovrano e peer-to-peer.',
+    tags: ['freenet', 'blog', 'crypto']
+  });
+  assert.ok(pubRes.id.startsWith('post-'), 'Post generated valid id');
+  assert.equal(pubRes.status, 'published');
+
+  await new Promise(r => setTimeout(r, 20));
+  assert.ok(blogEvents.length >= 1, 'Stream received blog post event');
+  const evMatch = blogEvents.find(e => e.id === pubRes.id && !e.isDeleted);
+  assert.ok(evMatch, 'Live post event found');
+  assert.equal(evMatch.post.title, 'Benvenuti su Freenet');
+  assert.equal(evMatch.post.content, '# Freenet\nUn blog sovrano e peer-to-peer.');
+  assert.deepEqual(evMatch.post.tags, ['freenet', 'blog', 'crypto']);
+
+  const postsList = await orto9.readBlogPosts('fn_user_blog');
+  assert.equal(postsList.length, 1);
+  assert.equal(postsList[0].id, pubRes.id);
+  assert.equal(postsList[0].title, 'Benvenuti su Freenet');
+  assert.equal(postsList[0].content, '# Freenet\nUn blog sovrano e peer-to-peer.');
+
+  const singlePost = await orto9.getBlogPost(pubRes.id, 'fn_user_blog');
+  assert.ok(singlePost);
+  assert.equal(singlePost.title, 'Benvenuti su Freenet');
+
+  await orto9.deleteBlogPost(pubRes.id);
+  await new Promise(r => setTimeout(r, 20));
+  const delEv = blogEvents.find(e => e.id === pubRes.id && e.isDeleted);
+  assert.ok(delEv, 'Post deletion event streamed');
+
+  const afterDeletePosts = await orto9.readBlogPosts('fn_user_blog');
+  assert.equal(afterDeletePosts.length, 0, 'Blog post list is empty after deletion');
+  unsubBlog();
+
+  console.log('10. Freenet mode: note linking to calendar events and tasks');
+  const orto10 = createClient();
+  await orto10.login('fn_user_linking', 'secret-pass-linking');
+  const os10 = orto10.personal();
+
+  const noteA = await os10.writeVaultNote({ title: 'Nota di Progetto', body: 'Dettagli architettura' });
+  assert.ok(noteA.soul.startsWith('vault-'));
+
+  const evA = await os10.writeCalendarEvent({
+    title: 'Review Architettura',
+    start: Date.now(),
+    links: [{ kind: 'note', soul: noteA.soul }]
+  });
+  assert.ok(evA.soul.startsWith('cal-'));
+
+  const calEvs = await os10.readCalendarEvents();
+  assert.equal(calEvs.length, 1);
+  assert.equal(calEvs[0].soul, evA.soul);
+  assert.ok(calEvs[0].links && calEvs[0].links.length === 1);
+  assert.equal(calEvs[0].links[0].soul, noteA.soul);
+
+  const linkedEvents = await os10.eventsFor({ kind: 'note', soul: noteA.soul });
+  assert.equal(linkedEvents.length, 1);
+  assert.equal(linkedEvents[0].soul, evA.soul);
+
+  const notesFromEv = await os10.notesForEvent(evA.soul);
+  assert.equal(notesFromEv.length, 1);
+  assert.equal(notesFromEv[0].soul, noteA.soul);
+  assert.equal(notesFromEv[0].title, 'Nota di Progetto');
+
+  const taskA = await os10.writeTask({
+    title: 'Completare Specifica',
+    links: [{ kind: 'note', soul: noteA.soul }]
+  });
+  assert.ok(taskA.soul.startsWith('task-'));
+
+  const linkedTasks = await os10.tasksFor({ kind: 'note', soul: noteA.soul });
+  assert.equal(linkedTasks.length, 1);
+  assert.equal(linkedTasks[0].soul, taskA.soul);
+
   console.log('ok - all freenet tests passed');
 } finally {
   clients.forEach(c => c.close());
