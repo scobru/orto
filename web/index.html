@@ -6336,13 +6336,21 @@ print("Welcome to Orto!")
     async function filesUpload(input) {
       const list = [...input.files]; input.value = '';
       const kind = groupKind(), to = { [kind]: selGet(kind) || undefined }; // into the folder / album / playlist that is open
+      let successCount = 0;
       for (const [i, file] of list.entries()) {
         const label = file.name + (list.length > 1 ? ` (${i + 1}/${list.length})` : '');
         showToast(`Encrypting & uploading ${label}…`);
-        try { await os.uploadFileChunked(file, file.name, { type: file.type || undefined, thumb: await makeThumb(file), ...to, onProgress: (p) => { if (file.size > 4e6) showToast(`Uploading ${label} ${Math.round(p * 100)}%`); } }); }
-        catch (e) { showToast(file.name + ': ' + e.message); break; }
+        try {
+          await os.uploadFileChunked(file, file.name, { type: file.type || undefined, thumb: await makeThumb(file), ...to, onProgress: (p) => { if (file.size > 4e6) showToast(`Uploading ${label} ${Math.round(p * 100)}%`); } });
+          successCount++;
+        }
+        catch (e) {
+          showToast(file.name + ': ' + e.message);
+          console.error('Upload error for ' + file.name + ':', e);
+          break;
+        }
       }
-      if (list.length) showToast(list.length > 1 ? 'Uploaded ' + list.length + ' files' : 'Uploaded ' + list[0].name);
+      if (successCount > 0) showToast(successCount > 1 ? 'Uploaded ' + successCount + ' files' : 'Uploaded ' + list[0].name);
       refreshFiles();
     }
     async function filesDownload(id, name) {

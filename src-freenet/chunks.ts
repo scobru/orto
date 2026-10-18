@@ -5,11 +5,11 @@ import {
   FreenetWsApi,
   GetRequest,
   PutRequest,
-  RelatedContractsT,
   WasmContractV1,
-  ContractCodeT,
   ResponseHandler,
 } from "@freenetorg/freenet-stdlib";
+import { ContractCodeT } from "@freenetorg/freenet-stdlib/common";
+import { RelatedContractsT } from "@freenetorg/freenet-stdlib/client-request";
 import { blake3 } from "@noble/hashes/blake3.js";
 
 // ---------------------------------------------------------------- WebSocket connection
@@ -93,9 +93,12 @@ export function getWasmCode(): Promise<{ code: Uint8Array; codeHash: Uint8Array 
   if (wasmCache) return wasmCache;
   wasmCache = (async () => {
     let u = "./chunk.wasm";
-    if (typeof globalThis.location !== "undefined") {
+    if (typeof globalThis.location !== "undefined" && globalThis.location.pathname) {
       const base = globalThis.location.pathname.replace(/[^/]*$/, "");
-      u = `${globalThis.location.origin}${base}chunk.wasm`;
+      const origin = (globalThis.location.origin && globalThis.location.origin !== "null")
+        ? globalThis.location.origin
+        : "";
+      u = `${origin}${base}chunk.wasm`;
     }
     const r = await fetch(u);
     if (!r.ok) throw new Error(`Cannot load chunk.wasm from ${u}: HTTP ${r.status}`);
@@ -203,5 +206,6 @@ if (typeof globalThis !== "undefined") {
     isFreenetAvailable,
     resetSocket,
     getWasmCode,
+    api,
   };
 }
