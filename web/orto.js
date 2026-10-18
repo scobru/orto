@@ -255,6 +255,11 @@ const chunked = async (items, fn, n = 20) => { for (let i = 0; i < items.length;
  */
 export async function readShare(link) {
   const u = new URL(link);
+  const fm = /^#fshare=([^~]+)~(.+)$/.exec(u.hash); // Freenet: the ciphertext travels inside the link, no server involved
+  if (fm) {
+    const p = await unseal(await aesKey(fromB64u(fm[2])), fm[1]);
+    return p.kind === 'file' ? { ...p, data: fromB64(p.data) } : p;
+  }
   const id = u.pathname.split('/').pop();
   if (!/^[a-f0-9]{32}$/.test(id) || !u.hash.slice(1)) throw new Error('Not an Orto share link');
   const r = await fetch(`${u.origin}/api/s/${id}`);
@@ -631,6 +636,19 @@ export class Orto {
       }
     }
 
+    if (path.startsWith('/feed?')) { // RSS relay: no server, so go direct and fall back to public CORS proxies
+      const target = decodeURIComponent(path.split('url=')[1] || '');
+      const tries = [target, 'https://api.allorigins.win/raw?url=' + encodeURIComponent(target), 'https://corsproxy.io/?' + encodeURIComponent(target)];
+      for (const u of tries) {
+        try {
+          const r = await fetch(u);
+          if (!r.ok) continue;
+          const text = await r.text();
+          if (/<(rss|feed|rdf:RDF|opml)/i.test(text)) return { ok: true, status: 200, text: async () => text, json: async () => ({}) };
+        } catch (_) {}
+      }
+      const err = new Error('Cannot fetch feed (blocked by CORS or offline)'); err.status = 502; throw err;
+    }
     if (path.startsWith('/events')) {
       return { ok: true, status: 200, body: (async function* () {})() };
     }
@@ -990,12 +1008,20 @@ export class Orto {
     this._needKey();
     const raw = crypto.getRandomValues(new Uint8Array(32)), key = toB64u(raw);
     const cipher = await seal(await aesKey(raw), payload);
+    if (this.mode === 'freenet') { // no server to host it: the link itself carries the encrypted item (cannot be revoked once handed out)
+      if (cipher.length > 1.5 * 1024 * 1024) throw new Error('Too large for a Freenet link (max ~1 MB)');
+      const id = toB64u(crypto.getRandomValues(new Uint8Array(12)));
+      await this.put('shares', id, { id, kind, ref, title, key, cipher, createdAt: Date.now() });
+      return { id, kind, title, url: this._shareUrl(id, key, cipher) };
+    }
     const { id } = await (await this._fetch('POST', '/s', bytes ? new TextEncoder().encode(cipher) : { data: cipher })).json();
     await this.put('shares', id, { id, kind, ref, title, key, createdAt: Date.now() });
     return { id, kind, title, url: this._shareUrl(id, key) };
   }
 
-  _shareUrl(id, key) { return `${this.server || globalThis.location?.origin || ''}/s/${id}#${key}`; }
+  _shareUrl(id, key, cipher) {
+    if (this.mode === 'freenet') return `${String(globalThis.location?.href || 'http://127.0.0.1:7509/').split('#')[0]}#fshare=${cipher}~${key}`;
+    return `${this.server || globalThis.location?.origin || ''}/s/${id}#${key}`; }
 
   /** Public read-only link to one note. */
   async shareNote(soul) {
@@ -1014,13 +1040,13 @@ export class Orto {
 
   async listShares() {
     return (await this._readAll('shares')).filter(x => x.id && x.key)
-      .map(({ key, ...x }) => ({ ...x, url: this._shareUrl(x.id, key) })).sort((a, b) => b.createdAt - a.createdAt);
+      .map(({ key, cipher, ...x }) => ({ ...x, url: this._shareUrl(x.id, key, cipher) })).sort((a, b) => b.createdAt - a.createdAt);
   }
 
-  /** Revoke a link: the ciphertext is deleted from the server. */
+  /** Revoke a link: the ciphertext is deleted from the server (Freenet: only removed from your list, the link itself stays valid). */
   async unshare(id) {
     this._needKey();
-    await this._json('DELETE', '/s/' + encodeURIComponent(id)).catch((e) => { if (e.status !== 404) throw e; });
+    if (this.mode !== 'freenet') await this._json('DELETE', '/s/' + encodeURIComponent(id)).catch((e) => { if (e.status !== 404) throw e; });
     return this._del('shares', id);
   }
 

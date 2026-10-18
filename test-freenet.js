@@ -241,6 +241,17 @@ try {
   assert.equal(linkedTasks.length, 1);
   assert.equal(linkedTasks[0].soul, taskA.soul);
 
+  console.log('11. Freenet mode: self-contained public share links');
+  const sh = await os10.shareNote(noteA.soul);
+  assert.ok(sh.url.includes('#fshare='));
+  const { readShare } = await import('./orto.js');
+  const opened = await readShare(sh.url);
+  assert.equal(opened.kind, 'note');
+  assert.equal(opened.title, 'Nota di Progetto');
+  assert.equal((await os10.listShares()).length, 1);
+  await os10.unshare(sh.id);
+  assert.equal((await os10.listShares()).length, 0);
+
   console.log('ok - all freenet tests passed');
 } finally {
   clients.forEach(c => c.close());

@@ -3643,7 +3643,33 @@
 
   <!-- App logic: talks to the Orto server; all encryption happens here -->
   <script type="module">
-    import { Orto, DEFAULT_SERVER, normalizeServer, contactsToVcf, generatePassword } from './orto.js';
+    import { Orto, DEFAULT_SERVER, normalizeServer, contactsToVcf, generatePassword, readShare } from './orto.js';
+
+    // Freenet share link (#fshare=<ciphertext>~<key>): decrypted entirely in the browser, no login needed
+    if (/^#fshare=/.test(location.hash)) (async () => {
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;z-index:99999;overflow:auto;background:var(--bg,#111);color:var(--fg,#eee);padding:24px 16px;font:16px/1.6 system-ui,sans-serif';
+      const box = document.createElement('main'); box.style.cssText = 'max-width:42rem;margin:0 auto'; box.textContent = 'Decrypting…';
+      const close = document.createElement('button'); close.textContent = '✕ Close'; close.style.cssText = 'position:fixed;top:12px;right:16px;padding:6px 12px;cursor:pointer';
+      close.onclick = () => { ov.remove(); history.replaceState(null, '', location.pathname + location.search); };
+      ov.append(close, box); document.body.append(ov);
+      try {
+        const r = await readShare(location.href);
+        box.textContent = '';
+        const h = document.createElement('h1'); h.textContent = r.title || r.name || 'Shared'; box.append(h);
+        if (r.kind === 'note') {
+          const body = document.createElement('div');
+          body.innerHTML = window.DOMPurify && window.marked ? DOMPurify.sanitize(window.marked.parse(r.body || '')) : '';
+          if (!body.innerHTML) body.textContent = r.body || '';
+          box.append(body);
+        } else {
+          const img = /^image\/(png|jpe?g|gif|webp|avif|bmp)$/.test(r.type);
+          const url = URL.createObjectURL(new Blob([r.data], { type: img ? r.type : 'application/octet-stream' }));
+          if (img) { const i = document.createElement('img'); i.src = url; i.alt = r.name; i.style.maxWidth = '100%'; box.append(i, document.createElement('br')); }
+          const a = document.createElement('a'); a.href = url; a.download = r.name; a.textContent = 'Download ' + r.name; box.append(a);
+        }
+      } catch (e) { box.textContent = 'Cannot open this link (is it complete, including the part after #?).'; }
+    })();
 
     let os;       // the client the app reads and writes through: a view of `root` on your own data, or on one shared space
     let root;     // the signed-in client itself (spaces list, invitations, password)
