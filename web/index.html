@@ -5576,6 +5576,7 @@ print("Welcome to Orto!")
         closeEventModal(); renderCalendar(); renderNoteEvents(); showToast('Event encrypted & saved');
       } catch (err) {
         showToast('Save failed: ' + err.message);
+      }
     }
 
     async function deleteCalEvent(soul) {
