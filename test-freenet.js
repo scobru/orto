@@ -317,7 +317,8 @@ try {
   assert.equal(vaults.size, 1, 'one vault for this identity');
   await devB.login('fn_vault_user', 'vault-pass'); // another device: same password, same vault
   await settle();
-  assert.equal(devA._vault.params, devB._vault.params);
+  const vaultOf = (c) => c._vaults.get(c._vaultPrefix()).params;
+  assert.equal(vaultOf(devA), vaultOf(devB));
   assert.equal((await devB.personal().getVaultNote(noteFromA.soul)).body, 'replicated');
   await devB.personal().deleteVaultNote(noteFromA.soul);
   await settle();
@@ -325,7 +326,22 @@ try {
   const other = createClient();
   await other.login('fn_vault_other', 'other-pass');
   await settle();
-  assert.notEqual(other._vault.params, devA._vault.params, 'another user has another vault');
+  assert.notEqual(vaultOf(other), vaultOf(devA), 'another user has another vault');
+
+  // a shared space replicates between members who hold its key
+  const spaceA = await devA.createSpace('Shared on Freenet');
+  const shared = await spaceA.writeVaultNote({ title: 'For the team', body: 'hello' });
+  const { url } = await spaceA.createLink('editor');
+  await settle();
+  const spaceOther = await other.joinLink(url);
+  await settle();
+  assert.equal(vaultOf(spaceOther), vaultOf(spaceA), 'members derive the same space vault');
+  assert.notEqual(vaultOf(spaceA), vaultOf(devA), 'the space is not the personal vault');
+  assert.equal((await spaceOther.getVaultNote(shared.soul)).body, 'hello');
+  await spaceOther.writeVaultNote({ title: 'Reply', body: 'from the other member' });
+  await settle();
+  assert.ok((await spaceA.readVaultNotes()).some((n) => n.title === 'Reply'), 'a member write reached the owner');
+  assert.equal((await devA.personal().readVaultNotes()).length, 0, 'space notes stay out of personal data');
   delete globalThis.FreenetVault;
 
   console.log('ok - all freenet tests passed');

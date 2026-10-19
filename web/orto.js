@@ -477,25 +477,30 @@ export class Orto {
     } catch (_) {}
   }
 
-  // ─── Freenet vault: personal encrypted records replicated through contracts/vault ───
-  // Same contract and identity format as freenet-sync.js, so the same secret on a server finds the same vault.
+  // ─── Freenet vault: encrypted records replicated through contracts/vault ───
+  // One vault for your own data (same contract and identity format as freenet-sync.js, so the same secret on a
+  // server finds the same vault) and one per shared space, signed with a key derived from the space key.
+
+  /** Local storage prefix of this view's records (yours, or a space's): the same one _localStore uses. */
+  _vaultPrefix() { return `orto_rec:${this.username || 'local'}:${this._space ? `sp:${this._space}:` : ''}`; }
 
   async _vaultStart(secretHex) {
-    const FV = globalThis.FreenetVault;
-    if (!FV || !secretHex || this._vault) return;
+    const FV = globalThis.FreenetVault, base = this._base || this, prefix = this._vaultPrefix();
+    base._vaults ??= new Map();
+    if (!FV || !secretHex || base._vaults.has(prefix)) return;
     const seed = Uint8Array.from(secretHex.match(/../g), (b) => parseInt(b, 16));
     const pkcs8 = new Uint8Array([...Uint8Array.from('302e020100300506032b657004220420'.match(/../g), (b) => parseInt(b, 16)), ...seed]);
     const priv = await crypto.subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, true, ['sign']);
     const pub = hex(fromB64u((await crypto.subtle.exportKey('jwk', priv)).x));
     const salt = hex(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('orto-vault-v1|' + secretHex))).slice(0, 16));
-    this._vault = { FV, params: pub + salt, priv, exists: false, pending: new Map(), timer: null, prefix: `orto_rec:${this.username}:` };
-    await FV.onVaultUpdate(this._vault.params, () => this._vaultSync().catch(() => {}));
-    this._vaultSync().catch((e) => console.warn('[Freenet] vault sync failed:', e));
+    const v = { FV, params: pub + salt, priv, exists: false, pending: new Map(), timer: null, prefix };
+    base._vaults.set(prefix, v);
+    await FV.onVaultUpdate(v.params, () => this._vaultSync(v).catch(() => {}));
+    this._vaultSync(v).catch((e) => console.warn('[Freenet] vault sync failed:', e));
   }
 
   /** Pull what other devices wrote (newer wins), then push local records the network lacks or holds older. */
-  async _vaultSync() {
-    const v = this._vault;
+  async _vaultSync(v) {
     const net = await v.FV.getVault(v.params);
     v.exists = net !== null;
     const remote = net?.records || {};
@@ -514,19 +519,18 @@ export class Orto {
       const rec = JSON.parse(this._safeStorageGet(k) || 'null');
       if (rec && vaultable(key, rec) && (!remote[key] || rec.updatedAt > remote[key].updated_at)) v.pending.set(key, rec);
     }
-    await this._vaultFlush();
+    await this._vaultFlush(v);
   }
 
   _vaultQueue(coll, soul, rec) {
-    const v = this._vault;
+    const v = (this._base || this)._vaults?.get(this._vaultPrefix());
     if (!v || !COLLECTIONS.includes(coll) || !vaultable(`${coll}:${soul}`, rec)) return;
     v.pending.set(`${coll}:${soul}`, rec);
     clearTimeout(v.timer);
-    v.timer = setTimeout(() => this._vaultFlush().catch(() => {}), 300); // one update for a burst of edits
+    v.timer = setTimeout(() => this._vaultFlush(v).catch(() => {}), 300); // one update for a burst of edits
   }
 
-  async _vaultFlush() {
-    const v = this._vault;
+  async _vaultFlush(v) {
     if (!v.pending.size) return;
     const batch = new Map(v.pending), records = {};
     for (const [key, rec] of batch) {
@@ -541,7 +545,7 @@ export class Orto {
     } catch (e) {
       console.warn('[Freenet] vault push failed, retrying:', e);
       clearTimeout(v.timer);
-      v.timer = setTimeout(() => this._vaultFlush().catch(() => {}), 10000);
+      v.timer = setTimeout(() => this._vaultFlush(v).catch(() => {}), 10000);
     }
   }
 
@@ -579,7 +583,7 @@ export class Orto {
       if (method === 'PUT' && soul) {
         const rec = { soul, ...body, updatedAt: body?.updatedAt || Date.now() };
         this._safeStorageSet(`${prefix}${coll}:${soul}`, JSON.stringify(rec));
-        if (!this._space) this._vaultQueue(coll, soul, rec);
+        this._vaultQueue(coll, soul, rec);
         if (this._subs) {
           for (const s of this._subs) {
             if (s.coll === coll || s.coll === '_spaces') {
@@ -592,7 +596,7 @@ export class Orto {
       if (method === 'DELETE' && soul) {
         const tomb = { soul, deleted: true, updatedAt: Date.now() }; // kept, so an older copy from the network cannot bring it back
         this._safeStorageSet(`${prefix}${coll}:${soul}`, JSON.stringify(tomb));
-        if (!this._space) this._vaultQueue(coll, soul, tomb);
+        this._vaultQueue(coll, soul, tomb);
         if (this._subs) {
           for (const s of this._subs) {
             if (s.coll === coll) {
@@ -1295,6 +1299,9 @@ export class Orto {
         _abort: null,
         _closed: false
       });
+      // every member holding the space key derives the same vault identity, so they all read and write it
+      const secret = hex(new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array([...new TextEncoder().encode('orto-space-v1|'), ...raw]))));
+      await v._vaultStart(secret).catch((e) => console.warn('[Freenet] space sync off:', e));
       return v;
     }
     const m = (await base._json('GET', '/sp')).find((x) => x.id === Number(id));
