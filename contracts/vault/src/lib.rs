@@ -5,7 +5,9 @@
 //! Every record is signed on its own, so the state is self-verifying and any subset of records can travel as a delta:
 //!   signature over `orto1|<params hex>|<key>|<updated_at>|<deleted>|<data>`
 //! Supports BOTH direct Ed25519 signing (cert: None) and Viso/whoiam delegated signing (cert: Some).
-//! Merge is last-write-wins per record (ties broken by the larger data string so every node converges).
+//! Merge is last-write-wins per record, ordered by (updated_at, signature) so every node converges.
+//! The summary lists every key with its version, so a peer also gets records older than its newest one
+//! (written offline on another device).
 
 use freenet_stdlib::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -37,9 +39,11 @@ pub struct VaultState {
 /// A delta is a set of signed records (same shape as a state).
 pub type DeltaBody = VaultState;
 
-#[derive(Serialize, Deserialize, Default)]
-struct Summary {
-    ts: u64,
+/// key -> (updated_at, signature prefix): what a peer holds.
+type Summary = BTreeMap<String, (u64, String)>;
+
+fn version(r: &VaultRecord) -> (u64, String) {
+    (r.updated_at, r.sig.chars().take(16).collect())
 }
 
 const MAX_KEY_LEN: usize = 160;
@@ -50,6 +54,7 @@ fn is_valid_key(k: &str) -> bool {
     !k.is_empty()
         && k.len() <= MAX_KEY_LEN
         && k.contains(':')
+        && !k.contains('|') // '|' separates the fields of the signed message
         && !k.chars().any(|c| c.is_control() || c.is_whitespace())
 }
 
@@ -107,7 +112,7 @@ pub fn check_state(params: &str, s: &VaultState) -> R<()> {
 }
 
 fn newer(a: &VaultRecord, b: &VaultRecord) -> bool {
-    (a.updated_at, a.data.as_str()) > (b.updated_at, b.data.as_str())
+    (a.updated_at, &a.sig) > (b.updated_at, &b.sig)
 }
 
 /// Merge verified incoming records into the state (last write wins per record).
@@ -125,12 +130,16 @@ pub fn merge(params: &str, mut state: VaultState, incoming: VaultState) -> R<Vau
     Ok(state)
 }
 
-/// Records newer than `peer_ts` (what a peer at that timestamp is missing).
-pub fn delta_for(state: &VaultState, peer_ts: u64) -> Vec<u8> {
+pub fn summary_of(state: &VaultState) -> Summary {
+    state.records.iter().map(|(k, r)| (k.clone(), version(r))).collect()
+}
+
+/// Records the peer lacks or holds an older version of.
+pub fn delta_for(state: &VaultState, peer: &Summary) -> Vec<u8> {
     let records: BTreeMap<_, _> = state
         .records
         .iter()
-        .filter(|(_, r)| r.updated_at > peer_ts)
+        .filter(|(k, r)| peer.get(*k).map_or(true, |v| version(r) > *v))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     if records.is_empty() {
@@ -189,8 +198,8 @@ impl ContractInterface for Contract {
         _parameters: Parameters<'static>,
         state: State<'static>,
     ) -> Result<StateSummary<'static>, ContractError> {
-        let ts = parse_state(state.as_ref()).map(|s| s.updated_at).unwrap_or(0);
-        let s = serde_json::to_vec(&Summary { ts }).map_err(|e| ContractError::Deser(e.to_string()))?;
+        let sum = parse_state(state.as_ref()).map(|s| summary_of(&s)).unwrap_or_default();
+        let s = serde_json::to_vec(&sum).map_err(|e| ContractError::Deser(e.to_string()))?;
         Ok(StateSummary::from(s))
     }
 
@@ -199,9 +208,9 @@ impl ContractInterface for Contract {
         state: State<'static>,
         summary: StateSummary<'static>,
     ) -> Result<StateDelta<'static>, ContractError> {
-        let peer = if summary.as_ref().is_empty() { 0 } else { serde_json::from_slice::<Summary>(summary.as_ref()).unwrap_or_default().ts };
+        let peer: Summary = serde_json::from_slice(summary.as_ref()).unwrap_or_default(); // unreadable summary: send everything
         let s = parse_state(state.as_ref())?;
-        Ok(StateDelta::from(delta_for(&s, peer)))
+        Ok(StateDelta::from(delta_for(&s, &peer)))
     }
 }
 
@@ -282,13 +291,32 @@ mod tests {
     }
 
     #[test]
-    fn delta_only_has_newer_records() {
+    fn delta_has_what_the_peer_lacks_even_if_older() {
         let k = sk(5);
         let p = params(&k);
-        let s = merge(&p, VaultState::default(), state(vec![rec(&k, &p, "vault:old", "o", 500, false), rec(&k, &p, "vault:new", "n", 1500, false)])).unwrap();
-        let d: VaultState = serde_json::from_slice(&delta_for(&s, 1000)).unwrap();
-        assert_eq!(d.records.len(), 1);
-        assert!(d.records.contains_key("vault:new"));
-        assert!(delta_for(&s, 1500).is_empty());
+        // the peer already has a newer record, but not this older one written offline on another device
+        let peer = merge(&p, VaultState::default(), state(vec![rec(&k, &p, "vault:new", "n", 1500, false)])).unwrap();
+        let mine = merge(&p, VaultState::default(), state(vec![rec(&k, &p, "vault:old", "o", 500, false), rec(&k, &p, "vault:new", "n", 1500, false)])).unwrap();
+        let d: VaultState = serde_json::from_slice(&delta_for(&mine, &summary_of(&peer))).unwrap();
+        assert_eq!(d.records.keys().collect::<Vec<_>>(), vec!["vault:old"]);
+        // path agreement: applying the delta equals merging the whole state
+        assert_eq!(merge(&p, peer.clone(), d).unwrap(), merge(&p, peer, mine.clone()).unwrap());
+        assert!(delta_for(&mine, &summary_of(&mine)).is_empty());
+    }
+
+    #[test]
+    fn same_time_different_content_converges() {
+        let k = sk(6);
+        let p = params(&k);
+        let (key, a) = rec(&k, &p, "vault:x", "same", 5, false);
+        let (_, b) = rec(&k, &p, "vault:x", "same", 5, true);
+        let ab = merge(&p, state(vec![(key.clone(), a.clone())]), state(vec![(key.clone(), b.clone())])).unwrap();
+        let ba = merge(&p, state(vec![(key.clone(), b)]), state(vec![(key, a)])).unwrap();
+        assert_eq!(ab, ba);
+    }
+
+    #[test]
+    fn pipe_in_key_is_rejected() {
+        assert!(!is_valid_key("vault:a|5|false"));
     }
 }
