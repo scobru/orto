@@ -123,7 +123,7 @@ export function sync(db, dataDir, userId) {
   const res = { pulled: 0, pushed: 0 };
   let exists = true;
   try { res.pulled = applyState(db, userId, fetchVault(id)); } catch (e) { exists = false; if (!/not found|NotFound|timeout/i.test(String(e.stderr || e.message))) throw e; }
-  if (!exists) publish(id);
+  if (!exists) { publish(id); id.lastPush = 0; } // a new (or re-keyed) vault is empty: send every row
   const d = buildDelta(db, id, userId);
   if (d) { fdev(['execute', 'update', contractId(id), tmp('delta.json', d.signed)]); res.pushed = d.count; id.lastPush = d.ts; }
   id.lastPull = Date.now();

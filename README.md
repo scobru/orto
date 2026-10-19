@@ -105,6 +105,7 @@ npm run freenet:publish   # updates contract web assets via fdev
 ```
 - **Sovereign Identity**: No central server, passwords, or registration. Sign in with 1-click Ed25519 key generation or **Viso SSO**.
 - **Sandboxed & Zero-Server**: Runs in Freenet's sandboxed contract environment (`http://127.0.0.1:7509/v1/contract/web/<key>/`).
+- **Replicated on Freenet**: notes, calendar, tasks, bookmarks, contacts, secrets, feeds and file lists are signed and stored in your vault contract (`contracts/vault`, `src-freenet/vault.ts`), so signing in with the same username and password on another device finds the same data. Files and media go to content-addressed chunk contracts. Shared spaces stay on the device for now.
 - **Resilient Offline & Sandbox Persistence**: Notes, settings, and credentials persist across browser refreshes through a multi-tier fallback (`localStorage` with an encrypted `window.name` session mirror) adapted for sandboxed iframes.
 - **Session Locking & Logout**: Lock your session cleanly in-place. Clears in-memory keys, scrubs URL authentication parameters (`?viso=`, `?pk=`) and hashes (`#sk=`), and offers 1-click key backup or identity forgetting ("Dimentica").
 - **On-Device AI**: Local tag and emoji suggestions using Desert Ant Labs models run entirely client-side inside a sandboxed frame with zero cloud telemetry.
