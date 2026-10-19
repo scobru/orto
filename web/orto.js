@@ -21,6 +21,7 @@ export function normalizeServer(url) {
 }
 
 // base64 without Buffer so it works in browsers too
+const hex = (u8) => Array.from(u8, (b) => b.toString(16).padStart(2, '0')).join('');
 const toB64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000)); return btoa(s); };
 const fromB64 = (b) => { const s = atob(b), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }; // a plain loop: Uint8Array.from with a callback is ~25x slower on the multi-MB cache blob
 
@@ -182,7 +183,8 @@ export async function deriveKeys(username, password) {
   const enc = new TextEncoder();
   const base = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
   const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', iterations: 210000, salt: enc.encode('zenos:v1:' + name) /* the pre-rename name: part of the key derivation, never change it or every login stops opening its data */ }, base, 512));
-  return { name, key: await crypto.subtle.importKey('raw', bits.slice(0, 32), 'AES-GCM', false, ['encrypt', 'decrypt']), auth: toB64(bits.slice(32)) };
+  const vaultSecret = hex(new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array([...enc.encode('orto-vault-v1|'), ...bits.slice(0, 32)])))); // Freenet vault identity (Ed25519 seed)
+  return { name, key: await crypto.subtle.importKey('raw', bits.slice(0, 32), 'AES-GCM', false, ['encrypt', 'decrypt']), auth: toB64(bits.slice(32)), vaultSecret };
 }
 
 const asList = (v) => (Array.isArray(v) ? v : String(v || '').split(',')).map(x => String(x).trim()).filter(Boolean);
@@ -194,6 +196,8 @@ const checkLinks = (links) => {
   }
 };
 
+/** What contracts/vault accepts (is_valid_key, MAX_RECORD_DATA_BYTES): anything else would make it refuse the whole update. */
+const vaultable = (key, rec) => /^[^\s|]{1,160}$/.test(key) && key.includes(':') && (rec.deleted || (typeof rec.data === 'string' && rec.data.length <= 2 * 1024 * 1024));
 const COLLECTIONS = ['vault', 'calendar', 'tasks', 'bookmarks', 'contacts', 'secrets', 'feeds', 'files', 'shares']; // encrypted ones; `posts` is public
 const toB64u = (u8) => toB64(u8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const fromB64u = (b) => fromB64(b.replace(/-/g, '+').replace(/_/g, '/'));
@@ -292,10 +296,11 @@ export class Orto {
    * Throws an Error with `.status` 404 when the user does not exist yet.
    */
   async login(username, password, { create = false } = {}) {
-    const { name, key, auth } = await deriveKeys(username, password);
+    const { name, key, auth, vaultSecret } = await deriveKeys(username, password);
     if (this.mode === 'freenet') {
       const token = 'fn-' + name;
       Object.assign(this, { key, token, username: name, pair: { pub: name }, _auth: auth });
+      await this._vaultStart(vaultSecret).catch((e) => console.warn('[Freenet] vault sync off:', e));
       return this.pair;
     }
     const { token } = await this._json('POST', create ? '/register' : '/login', { name, auth });
@@ -472,6 +477,74 @@ export class Orto {
     } catch (_) {}
   }
 
+  // ─── Freenet vault: personal encrypted records replicated through contracts/vault ───
+  // Same contract and identity format as freenet-sync.js, so the same secret on a server finds the same vault.
+
+  async _vaultStart(secretHex) {
+    const FV = globalThis.FreenetVault;
+    if (!FV || !secretHex || this._vault) return;
+    const seed = Uint8Array.from(secretHex.match(/../g), (b) => parseInt(b, 16));
+    const pkcs8 = new Uint8Array([...Uint8Array.from('302e020100300506032b657004220420'.match(/../g), (b) => parseInt(b, 16)), ...seed]);
+    const priv = await crypto.subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, true, ['sign']);
+    const pub = hex(fromB64u((await crypto.subtle.exportKey('jwk', priv)).x));
+    const salt = hex(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('orto-vault-v1|' + secretHex))).slice(0, 16));
+    this._vault = { FV, params: pub + salt, priv, exists: false, pending: new Map(), timer: null, prefix: `orto_rec:${this.username}:` };
+    await FV.onVaultUpdate(this._vault.params, () => this._vaultSync().catch(() => {}));
+    this._vaultSync().catch((e) => console.warn('[Freenet] vault sync failed:', e));
+  }
+
+  /** Pull what other devices wrote (newer wins), then push local records the network lacks or holds older. */
+  async _vaultSync() {
+    const v = this._vault;
+    const net = await v.FV.getVault(v.params);
+    v.exists = net !== null;
+    const remote = net?.records || {};
+    for (const [k, r] of Object.entries(remote)) {
+      const i = k.indexOf(':'), coll = k.slice(0, i), soul = k.slice(i + 1);
+      if (!COLLECTIONS.includes(coll)) continue;
+      const raw = this._safeStorageGet(v.prefix + k), cur = raw && JSON.parse(raw);
+      if (cur && cur.updatedAt >= r.updated_at) continue;
+      const rec = r.deleted ? { soul, deleted: true, updatedAt: r.updated_at } : { soul, data: r.data, encrypted: true, updatedAt: r.updated_at };
+      this._safeStorageSet(v.prefix + k, JSON.stringify(rec));
+      for (const s of this._subs || []) if (s.coll === coll) try { s.handle(r.deleted ? { coll, soul, deleted: true } : { coll, record: rec, soul }); } catch (_) {}
+    }
+    for (const k of this._safeStorageKeys(v.prefix)) {
+      const key = k.slice(v.prefix.length), coll = key.slice(0, key.indexOf(':'));
+      if (!COLLECTIONS.includes(coll)) continue; // keys of shared spaces start with "sp:"
+      const rec = JSON.parse(this._safeStorageGet(k) || 'null');
+      if (rec && vaultable(key, rec) && (!remote[key] || rec.updatedAt > remote[key].updated_at)) v.pending.set(key, rec);
+    }
+    await this._vaultFlush();
+  }
+
+  _vaultQueue(coll, soul, rec) {
+    const v = this._vault;
+    if (!v || !COLLECTIONS.includes(coll) || !vaultable(`${coll}:${soul}`, rec)) return;
+    v.pending.set(`${coll}:${soul}`, rec);
+    clearTimeout(v.timer);
+    v.timer = setTimeout(() => this._vaultFlush().catch(() => {}), 300); // one update for a burst of edits
+  }
+
+  async _vaultFlush() {
+    const v = this._vault;
+    if (!v.pending.size) return;
+    const batch = new Map(v.pending), records = {};
+    for (const [key, rec] of batch) {
+      const r = { data: rec.deleted ? '' : rec.data, updated_at: Math.floor(rec.updatedAt), deleted: !!rec.deleted };
+      const msg = `orto1|${v.params}|${key}|${r.updated_at}|${r.deleted}|${r.data}`; // must match contracts/vault record_msg
+      records[key] = { ...r, sig: hex(new Uint8Array(await crypto.subtle.sign('Ed25519', v.priv, new TextEncoder().encode(msg)))), cert: null };
+    }
+    try {
+      await v.FV.pushVault(v.params, { records, updated_at: Math.max(...Object.values(records).map((r) => r.updated_at)) }, v.exists);
+      v.exists = true;
+      for (const [key, rec] of batch) if (v.pending.get(key) === rec) v.pending.delete(key);
+    } catch (e) {
+      console.warn('[Freenet] vault push failed, retrying:', e);
+      clearTimeout(v.timer);
+      v.timer = setTimeout(() => this._vaultFlush().catch(() => {}), 10000);
+    }
+  }
+
   async _localStore(method, path, body, headers) {
     const spacePrefix = this._space ? `sp:${this._space}:` : '';
     const prefix = `orto_rec:${this.username || 'local'}:${spacePrefix}`;
@@ -492,19 +565,21 @@ export class Orto {
         for (const k of keys) {
           const val = this._safeStorageGet(k);
           if (val) {
-            try { out.push(JSON.parse(val)); } catch (_) {}
+            try { const r = JSON.parse(val); if (!r.deleted) out.push(r); } catch (_) {}
           }
         }
         return ok(out);
       }
       if (method === 'GET' && soul) {
         const raw = this._safeStorageGet(`${prefix}${coll}:${soul}`);
-        if (!raw) { const err = new Error('Not found'); err.status = 404; throw err; }
-        return ok(JSON.parse(raw));
+        const rec = raw && JSON.parse(raw);
+        if (!rec || rec.deleted) { const err = new Error('Not found'); err.status = 404; throw err; }
+        return ok(rec);
       }
       if (method === 'PUT' && soul) {
         const rec = { soul, ...body, updatedAt: body?.updatedAt || Date.now() };
         this._safeStorageSet(`${prefix}${coll}:${soul}`, JSON.stringify(rec));
+        if (!this._space) this._vaultQueue(coll, soul, rec);
         if (this._subs) {
           for (const s of this._subs) {
             if (s.coll === coll || s.coll === '_spaces') {
@@ -515,7 +590,9 @@ export class Orto {
         return ok({ status: 'saved' });
       }
       if (method === 'DELETE' && soul) {
-        this._safeStorageRemove(`${prefix}${coll}:${soul}`);
+        const tomb = { soul, deleted: true, updatedAt: Date.now() }; // kept, so an older copy from the network cannot bring it back
+        this._safeStorageSet(`${prefix}${coll}:${soul}`, JSON.stringify(tomb));
+        if (!this._space) this._vaultQueue(coll, soul, tomb);
         if (this._subs) {
           for (const s of this._subs) {
             if (s.coll === coll) {

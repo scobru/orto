@@ -288,8 +288,51 @@ try {
 
   delete globalThis.FreenetChunks;
 
+  console.log('13. Freenet mode: personal records replicate through the vault contract');
+  // A stand-in for the network: verifies each record signature like contracts/vault and merges last-write-wins.
+  const vaults = new Map(), listeners = new Map();
+  const hexToU8 = (h) => Uint8Array.from(h.match(/../g), (b) => parseInt(b, 16));
+  globalThis.FreenetVault = {
+    async getVault(params) { return vaults.has(params) ? structuredClone(vaults.get(params)) : null; },
+    async pushVault(params, delta, exists) {
+      assert.equal(exists, vaults.has(params), 'put the first time, update after');
+      const pub = await crypto.subtle.importKey('raw', hexToU8(params.slice(0, 64)), { name: 'Ed25519' }, false, ['verify']);
+      const state = vaults.get(params) || { records: {}, updated_at: 0 };
+      for (const [k, r] of Object.entries(delta.records)) {
+        const msg = `orto1|${params}|${k}|${r.updated_at}|${r.deleted}|${r.data}`;
+        assert.ok(await crypto.subtle.verify('Ed25519', pub, hexToU8(r.sig), new TextEncoder().encode(msg)), 'record signed by the vault owner');
+        const cur = state.records[k];
+        if (!cur || [r.updated_at, r.sig] > [cur.updated_at, cur.sig]) state.records[k] = r;
+      }
+      vaults.set(params, state);
+      for (const fn of listeners.get(params) || []) fn();
+    },
+    async onVaultUpdate(params, fn) { listeners.set(params, [...(listeners.get(params) || []), fn]); return () => {}; },
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 400)); // the vault push is debounced
+  const devA = createClient(), devB = createClient();
+  await devA.login('fn_vault_user', 'vault-pass');
+  const noteFromA = await devA.personal().writeVaultNote({ title: 'From A', body: 'replicated' });
+  await settle();
+  assert.equal(vaults.size, 1, 'one vault for this identity');
+  await devB.login('fn_vault_user', 'vault-pass'); // another device: same password, same vault
+  await settle();
+  assert.equal(devA._vault.params, devB._vault.params);
+  assert.equal((await devB.personal().getVaultNote(noteFromA.soul)).body, 'replicated');
+  await devB.personal().deleteVaultNote(noteFromA.soul);
+  await settle();
+  assert.equal((await devA.personal().readVaultNotes()).length, 0, 'deletion reached device A');
+  const other = createClient();
+  await other.login('fn_vault_other', 'other-pass');
+  await settle();
+  assert.notEqual(other._vault.params, devA._vault.params, 'another user has another vault');
+  delete globalThis.FreenetVault;
+
   console.log('ok - all freenet tests passed');
+} catch (e) {
+  console.error(e);
+  process.exitCode = 1;
 } finally {
   clients.forEach(c => c.close());
-  process.exit(0);
+  process.exit(process.exitCode ?? 0);
 }

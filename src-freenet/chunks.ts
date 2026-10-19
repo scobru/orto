@@ -24,6 +24,9 @@ function getWsUrl(): URL {
 
 let apiP: Promise<FreenetWsApi> | undefined;
 
+/** Listeners for update notifications of subscribed contracts (by encoded contract key). */
+export const updateListeners = new Set<(key: string) => void>();
+
 export function api(): Promise<FreenetWsApi> {
   return (apiP ??= new Promise((resolve, reject) => {
     const url = getWsUrl();
@@ -31,7 +34,9 @@ export function api(): Promise<FreenetWsApi> {
       onContractPut() {},
       onContractGet() {},
       onContractUpdate() {},
-      onContractUpdateNotification() {},
+      onContractUpdateNotification(n) {
+        for (const fn of updateListeners) fn(n.key.encode());
+      },
       onContractNotFound() {
         console.warn("Freenet contract not found");
       },
