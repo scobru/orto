@@ -2806,36 +2806,36 @@
         <!-- If already has key in localStorage -->
         <div id="fn-has-key" class="hidden" style="background:var(--input-bg);padding:14px;border-radius:10px;border:1px solid var(--border-color);display:flex;flex-direction:column;gap:8px;text-align:left;">
           <div style="font-size:12px;color:var(--text-secondary);display:flex;justify-content:space-between;align-items:center;">
-            <span>Identità Freenet:</span>
+            <span>Freenet identity:</span>
             <span id="fn-persona-badge" style="font-size:11px;background:var(--tag-bg);color:var(--tag-text);padding:2px 6px;border-radius:4px;font-weight:600;"></span>
           </div>
           <code id="fn-pub-display" style="font-size:11px;font-family:var(--font-mono);word-break:break-all;color:var(--text-primary);user-select:all;background:var(--code-bg);padding:6px;border-radius:6px;"></code>
           <button id="fn-unlock-btn" class="login-btn" style="margin-top:6px;">
-            <i class="ti ti-lock-open"></i> Sblocca Orto
+            <i class="ti ti-lock-open"></i> Unlock Orto
           </button>
           <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-top:4px;">
-            <a href="#" id="fn-backup-btn" style="color:var(--bear-red);text-decoration:none;"><i class="ti ti-download"></i> Backup chiave</a>
-            <a href="#" id="fn-switch-key-btn" style="color:var(--text-muted);text-decoration:none;">Cambia chiave</a>
-            <a href="#" id="fn-forget-btn" style="color:var(--text-muted);text-decoration:none;"><i class="ti ti-trash"></i> Dimentica</a>
+            <a href="#" id="fn-backup-btn" style="color:var(--bear-red);text-decoration:none;"><i class="ti ti-download"></i> Back up key</a>
+            <a href="#" id="fn-switch-key-btn" style="color:var(--text-muted);text-decoration:none;">Change key</a>
+            <a href="#" id="fn-forget-btn" style="color:var(--text-muted);text-decoration:none;"><i class="ti ti-trash"></i> Forget</a>
           </div>
         </div>
 
         <!-- If no key in localStorage -->
         <div id="fn-no-key" style="display:flex;flex-direction:column;gap:10px;">
           <button id="fn-create-btn" class="login-btn">
-            <i class="ti ti-sparkles"></i> Crea nuova identità Freenet
+            <i class="ti ti-sparkles"></i> Create new Freenet identity
           </button>
           <a id="fn-viso-btn" href="#" target="_blank" class="cal-btn" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border-radius:8px;background:rgba(0,180,216,0.12);color:#0096c7;border:1px solid rgba(0,180,216,0.3);font-weight:600;font-size:13px;cursor:pointer;text-decoration:none;">
-            <i class="ti ti-user-check" style="font-size:16px;"></i> Accedi con Viso / Whoiam
+            <i class="ti ti-user-check" style="font-size:16px;"></i> Sign in with Viso / Whoiam
           </a>
           <div style="display:flex;align-items:center;gap:10px;margin:6px 0;">
             <div style="flex:1;height:1px;background:var(--border-color);"></div>
-            <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">oppure</span>
+            <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">or</span>
             <div style="flex:1;height:1px;background:var(--border-color);"></div>
           </div>
           <div style="display:flex;gap:6px;">
-            <input type="password" id="fn-import-key" placeholder="Incolla chiave segreta (64 hex)" style="flex:1;padding:8px 10px;border-radius:7px;border:1px solid var(--border-color);background:var(--input-bg);color:var(--text-primary);font-family:var(--font-mono);font-size:12px;">
-            <button id="fn-import-btn" class="cal-btn" style="padding:0 14px;font-size:12px;">Importa</button>
+            <input type="password" id="fn-import-key" placeholder="Paste secret key (64 hex)" style="flex:1;padding:8px 10px;border-radius:7px;border:1px solid var(--border-color);background:var(--input-bg);color:var(--text-primary);font-family:var(--font-mono);font-size:12px;">
+            <button id="fn-import-btn" class="cal-btn" style="padding:0 14px;font-size:12px;">Import</button>
           </div>
         </div>
       </div>
@@ -3889,7 +3889,7 @@
     const PKCS8_PREFIX = new Uint8Array([0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20]);
     async function ed25519KeyPair(secretHex) {
       const sk = secretHex.replace(/\s/g, '').toLowerCase();
-      if (!/^[0-9a-f]{64}$/.test(sk)) throw new Error("La chiave deve essere di 64 caratteri esadecimali.");
+      if (!/^[0-9a-f]{64}$/.test(sk)) throw new Error("The key must be 64 hex characters.");
       const secretBytes = new Uint8Array(sk.match(/.{1,2}/g).map(b => parseInt(b, 16)));
       const pkcs8 = new Uint8Array(48);
       pkcs8.set(PKCS8_PREFIX);
@@ -4055,7 +4055,7 @@
 
         initDashboard();
       } catch (err) {
-        alert("Errore sblocco Freenet: " + err.message);
+        alert("Freenet unlock error: " + err.message);
       }
     }
 
@@ -4076,7 +4076,7 @@
         if (subtitle) subtitle.innerHTML = 'Personal Workspace on Freenet<br>Sign in with your Sovereign Identity.';
         if (fnSection) fnSection.classList.remove('hidden');
         if (classicForm) classicForm.classList.add('hidden');
-        if (toggleBtn) toggleBtn.textContent = 'Passa al login classico (server)';
+        if (toggleBtn) toggleBtn.textContent = 'Switch to classic login (server)';
 
         const storedSecret = safeStore.getItem('orto_freenet_secret');
         const storedPub = safeStore.getItem('orto_freenet_pub');
@@ -4101,7 +4101,7 @@
         if (fnSection) fnSection.classList.add('hidden');
         if (classicForm) classicForm.classList.remove('hidden');
         if (subtitle) subtitle.innerHTML = 'Self-hosted Workspace<br>Enter your master credentials to unlock.';
-        if (toggleBtn) toggleBtn.textContent = 'Passa a Freenet Sovereign Identity';
+        if (toggleBtn) toggleBtn.textContent = 'Switch to Freenet Sovereign Identity';
       }
     }
 
@@ -4120,7 +4120,7 @@
       fnCreateBtn.onclick = async () => {
         try {
           const secret = Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
-          alert('Nuova identità Freenet creata!\n\nSalva la tua chiave segreta per il backup:\n' + secret);
+          alert('New Freenet identity created!\n\nSave your secret key as a backup:\n' + secret);
           await loginWithFreenetKey(secret);
         } catch (e) { alert(e.message); }
       };
@@ -4130,7 +4130,7 @@
     if (fnUnlockBtn) {
       fnUnlockBtn.onclick = async () => {
         const sk = safeStore.getItem('orto_freenet_secret');
-        if (!sk) return alert('Nessuna chiave trovata.');
+        if (!sk) return alert('No key found.');
         await loginWithFreenetKey(sk);
       };
     }
@@ -4139,7 +4139,7 @@
     if (fnImportBtn) {
       fnImportBtn.onclick = async () => {
         const val = document.getElementById('fn-import-key')?.value?.trim();
-        if (!val || val.length !== 64) return alert('La chiave deve essere di 64 caratteri esadecimali.');
+        if (!val || val.length !== 64) return alert('The key must be 64 hex characters.');
         await loginWithFreenetKey(val);
       };
     }
@@ -4171,7 +4171,7 @@
     if (fnForgetBtn) {
       fnForgetBtn.onclick = (e) => {
         e.preventDefault();
-        if (!confirm('Vuoi rimuovere questa identità da questo dispositivo? Assicurati di averne fatto il backup!')) return;
+        if (!confirm('Remove this identity from this device? Make sure you have backed it up!')) return;
         safeStore.removeItem('orto_freenet_secret');
         safeStore.removeItem('orto_freenet_pub');
         safeStore.removeItem('orto_freenet_persona');
@@ -6708,7 +6708,7 @@ print("Welcome to Orto!")
 
         const updateStatus = () => {
           if (!installed) {
-            status.textContent = isFreenet ? 'Pacchetto modelli non trovato su Freenet.' : 'Not installed on this server.';
+            status.textContent = isFreenet ? 'Model bundle not found on Freenet.' : 'Not installed on this server.';
             if (btnDl) btnDl.style.display = 'none';
             return;
           }
@@ -6722,12 +6722,12 @@ print("Welcome to Orto!")
             }
           } else {
             status.textContent = box.checked
-              ? (isFreenet ? 'Attivo. Clicca "Scarica modelli adesso" per precaricarli, oppure verranno scaricati al primo utilizzo nella nota.' : 'Enabled. Models will download on first use in a note.')
-              : (isFreenet ? 'Pronto all\'attivazione.' : 'Ready to enable.');
+              ? (isFreenet ? 'Enabled. Click "Download models now" to preload them, or they will download on first use in a note.' : 'Enabled. Models will download on first use in a note.')
+              : (isFreenet ? 'Ready to enable.' : 'Ready to enable.');
             if (btnDl) {
               btnDl.style.display = box.checked ? 'inline-flex' : 'none';
               btnDl.disabled = false;
-              btnDl.innerHTML = '<i class="ti ti-download"></i> Scarica modelli adesso (~75 MB)';
+              btnDl.innerHTML = '<i class="ti ti-download"></i> Download models now (~75 MB)';
             }
           }
         };
@@ -6760,15 +6760,15 @@ print("Welcome to Orto!")
               updateStatus();
               showToast('Modelli scaricati e pronti all\'uso offline!');
             } catch (err) {
-              status.textContent = 'Errore: ' + err.message;
+              status.textContent = 'Error: ' + err.message;
               btnDl.disabled = false;
               btnDl.innerHTML = '<i class="ti ti-download"></i> Riprova download';
-              showToast('Errore download modelli: ' + err.message);
+              showToast('Model download error: ' + err.message);
             }
           };
         }
       } catch (err) {
-        status.textContent = 'Errore inizializzazione AI: ' + err.message;
+        status.textContent = 'AI initialization error: ' + err.message;
       }
     }
     async function aiSuggest({ text, existing = [], apply, title = 'Suggest tags' }) {
@@ -6835,18 +6835,18 @@ print("Welcome to Orto!")
         <p class="hint">Export saves everything decrypted as one file (plain text: keep it safe). Import it into any account on any server.</p>
         <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="st-files" checked> Include file contents</label>
         <div class="cal-actions" style="justify-content:flex-start"><button class="cal-btn" id="st-export">Export everything</button><button class="cal-btn" id="st-import">Import…</button><input type="file" id="st-import-file" accept=".json,application/json" class="hidden"></div>
-        <h4>${isFreenet ? 'Freenet Sovereign Identity' : 'Freenet Sync (P2P Sovereign)'}</h4>
-        <p class="hint">${isFreenet ? 'Orto è in esecuzione come app nativa sovrana direttamente sul tuo nodo Freenet locale.' : 'Replica crittografata peer-to-peer tra i tuoi dispositivi tramite rete Freenet (zero VPS, zero porte aperte).'}</p>
-        <div id="st-freenet"><p class="hint">Caricamento stato Freenet…</p></div>
-        <h4>${isFreenet ? 'Suggerimenti Tag ed Emoji (Desert Ant Labs)' : 'Tag and emoji suggestions'}</h4>
-        <p class="hint">${isFreenet ? 'Suggerimenti di tag (<b>Gist</b>) ed emoji (<b>Emo</b>) eseguiti localmente nel browser tramite WebAssembly. Il testo non esce mai dal dispositivo. Al primo avvio o premendo il pulsante sotto, vengono scaricati ~75 MB da huggingface.co e memorizzati nella cache locale.' : 'Suggests tags for notes and bookmarks (<b>Gist</b>) and an emoji for a note\'s title (<b>Emo</b>), small models by <a href="https://desertant.com/models/gist/" target="_blank" rel="noopener">Desert Ant Labs</a> that run in this browser: your text is not sent anywhere. The first time, the browser downloads about 75 MB from huggingface.co.'}</p>
-        <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="st-ai"> ${isFreenet ? 'Attiva suggerimenti tag ed emoji su questo dispositivo' : 'Suggest tags and emoji on this device'}</label>
+        ${isFreenet ? `<h4>Freenet Sovereign Identity</h4>
+        <p class="hint">Orto is running as a native sovereign app directly on your local Freenet node.</p>
+        <div id="st-freenet"><p class="hint">Loading Freenet status…</p></div>` : ''}
+        <h4>${isFreenet ? 'Tag and emoji suggestions (Desert Ant Labs)' : 'Tag and emoji suggestions'}</h4>
+        <p class="hint">${isFreenet ? 'Tag (<b>Gist</b>) and emoji (<b>Emo</b>) suggestions run locally in the browser via WebAssembly. Your text never leaves the device. On first use, or when you press the button below, about 75 MB are downloaded from huggingface.co and cached locally.' : 'Suggests tags for notes and bookmarks (<b>Gist</b>) and an emoji for a note\'s title (<b>Emo</b>), small models by <a href="https://desertant.com/models/gist/" target="_blank" rel="noopener">Desert Ant Labs</a> that run in this browser: your text is not sent anywhere. The first time, the browser downloads about 75 MB from huggingface.co.'}</p>
+        <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="st-ai"> ${isFreenet ? 'Suggest tags and emoji on this device' : 'Suggest tags and emoji on this device'}</label>
         <div id="st-ai-ctrl" style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <button class="cal-btn" id="st-ai-download" style="font-size:12px;display:none;"><i class="ti ti-download"></i> Scarica modelli adesso (~75 MB)</button>
+          <button class="cal-btn" id="st-ai-download" style="font-size:12px;display:none;"><i class="ti ti-download"></i> Download models now (~75 MB)</button>
           <span class="hint" id="st-ai-status" style="font-size:12px;"></span>
         </div>
         <p class="hint" style="font-size:11.5px;color:var(--text-muted);margin-top:4px;">
-          <i class="ti ti-info-circle"></i> ${isFreenet ? 'Una volta attivati, troverai i pulsanti <b>Suggest tags</b> e <b>Suggest emoji</b> nel menu (···) in alto a destra all\'interno di ogni nota.' : 'Once enabled, you will find <b>Suggest tags</b> and <b>Suggest emoji</b> in the note options menu (···).'}</p>
+          <i class="ti ti-info-circle"></i> ${isFreenet ? 'Once enabled, you will find <b>Suggest tags</b> and <b>Suggest emoji</b> in the note options menu (···).' : 'Once enabled, you will find <b>Suggest tags</b> and <b>Suggest emoji</b> in the note options menu (···).'}</p>
         ${isFreenet ? '' : '<h4>Shared links</h4><div id="st-shares"><p class="hint">Loading…</p></div>'}
         ${isFreenet || isDemo ? '' : `<h4>Password</h4>
         <p class="hint">Changes the encryption key: everything is re-encrypted and your other sessions are signed out. Export first; it can take a while with many files.</p>
@@ -6872,25 +6872,25 @@ print("Welcome to Orto!")
       // ── Freenet Sync UI ──
       const fnBox = $('st-freenet');
       const drawFreenet = async () => {
-        if (isFreenet) {
+        if (fnBox) {
           const storedSecret = safeStore.getItem('orto_freenet_secret');
           const storedPub = safeStore.getItem('orto_freenet_pub');
           const storedPersona = safeStore.getItem('orto_freenet_persona');
           fnBox.innerHTML = `
             <div style="font-size:12.5px;display:flex;flex-direction:column;gap:8px;">
-              <div><b>Identità / Persona:</b> <code style="font-size:11.5px;word-break:break-all;user-select:all;">${escapeHtml(storedPersona || pair.pub)}</code></div>
-              <div><b>Chiave Pubblica:</b> <code style="font-size:11px;word-break:break-all;user-select:all;">${escapeHtml(storedPub || pair.pub)}</code></div>
+              <div><b>Identity / Persona:</b> <code style="font-size:11.5px;word-break:break-all;user-select:all;">${escapeHtml(storedPersona || pair.pub)}</code></div>
+              <div><b>Public key:</b> <code style="font-size:11px;word-break:break-all;user-select:all;">${escapeHtml(storedPub || pair.pub)}</code></div>
               <div class="hint" style="display:flex;align-items:center;gap:6px;color:#2ec4b6;">
                 <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#2ec4b6;"></span>
-                Connesso nativamente al nodo locale Freenet
+                Natively connected to the local Freenet node
               </div>
               ${storedSecret ? `
               <div class="cal-actions" style="justify-content:flex-start;margin-top:2px;">
-                <button class="cal-btn" id="st-fn-copy-key"><i class="ti ti-copy"></i> Copia chiave segreta</button>
-                <button class="cal-btn" id="st-fn-dl-key"><i class="ti ti-download"></i> Scarica backup (.txt)</button>
+                <button class="cal-btn" id="st-fn-copy-key"><i class="ti ti-copy"></i> Copy secret key</button>
+                <button class="cal-btn" id="st-fn-dl-key"><i class="ti ti-download"></i> Download backup (.txt)</button>
               </div>` : `
               <p class="hint" style="color:var(--text-muted);margin-top:2px;">
-                <i class="ti ti-shield-check" style="color:#0096c7;"></i> Sessione delegata tramite Viso / Whoiam.
+                <i class="ti ti-shield-check" style="color:#0096c7;"></i> Session delegated via Viso / Whoiam.
               </p>`}
             </div>`;
           const btnCopy = fnBox.querySelector('#st-fn-copy-key');
@@ -6898,9 +6898,9 @@ print("Welcome to Orto!")
           if (btnCopy) btnCopy.onclick = async () => {
             try {
               await navigator.clipboard.writeText(storedSecret);
-              showToast('Chiave segreta copiata negli appunti!');
+              showToast('Secret key copied to clipboard!');
             } catch (_) {
-              alert('Chiave segreta Freenet:\n\n' + storedSecret);
+              alert('Freenet secret key:\n\n' + storedSecret);
             }
           };
           if (btnDl) btnDl.onclick = () => {
@@ -6911,98 +6911,6 @@ print("Welcome to Orto!")
             a.click();
           };
           return;
-        }
-        let fn;
-        try { fn = await (root.freenetIdentity ? root.freenetIdentity() : { hasIdentity: false, available: true }); }
-        catch (e) { fnBox.innerHTML = '<p class="hint">Freenet sync non disponibile su questo server.</p>'; return; }
-        if (fn && fn.available === false) {
-          fnBox.innerHTML = '<p class="hint">Freenet sync non configurato su questo server host.</p>';
-          return;
-        }
-        if (!fn || !fn.hasIdentity) {
-          fnBox.innerHTML = `
-            <div style="display:flex;flex-direction:column;gap:8px;">
-              <div class="cal-actions" style="justify-content:flex-start">
-                <button class="cal-btn primary" id="st-fn-new"><i class="ti ti-key"></i> Crea nuova identità Freenet</button>
-              </div>
-              <div style="display:flex;gap:6px;align-items:center;">
-                <input type="password" id="st-fn-import-key" placeholder="Oppure incolla chiave segreta (64 hex)" style="flex:1;font-family:var(--font-mono);font-size:12px;padding:6px 8px;border-radius:6px;border:1px solid var(--border-color);">
-                <button class="cal-btn" id="st-fn-import">Importa</button>
-              </div>
-            </div>`;
-          const btnNew = fnBox.querySelector('#st-fn-new');
-          const btnImp = fnBox.querySelector('#st-fn-import');
-          if (btnNew) btnNew.onclick = async () => {
-            showToast('Creazione identità…');
-            try {
-              const res = await root.freenetCreateIdentity({ action: 'new' });
-              showToast('Identità creata!');
-              alert('Identità Freenet creata con successo!\n\nSalva la tua chiave segreta per il backup:\n' + res.secretKey);
-              drawFreenet();
-            } catch (err) { showToast(err.message); }
-          };
-          if (btnImp) btnImp.onclick = async () => {
-            const val = fnBox.querySelector('#st-fn-import-key')?.value?.trim();
-            if (!val || val.length !== 64) return showToast('La chiave deve essere di 64 caratteri esadecimali.');
-            showToast('Importazione identità…');
-            try {
-              await root.freenetCreateIdentity({ action: 'import', secretHex: val, force: true });
-              showToast('Identità importata!');
-              drawFreenet();
-            } catch (err) { showToast(err.message); }
-          };
-        } else {
-          fnBox.innerHTML = `
-            <div style="font-size:12.5px;display:flex;flex-direction:column;gap:6px;">
-              <div><b>Chiave Pubblica:</b> <code style="font-size:11px;word-break:break-all;user-select:all;">${escapeHtml(fn.publicKey)}</code></div>
-              <div class="hint">Ultimo sync: ${fn.lastPush ? new Date(fn.lastPush).toLocaleString() : 'mai'}</div>
-              <div class="cal-actions" style="justify-content:flex-start;margin-top:2px;">
-                <button class="cal-btn primary" id="st-fn-sync"><i class="ti ti-refresh"></i> Sincronizza ora</button>
-                <button class="cal-btn" id="st-fn-secret">Copia chiave di backup</button>
-                <button class="cal-btn" id="st-fn-reset" style="color:var(--text-muted)">Cambia chiave</button>
-              </div>
-              <p id="st-fn-msg" class="hint" style="margin-top:2px;"></p>
-            </div>`;
-          const btnSync = fnBox.querySelector('#st-fn-sync');
-          const btnSec = fnBox.querySelector('#st-fn-secret');
-          const btnReset = fnBox.querySelector('#st-fn-reset');
-          const msg = fnBox.querySelector('#st-fn-msg');
-          if (btnSync) btnSync.onclick = async () => {
-            btnSync.disabled = true;
-            if (msg) msg.textContent = 'Sincronizzazione P2P con Freenet in corso…';
-            showToast('Sincronizzazione Freenet…');
-            try {
-              const res = await root.freenetSync();
-              if (msg) msg.textContent = `Sync completato: +${res.pulled} scaricati, +${res.pushed} inviati`;
-              showToast(`Sync completato: +${res.pulled} scaricati, +${res.pushed} inviati`);
-              drawFreenet();
-            } catch (err) {
-              if (msg) msg.textContent = 'Errore sync: ' + err.message;
-              showToast('Errore sync: ' + err.message);
-            } finally {
-              btnSync.disabled = false;
-            }
-          };
-          if (btnSec) btnSec.onclick = async () => {
-            try {
-              const res = await root.freenetCreateIdentity({ action: 'show-secret' });
-              await navigator.clipboard.writeText(res.secretKey);
-              showToast('Chiave segreta copiata negli appunti!');
-              alert('La tua chiave segreta Freenet (salvala in un posto sicuro):\n\n' + res.secretKey);
-            } catch (err) { showToast(err.message); }
-          };
-          if (btnReset) btnReset.onclick = async () => {
-            if (!confirm('Sostituire la chiave Freenet esistente? Assicurati di aver salvato la chiave attuale!')) return;
-            const newKey = prompt('Incolla la nuova chiave segreta (64 hex) oppure lascia vuoto per generarne una nuova:');
-            if (newKey === null) return;
-            try {
-              const action = newKey.trim() ? 'import' : 'new';
-              const res = await root.freenetCreateIdentity({ action, secretHex: newKey.trim() || undefined, force: true });
-              showToast('Identità aggiornata!');
-              if (action === 'new') alert('Nuova chiave generata:\n\n' + res.secretKey);
-              drawFreenet();
-            } catch (err) { showToast(err.message); }
-          };
         }
       };
       drawFreenet();
