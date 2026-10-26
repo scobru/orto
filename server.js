@@ -57,7 +57,8 @@ const settings = { ...Object.fromEntries(Object.entries(process.env).filter(([k]
 // Reader: browsers cannot fetch other sites' feeds (CORS), so a logged-in user asks the server to fetch one (GET /api/feed?url=).
 // The server only relays the XML; it is parsed in the browser. Private/loopback addresses are refused (SSRF), checked at connect time.
 const isPrivateIp = (ip) => {
-  const m = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip); if (m) ip = m[1];
+  const m = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip), h = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(ip); // URL() turns ::ffff:127.0.0.1 into ::ffff:7f00:1
+  if (m) ip = m[1]; else if (h) { const n = (parseInt(h[1], 16) << 16 | parseInt(h[2], 16)) >>> 0; ip = [n >>> 24, n >>> 16 & 255, n >>> 8 & 255, n & 255].join('.'); }
   if (net.isIPv6(ip)) return /^(::1?$|f[cd][0-9a-f]{2}:|fe[89ab][0-9a-f]:)/i.test(ip);
   return /^(0\.|10\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|2(2[4-9]|[3-5]\d)\.)/.test(ip);
 };
@@ -355,48 +356,6 @@ export function createServer(opts = {}) {
       }
     }
 
-    if (a === 'freenet') {
-      let fs_;
-      try {
-        fs_ = await import('./freenet-sync.js');
-      } catch (err) {
-        return json(200, { hasIdentity: false, available: false, error: err.message });
-      }
-      if (b === 'identity') {
-        if (req.method === 'GET') {
-          try {
-            const id = fs_.loadIdentity(dataDir);
-            return json(200, id ? { hasIdentity: true, available: true, publicKey: id.pub, lastPull: id.lastPull || 0, lastPush: id.lastPush || 0 } : { hasIdentity: false, available: true });
-          } catch (e) {
-            return json(200, { hasIdentity: false, available: false, error: e.message });
-          }
-        }
-        if (req.method === 'POST') {
-          const body = await readJson(req, 1e4);
-          let id = fs_.loadIdentity(dataDir);
-          if (body.action === 'new' || body.action === 'import') {
-            if (id && !body.force) throw new HttpError(409, 'An identity already exists');
-            id = fs_.createIdentity(dataDir, body.secretHex);
-            return json(200, { publicKey: id.pub, secretKey: id.secret });
-          }
-          if (body.action === 'show-secret') {
-            if (!id) throw new HttpError(404, 'No identity configured');
-            return json(200, { secretKey: id.secret, publicKey: id.pub });
-          }
-          throw new HttpError(400, 'Invalid action');
-        }
-      }
-      if (b === 'sync' && req.method === 'POST') {
-        try {
-          const res_ = await server.freenetSync(u.name);
-          return json(200, res_);
-        } catch (err) {
-          throw new HttpError(500, err.message || 'Freenet sync failed');
-        }
-      }
-      throw new HttpError(404, 'Not found');
-    }
-
     // Shared spaces: a space is a set of collections and files under its own key, handed to members wrapped for their public key.
     // Roles: owner (everything), editor (read + write), viewer (read). The server enforces roles; it never sees a key.
     if (a === 'sp') {
@@ -667,7 +626,7 @@ ${posts.map((p) => {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       return res.end('Not found');
     }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "frame-ancestors 'none'" });
     fs.createReadStream(file).pipe(res);
   }
 
