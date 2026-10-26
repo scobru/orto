@@ -4030,6 +4030,26 @@
 
     const safeStore = window.safeStore;
 
+    // Page storage can be lost (new tab, cleared data, sandboxed frame), so the node's identity delegate also keeps the
+    // Orto key and the Viso sign-in. Optional: without a delegate everything falls back to page storage as before.
+    const NODE_SECRET = 'orto-secret', NODE_VISO = 'orto-viso-session'; // the delegate only accepts letters, digits, ':' and '-'
+    const nodeKeep = (k, v) => (window.FreenetDelegate ? window.FreenetDelegate.nodePut(k, v) : Promise.resolve(false));
+    const nodeRead = (k, ms = 6000) => (window.FreenetDelegate ? Promise.race([window.FreenetDelegate.nodeGet(k), new Promise((r) => setTimeout(() => r(null), ms))]) : Promise.resolve(null));
+    const nodeKeepSoon = (k, v, ms = 4000) => Promise.race([nodeKeep(k, v), new Promise((r) => setTimeout(() => r(false), ms))]);
+
+    // Put back into page storage what the node kept. `haveKey` = a key already arrived another way (URL hash), which wins.
+    async function restoreFromNode(haveKey) {
+      if (!window.FreenetDelegate) return;
+      if (!haveKey && !safeStore.getItem('orto_freenet_secret')) {
+        const sk = await nodeRead(NODE_SECRET);
+        if (sk && /^[0-9a-fA-F]{64}$/.test(sk)) safeStore.setItem('orto_freenet_secret', sk);
+      }
+      if (!safeStore.getItem('orto_viso_session')) {
+        const s = await nodeRead(NODE_VISO);
+        if (s) safeStore.setItem('orto_viso_session', s); // savedDelegation() checks it still names the key in use
+      }
+    }
+
     // A Viso sign-in leaves { persona, cert } here; it only applies while the key it names (the app key) is the one in use.
     function savedDelegation(appPubHex) {
       try {
@@ -4052,6 +4072,9 @@
           safeStore.setItem('orto_freenet_persona', kp.persona);
         }
         safeStore.removeItem('orto_locked');
+        void nodeKeep(NODE_SECRET, kp.secretHex);
+        // a stale node copy is harmless (savedDelegation checks it names the key in use) and only 'remove identity' clears it
+        if (delegation) void nodeKeep(NODE_VISO, JSON.stringify(delegation));
 
         if (window.parent !== window) {
           try {
@@ -4192,6 +4215,8 @@
         safeStore.removeItem('orto_freenet_persona');
         safeStore.removeItem('orto_viso_session');
         safeStore.removeItem('orto_viso_pending');
+        void nodeKeep(NODE_SECRET, '');
+        void nodeKeep(NODE_VISO, '');
         renderLoginMode();
       };
     }
@@ -4208,8 +4233,12 @@
       const persona = (q.get('pk') || '').toLowerCase(), sig = q.get('sig') || '', challenge = q.get('challenge') || '', ts = Number(q.get('ts'));
       const pending = safeStore.getItem('orto_viso_pending');
       safeStore.removeItem('orto_viso_pending');
+      const pendingNonce = safeStore.getItem('orto_viso_pending_nonce');
+      safeStore.removeItem('orto_viso_pending_nonce');
       if (!/^[0-9a-f]{64}$/.test(persona) || !/^[0-9a-f]{128}$/.test(sig)) throw new Error('malformed reply');
-      if (!challenge.startsWith(`wd1.${pubHex}.`) || (pending && pending !== challenge)) throw new Error('challenge does not match this key');
+      if (!challenge.startsWith(`wd1.${pubHex}.`)) throw new Error('challenge does not match this key');
+      if (pending && pending !== challenge) throw new Error('challenge does not match pending request');
+      if (pendingNonce && !challenge.endsWith(`.${pendingNonce}`)) throw new Error('nonce does not match');
       if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > 10 * 60 * 1000) throw new Error('reply too old');
       const base = visoReturnUrl(), enc = new TextEncoder(), u32 = (n) => new Uint8Array(new Uint32Array([n]).buffer);
       const msg = new Uint8Array([...enc.encode('whoiam-connect-v1'), ...Uint8Array.from(persona.match(/../g), h => parseInt(h, 16)),
@@ -4223,20 +4252,12 @@
       fnVisoBtn.onclick = async (e) => {
         e.preventDefault();
         try {
-          // The key that will sign for the persona must outlive the round trip to Viso, so fix it before leaving.
-          let sk = safeStore.getItem('orto_freenet_secret') || (location.hash.match(/#sk=([0-9a-fA-F]{64})/) || [])[1];
-          if (!sk) {
-            sk = randHex(32);
-            alert('Your Orto key for this sign-in. It encrypts your notes: save it, and paste it on any other device to read them there.\n\n' + sk);
-          }
-          const kp = await ed25519KeyPair(sk);
-          safeStore.setItem('orto_freenet_secret', kp.secretHex);
-          safeStore.setItem('orto_freenet_pub', kp.pubHex);
-          const challenge = `wd1.${kp.pubHex}.${randHex(16)}`;
-          safeStore.setItem('orto_viso_pending', challenge);
-          const target = `${location.origin && location.origin !== 'null' ? location.origin : `${location.protocol}//${location.host}`}/v1/contract/web/${VISO_KEY}/?connect=v1&challenge=${challenge}&return=${encodeURIComponent(visoReturnUrl())}`;
+          // Viso derives a deterministic secret for Orto from the persona seed (key=v1).
+          // No alert, no manual key coping: the seed backup in Viso restores everything on any device.
+          const nonce = randHex(16);
+          safeStore.setItem('orto_viso_pending_nonce', nonce);
+          const target = `${location.origin && location.origin !== 'null' ? location.origin : `${location.protocol}//${location.host}`}/v1/contract/web/${VISO_KEY}/?connect=v1&key=v1&challenge=${nonce}&return=${encodeURIComponent(visoReturnUrl())}`;
           if (window.parent !== window) {
-            try { parent.postMessage({ __freenet_shell__: true, type: 'hash', hash: '#sk=' + kp.secretHex }, '*'); } catch (_) {} // sandboxed pages may keep no storage
             try { parent.postMessage({ __freenet_shell__: true, type: 'navigate', href: target }, '*'); } catch (_) {}
             setTimeout(() => window.open(target, '_blank'), 350); // if the shell ignores in-place navigation
           } else {
@@ -7793,16 +7814,18 @@ print("Welcome to Orto!")
 
     if (!isLocked) {
       if (urlParams.get('viso') === 'ok' && urlParams.has('pk')) {
-        const sk = safeStore.getItem('orto_freenet_secret') || (hashStr.match(/#sk=([0-9a-fA-F]{64})/) || [])[1];
+        const skMatch = (hashStr.match(/(?:^|[#&])sk=([0-9a-fA-F]{64})/) || [])[1];
+        const sk = skMatch || safeStore.getItem('orto_freenet_secret') || (await nodeRead(NODE_SECRET));
         const q = new URLSearchParams(location.search);
-        history.replaceState(null, '', location.pathname + (location.hash || ''));
+        history.replaceState(null, '', location.pathname);
         try {
-          if (!sk) throw new Error('the key was lost during sign-in, please try again');
+          if (!sk) throw new Error('the key was not returned during sign-in, please try again');
           await loginWithFreenetKey(sk, await verifyVisoCallback(q, sk));
         } catch (err) { alert('Viso sign-in failed: ' + err.message); }
       } else if (isFreenet) {
         const hashMatch = hashStr.match(/#sk=([0-9a-fA-F]{64})/);
         let sk = hashMatch ? hashMatch[1] : null;
+        await restoreFromNode(!!sk); // page storage may be empty: take the key and Viso sign-in the node kept
         if (!sk) {
           sk = safeStore.getItem('orto_freenet_secret');
         }
