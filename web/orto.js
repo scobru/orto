@@ -295,12 +295,12 @@ export class Orto {
    * Derive keys and sign in. `create: true` registers the account first (if the server allows it).
    * Throws an Error with `.status` 404 when the user does not exist yet.
    */
-  async login(username, password, { create = false } = {}) {
+  async login(username, password, { create = false, delegation = null } = {}) {
     const { name, key, auth, vaultSecret } = await deriveKeys(username, password);
     if (this.mode === 'freenet') {
       const token = 'fn-' + name;
       Object.assign(this, { key, token, username: name, pair: { pub: name }, _auth: auth });
-      await this._vaultStart(vaultSecret).catch((e) => console.warn('[Freenet] vault sync off:', e));
+      await this._vaultStart(delegation ? password : vaultSecret, delegation).catch((e) => console.warn('[Freenet] vault sync off:', e));
       return this.pair;
     }
     const { token } = await this._json('POST', create ? '/register' : '/login', { name, auth });
@@ -484,7 +484,8 @@ export class Orto {
   /** Local storage prefix of this view's records (yours, or a space's): the same one _localStore uses. */
   _vaultPrefix() { return `orto_rec:${this.username || 'local'}:${this._space ? `sp:${this._space}:` : ''}`; }
 
-  async _vaultStart(secretHex) {
+  /** `deleg` = { persona, appPath, cert } (Viso sign-in): the vault belongs to the persona and `secretHex` is the app key the cert names. */
+  async _vaultStart(secretHex, deleg = null) {
     const FV = globalThis.FreenetVault, base = this._base || this, prefix = this._vaultPrefix();
     base._vaults ??= new Map();
     if (!FV || !secretHex || base._vaults.has(prefix)) return;
@@ -492,8 +493,9 @@ export class Orto {
     const pkcs8 = new Uint8Array([...Uint8Array.from('302e020100300506032b657004220420'.match(/../g), (b) => parseInt(b, 16)), ...seed]);
     const priv = await crypto.subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, true, ['sign']);
     const pub = hex(fromB64u((await crypto.subtle.exportKey('jwk', priv)).x));
-    const salt = hex(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('orto-vault-v1|' + secretHex))).slice(0, 16));
-    const v = { FV, params: pub + salt, priv, exists: false, pending: new Map(), timer: null, prefix };
+    const salt = hex(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(deleg ? 'orto-vault-v1|viso|' + deleg.persona : 'orto-vault-v1|' + secretHex))).slice(0, 16));
+    const params = deleg ? deleg.persona + salt + hex(new TextEncoder().encode(deleg.appPath)) : pub + salt; // contracts/vault: persona || salt || app path
+    const v = { FV, params, cert: deleg?.cert ?? null, priv, exists: false, pending: new Map(), timer: null, prefix };
     base._vaults.set(prefix, v);
     await FV.onVaultUpdate(v.params, () => this._vaultSync(v).catch(() => {}));
     this._vaultSync(v).catch((e) => console.warn('[Freenet] vault sync failed:', e));
@@ -536,7 +538,7 @@ export class Orto {
     for (const [key, rec] of batch) {
       const r = { data: rec.deleted ? '' : rec.data, updated_at: Math.floor(rec.updatedAt), deleted: !!rec.deleted };
       const msg = `orto1|${v.params}|${key}|${r.updated_at}|${r.deleted}|${r.data}`; // must match contracts/vault record_msg
-      records[key] = { ...r, sig: hex(new Uint8Array(await crypto.subtle.sign('Ed25519', v.priv, new TextEncoder().encode(msg)))), cert: null };
+      records[key] = { ...r, sig: hex(new Uint8Array(await crypto.subtle.sign('Ed25519', v.priv, new TextEncoder().encode(msg)))), cert: v.cert };
     }
     try {
       await v.FV.pushVault(v.params, { records, updated_at: Math.max(...Object.values(records).map((r) => r.updated_at)) }, v.exists);
