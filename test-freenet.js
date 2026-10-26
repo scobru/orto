@@ -296,9 +296,10 @@ try {
     async getVault(params) { return vaults.has(params) ? structuredClone(vaults.get(params)) : null; },
     async pushVault(params, delta, exists) {
       assert.equal(exists, vaults.has(params), 'put the first time, update after');
-      const pub = await crypto.subtle.importKey('raw', hexToU8(params.slice(0, 64)), { name: 'Ed25519' }, false, ['verify']);
       const state = vaults.get(params) || { records: {}, updated_at: 0 };
       for (const [k, r] of Object.entries(delta.records)) {
+        const signer = r.cert ? r.cert.challenge.split('.')[1] : params.slice(0, 64); // delegated: the app key named in the cert (the contract also checks Viso's signature on it)
+        const pub = await crypto.subtle.importKey('raw', hexToU8(signer), { name: 'Ed25519' }, false, ['verify']);
         const msg = `orto1|${params}|${k}|${r.updated_at}|${r.deleted}|${r.data}`;
         assert.ok(await crypto.subtle.verify('Ed25519', pub, hexToU8(r.sig), new TextEncoder().encode(msg)), 'record signed by the vault owner');
         const cur = state.records[k];
@@ -342,6 +343,19 @@ try {
   await settle();
   assert.ok((await spaceA.readVaultNotes()).some((n) => n.title === 'Reply'), 'a member write reached the owner');
   assert.equal((await devA.personal().readVaultNotes()).length, 0, 'space notes stay out of personal data');
+  // a Viso sign-in: the vault belongs to the persona (params = persona || salt || app path), every record carries the cert
+  const persona = 'ab'.repeat(32), appPath = '/v1/contract/web/X/';
+  const appSeed = '11'.repeat(32);
+  const appKey = await crypto.subtle.importKey('pkcs8', new Uint8Array([...hexToU8('302e020100300506032b657004220420'), ...hexToU8(appSeed)]), { name: 'Ed25519' }, true, ['sign']);
+  const appPub = Buffer.from((await crypto.subtle.exportKey('jwk', appKey)).x, 'base64url').toString('hex');
+  const cert = { base: 'http://h' + appPath, challenge: `wd1.${appPub}.bb`, ts: 1, sig: 'cd'.repeat(64) };
+  const viso = createClient();
+  await viso.login('fn_viso', appSeed, { delegation: { persona, appPath, cert } });
+  assert.ok(vaultOf(viso).startsWith(persona) && vaultOf(viso).endsWith(Buffer.from(appPath).toString('hex')), 'vault params name persona and app path');
+  await viso.personal().writeVaultNote({ title: 'As persona', body: 'x' });
+  await settle();
+  const sent = Object.values(vaults.get(vaultOf(viso))?.records ?? {});
+  assert.ok(sent.length && sent.every((r) => r.cert?.challenge === cert.challenge), 'records are stored with the delegation cert, signed by the app key');
   delete globalThis.FreenetVault;
 
   console.log('ok - all freenet tests passed');
