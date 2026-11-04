@@ -420,6 +420,7 @@ console.log('On-device tag suggestions (add-on plumbing)');
   await new Promise((r) => ms.listen(0, '127.0.0.1', r));
   const mget = (p) => fetch('http://127.0.0.1:' + ms.address().port + p);
   assert.equal((await mget('/models/gist/manifest.json')).status, 200);
+  assert.equal((await mget('/models/gist/manifest.json')).headers.get('x-frame-options'), null, 'the model page can be framed by the app');
   assert.equal((await mget('/models/gist/missing.json')).status, 404);
   assert.equal((await mget('/models/../secret.txt')).status, 404, 'no path escape');
   assert.equal((await mget('/models/%2e%2e/secret.txt')).status, 404, 'no encoded path escape');
