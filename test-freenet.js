@@ -324,6 +324,14 @@ try {
   await devB.personal().deleteVaultNote(noteFromA.soul);
   await settle();
   assert.equal((await devA.personal().readVaultNotes()).length, 0, 'deletion reached device A');
+  // blog posts are public but still need the vault: Freenet keeps no browser storage between visits
+  const post = await devA.publishBlogPost({ title: 'Hello Freenet', content: 'my first post' });
+  await settle();
+  const keep = new Map(sharedMap);
+  sharedMap.clear(); // a fresh visit: the gateway kept nothing
+  const devC = createClient(); await devC.login('fn_vault_user', 'vault-pass'); await settle();
+  assert.equal((await devC.getBlogPost(post.id))?.content, 'my first post', 'the post came back from the vault');
+  for (const [k, v] of keep) if (!sharedMap.has(k)) sharedMap.set(k, v);
   const other = createClient();
   await other.login('fn_vault_other', 'other-pass');
   await settle();
