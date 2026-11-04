@@ -626,7 +626,10 @@ ${posts.map((p) => {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       return res.end('Not found');
     }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "frame-ancestors 'none'" });
+    const headers = { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff' };
+    // the app embeds /models/gist/host.html in a sandboxed iframe (opaque origin, no keys), so only the app's own pages refuse framing
+    if (root === webDir) Object.assign(headers, { 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "frame-ancestors 'none'" });
+    res.writeHead(200, headers);
     fs.createReadStream(file).pipe(res);
   }
 
