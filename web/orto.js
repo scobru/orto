@@ -199,6 +199,9 @@ const checkLinks = (links) => {
 /** What contracts/vault accepts (is_valid_key, MAX_RECORD_DATA_BYTES): anything else would make it refuse the whole update. */
 const vaultable = (key, rec) => /^[^\s|]{1,160}$/.test(key) && key.includes(':') && (rec.deleted || (typeof rec.data === 'string' && rec.data.length <= 2 * 1024 * 1024));
 const COLLECTIONS = ['vault', 'calendar', 'tasks', 'bookmarks', 'contacts', 'secrets', 'feeds', 'files', 'shares']; // encrypted ones; `posts` is public
+// Freenet keeps no browser storage between visits, so the vault carries posts too: they are public, stored as plain JSON in `data`
+const VAULT_COLLS = [...COLLECTIONS, 'posts'];
+const toVault = (coll, rec) => rec && coll === 'posts' && !rec.deleted ? { ...rec, data: JSON.stringify(rec) } : rec;
 const toB64u = (u8) => toB64(u8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const fromB64u = (b) => fromB64(b.replace(/-/g, '+').replace(/_/g, '/'));
 const aesKey = (raw) => crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
@@ -508,17 +511,18 @@ export class Orto {
     const remote = net?.records || {};
     for (const [k, r] of Object.entries(remote)) {
       const i = k.indexOf(':'), coll = k.slice(0, i), soul = k.slice(i + 1);
-      if (!COLLECTIONS.includes(coll)) continue;
+      if (!VAULT_COLLS.includes(coll)) continue;
       const raw = this._safeStorageGet(v.prefix + k), cur = raw && JSON.parse(raw);
       if (cur && cur.updatedAt >= r.updated_at) continue;
-      const rec = r.deleted ? { soul, deleted: true, updatedAt: r.updated_at } : { soul, data: r.data, encrypted: true, updatedAt: r.updated_at };
+      let rec = r.deleted ? { soul, deleted: true, updatedAt: r.updated_at } : { soul, data: r.data, encrypted: true, updatedAt: r.updated_at };
+      if (coll === 'posts' && !r.deleted) try { rec = { ...JSON.parse(r.data), soul, updatedAt: r.updated_at }; } catch (_) { continue; }
       this._safeStorageSet(v.prefix + k, JSON.stringify(rec));
       for (const s of this._subs || []) if (s.coll === coll) try { s.handle(r.deleted ? { coll, soul, deleted: true } : { coll, record: rec, soul }); } catch (_) {}
     }
     for (const k of this._safeStorageKeys(v.prefix)) {
       const key = k.slice(v.prefix.length), coll = key.slice(0, key.indexOf(':'));
-      if (!COLLECTIONS.includes(coll)) continue; // keys of shared spaces start with "sp:"
-      const rec = JSON.parse(this._safeStorageGet(k) || 'null');
+      if (!VAULT_COLLS.includes(coll)) continue; // keys of shared spaces start with "sp:"
+      const rec = toVault(coll, JSON.parse(this._safeStorageGet(k) || 'null'));
       if (rec && vaultable(key, rec) && (!remote[key] || rec.updatedAt > remote[key].updated_at)) v.pending.set(key, rec);
     }
     await this._vaultFlush(v);
@@ -526,7 +530,8 @@ export class Orto {
 
   _vaultQueue(coll, soul, rec) {
     const v = (this._base || this)._vaults?.get(this._vaultPrefix());
-    if (!v || !COLLECTIONS.includes(coll) || !vaultable(`${coll}:${soul}`, rec)) return;
+    rec = toVault(coll, rec);
+    if (!v || !VAULT_COLLS.includes(coll) || !vaultable(`${coll}:${soul}`, rec)) return;
     v.pending.set(`${coll}:${soul}`, rec);
     clearTimeout(v.timer);
     v.timer = setTimeout(() => this._vaultFlush(v).catch(() => {}), 300); // one update for a burst of edits
