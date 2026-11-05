@@ -3893,6 +3893,13 @@
     // Freenet environment detection
     const isFreenet = location.pathname.includes('/v1/contract/') || location.port === '7509' || !!window.__freenet__;
     // the gateway's shell shows Freenet's icon in the tab: hand it Orto's (it takes data: and https: URLs only)
+    if (isFreenet) { // the Feeds tab reads Radica: hide the RSS tools
+      const nav = document.getElementById('nav-feeds');
+      nav.querySelector('.nav-text').textContent = 'Radica'; nav.querySelector('i').className = 'ti ti-plant';
+      for (const id of ['feeds-edit', 'feeds-del', 'feeds-file']) document.getElementById(id)?.remove();
+      document.querySelectorAll('#feeds-pane .bm-bar button').forEach((b) => { if (/feedsMarkRead|feedAdd|feedsExport|feeds-file/.test(b.getAttribute('onclick') || '')) b.remove(); });
+      document.getElementById('feeds-search').placeholder = 'Search posts';
+    }
     if (isFreenet && window.parent !== window) fetch('icon.svg').then((r) => r.text()).then((svg) => window.parent.postMessage({ __freenet_shell__: true, type: 'favicon', href: 'data:image/svg+xml,' + encodeURIComponent(svg) }, '*')).catch(() => {});
 
     function hasServiceWorker() {
@@ -6402,11 +6409,85 @@ print("Welcome to Orto!")
     let feedsMode = false, feedSel = null, feedQuery = '', feedBusy = false;
     const feedTitle = (f) => f.title || feedData[f.soul]?.feed?.title || f.url.replace(/^https?:\/\//, '');
     const feedUnread = (f) => (feedData[f.soul]?.feed?.items || []).filter((i) => i.date && i.date > (f.readAt || 0)).length;
+
+    // ── Freenet: the Feeds tab shows the posts of the people you follow on Radica (RSS has nothing to read inside Freenet) ──
+    // Read only: your following list and their posts come from each persona's public Radica feed contract.
+    const radica = { me: null, people: {}, posts: [], busy: false, at: 0, err: '', sel: null };
+    function fromBase58(str) {
+      let n = 0n;
+      for (const c of str) { const i = B58.indexOf(c); if (i < 0) throw new Error('bad key'); n = n * 58n + BigInt(i); }
+      let h = n.toString(16); if (h.length % 2) h = '0' + h;
+      return '00'.repeat(str.length - str.replace(/^1+/, '').length) + h;
+    }
+    function radicaOwner() {
+      try { const d = JSON.parse(safeStore.getItem('orto_viso_session') || 'null'); if (/^[0-9a-f]{64}$/.test(d?.persona || '')) return d.persona; } catch (_) {}
+      const k = safeStore.getItem('orto_radica_key');
+      return /^[0-9a-f]{64}$/.test(k || '') ? k : null;
+    }
+    function radicaSetKey() {
+      const v = (document.getElementById('radica-key')?.value || '').trim();
+      let hex = v.toLowerCase();
+      try { if (!/^[0-9a-f]{64}$/.test(hex)) hex = fromBase58(v); } catch (_) { hex = ''; }
+      if (!/^[0-9a-f]{64}$/.test(hex)) return showToast('That is not a Radica public key');
+      safeStore.setItem('orto_radica_key', hex);
+      radicaRefresh(true);
+    }
+    const radicaName = (pk) => radica.people[pk]?.name || (() => { try { return toBase58(Uint8Array.from(pk.match(/../g), (h) => parseInt(h, 16))).slice(0, 10) + '…'; } catch (_) { return pk.slice(0, 10); } })();
+    async function radicaRefresh(force) {
+      const FR = window.FreenetRadica;
+      radica.me = radicaOwner();
+      if (!FR || !radica.me || radica.busy || (!force && Date.now() - radica.at < 5 * 60e3)) return radicaRender();
+      radica.busy = true; radica.err = ''; radicaRender();
+      try {
+        const mine = await FR.getFeed(radica.me);
+        const follow = [...(mine?.following || [])].filter((k) => /^[0-9a-f]{64}$/.test(k));
+        const posts = [], people = {};
+        let i = 0;
+        await Promise.all(Array.from({ length: Math.min(4, follow.length) }, async () => { // a few at a time: the node refuses big bursts
+          while (i < follow.length) {
+            const pk = follow[i++];
+            const f = await FR.getFeed(pk).catch(() => null);
+            people[pk] = { name: f?.profile?.display_name || '', avatar: f?.profile?.avatar_url || '' };
+            for (const p of Object.values(f?.posts || {})) if (!f.deleted?.[p.id]) posts.push({ ...p, author: pk });
+          }
+        }));
+        Object.assign(radica, { people, posts: posts.sort((a, b) => b.timestamp - a.timestamp).slice(0, 300), at: Date.now(), following: follow, found: !!mine });
+      } catch (e) { radica.err = e.message; }
+      radica.busy = false;
+      document.getElementById('count-feeds').textContent = (radica.following || []).length || '';
+      radicaRender();
+    }
+    function radicaRender() {
+      const list = document.getElementById('feeds-list'), box = document.getElementById('feeds-items');
+      const open = `<a class="cal-btn" href="${location.origin}${window.FreenetRadica?.RADICA_PATH || ''}" target="_blank" rel="noopener">Open Radica ↗</a>`;
+      if (!window.FreenetRadica) { list.innerHTML = ''; box.innerHTML = '<div class="blog-empty">Radica needs the Freenet node.</div>'; return; }
+      if (!radica.me) {
+        list.innerHTML = '';
+        box.innerHTML = `<div class="blog-empty">See the posts of the people you follow on Radica.<br>Sign in with Viso, or paste your Radica public key:<br><br>
+          <input id="radica-key" style="max-width:420px;width:100%;padding:8px 10px;border:1px solid var(--border-color);border-radius:8px;background:var(--input-bg);color:var(--text-primary);font:inherit" placeholder="Radica public key"> <button class="cal-btn primary" onclick="radicaSetKey()">Show my feed</button></div>`;
+        return;
+      }
+      const follow = radica.following || [];
+      if (radica.sel && !follow.includes(radica.sel)) radica.sel = null;
+      const row = (pk, label, n) => `<div class="bm-folder ${radica.sel === pk ? 'active' : ''}" onclick="radicaPick(${pk ? `'${pk}'` : 'null'})"><span>${escapeHtml(label)}</span><span>${n || ''}</span></div>`;
+      list.innerHTML = row(null, 'All', radica.posts.length) + follow.map((pk) => row(pk, radicaName(pk), radica.posts.filter((p) => p.author === pk).length)).join('');
+      const shown = radica.posts.filter((p) => (!radica.sel || p.author === radica.sel) && (!feedQuery || [p.caption, radicaName(p.author), p.location].join(' ').toLowerCase().includes(feedQuery)));
+      const media = (u) => /^(data:image\/|https:)/.test(u || '') ? `<img src="${escapeHtml(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" style="max-width:100%;max-height:420px;border-radius:8px;margin-top:8px" onerror="this.remove()">` : u ? '<div style="color:var(--text-muted);margin-top:6px">🖼 Photo or video: open it in Radica</div>' : '';
+      box.innerHTML = radica.err ? `<div class="blog-empty">Could not read Radica: ${escapeHtml(radica.err)}</div>`
+        : shown.length ? shown.map((p) => `<div class="bm-item" style="display:block">
+            <div style="font-size:12px;color:var(--text-muted)"><b style="color:var(--text-primary)">${escapeHtml(radicaName(p.author))}</b>${new Date(p.timestamp).toLocaleString()}${p.location ? ' · 📍 ' + escapeHtml(p.location) : ''}</div>
+            ${p.is_nsfw ? '<div style="color:var(--text-muted)">Sensitive post: open it in Radica</div>' : `<div style="white-space:pre-wrap;margin-top:4px">${escapeHtml(p.caption)}</div>${media(p.media_uri)}`}
+          </div>`).join('') + `<div class="blog-empty">${open}</div>`
+        : radica.busy ? '<div class="blog-empty">Loading from Freenet…</div>'
+        : !radica.found ? `<div class="blog-empty">No Radica profile found for this key yet.<br>${open}</div>`
+        : !follow.length ? `<div class="blog-empty">You do not follow anyone on Radica yet.<br>${open}</div>`
+        : '<div class="blog-empty">No posts to show.</div>';
+    }
     function loadFeeds() {
       os.onFeed((f, soul, deleted) => {
         syncBump();
         if (deleted) { delete feeds[soul]; delete feedData[soul]; if (feedSel === soul) feedSel = null; } else feeds[soul] = { ...f, soul };
-        document.getElementById('count-feeds').textContent = Object.keys(feeds).length;
+        if (!isFreenet) document.getElementById('count-feeds').textContent = Object.keys(feeds).length; // Freenet: the tab counts Radica people
         if (feedsMode) { renderFeeds(); if (!deleted && !feedData[soul]) feedsRefresh(); }
       });
     }
@@ -6417,6 +6498,7 @@ print("Welcome to Orto!")
       document.getElementById('nav-feeds')?.classList.remove('active');
     }
     async function feedsRefresh(force) {
+      if (isFreenet) return radicaRefresh(force);
       if (feedBusy) return;
       const todo = Object.keys(feeds).filter((s) => force || !feedData[s] || Date.now() - feedData[s].at > 5 * 60e3);
       if (!todo.length) return;
@@ -6435,6 +6517,7 @@ print("Welcome to Orto!")
     const feedPick = (soul) => { feedSel = soul; renderFeeds(); };
     const feedSearch = (v) => { feedQuery = v.toLowerCase(); renderFeeds(); };
     function renderFeeds() {
+      if (isFreenet) return radicaRender();
       const list = Object.values(feeds).sort((a, b) => (a.folder || '').localeCompare(b.folder || '') || feedTitle(a).localeCompare(feedTitle(b)));
       if (feedSel && !feeds[feedSel]) feedSel = null;
       const row = (soul, label, n, err) => `<div class="bm-folder ${feedSel === soul ? 'active' : ''}" onclick="feedPick(${soul ? `'${soul}'` : 'null'})" title="${escapeHtml(err || '')}"><span>${escapeHtml(label)}${err ? ' ⚠' : ''}</span><span>${n || ''}</span></div>`;
@@ -6527,7 +6610,8 @@ print("Welcome to Orto!")
       open: feedOpen,
       save: feedSave
     });
-    Object.assign(window, { openFeeds, feedsRefresh, feedPick, feedSearch, feedAdd, feedEdit, feedUnfollow, feedsMarkRead, feedsImport, feedsExport, renderFeeds });
+    const radicaPick = (pk) => { radica.sel = pk; radicaRender(); };
+    Object.assign(window, { radicaPick, radicaSetKey, openFeeds, feedsRefresh, feedPick, feedSearch, feedAdd, feedEdit, feedUnfollow, feedsMarkRead, feedsImport, feedsExport, renderFeeds });
 
     // Files and Photos — encrypted uploads stored on the Orto server; index in the `files` collection (see Orto.uploadFile).
     // Photos is the same data as a thumbnail grid of the image files (thumbnails are made in the browser and kept in the encrypted index).

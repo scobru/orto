@@ -17,6 +17,7 @@ import { RelatedContractsT } from "@freenetorg/freenet-stdlib/client-request";
 import { blake3 } from "@noble/hashes/blake3.js";
 import { api, updateListeners } from "./chunks";
 import "./delegate"; // exposes FreenetDelegate (node-kept identity values) from the same bundle
+import "./radica"; // exposes FreenetRadica (read Radica feeds) from the same bundle
 
 export type VaultRecord = { data: string; updated_at: number; deleted: boolean; sig: string; cert: null };
 export type VaultState = { records: Record<string, VaultRecord>; updated_at: number };
