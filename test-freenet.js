@@ -382,6 +382,30 @@ try {
   for (const [k, v] of keepAll) if (!sharedMap.has(k)) sharedMap.set(k, v);
   delete globalThis.FreenetVault;
 
+  console.log('14. Freenet mode: #fblog link generation and decoding');
+  const blogPostData = { id: 'p-test', title: 'Test Title', content: 'Test Content', author: 'scobru', createdAt: 12345 };
+  const encodeB64u = (str) => {
+    const bytes = new TextEncoder().encode(str);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  };
+  const decodeB64u = (str) => {
+    const pad = str.length % 4 === 0 ? '' : '='.repeat(4 - (str.length % 4));
+    const bin = atob(str.replace(/-/g, '+').replace(/_/g, '/') + pad);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  };
+  const payload = encodeB64u(JSON.stringify(blogPostData));
+  const decoded = JSON.parse(decodeB64u(payload));
+  assert.equal(decoded.title, 'Test Title');
+  assert.equal(decoded.content, 'Test Content');
+  const hashRegex = /(?:^|[#&])\/?fblog=([^&]+)/;
+  assert.equal(('#fblog=' + payload).match(hashRegex)[1], payload);
+  assert.equal(('#/fblog=' + payload).match(hashRegex)[1], payload);
+  assert.equal(('#sk=123&fblog=' + payload).match(hashRegex)[1], payload);
+
   console.log('ok - all freenet tests passed');
 } catch (e) {
   console.error(e);

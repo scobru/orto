@@ -3742,6 +3742,13 @@
   <script type="module">
     import { Orto, DEFAULT_SERVER, normalizeServer, contactsToVcf, generatePassword, readShare } from './orto.js';
 
+    // Freenet environment detection & core module state
+    const isFreenet = location.pathname.includes('/v1/contract/') || location.port === '7509' || !!window.__freenet__;
+    let serverUrl = '';
+    let os;       // the client the app reads and writes through: a view of `root` on your own data, or on one shared space
+    let root;     // the signed-in client itself (spaces list, invitations, password)
+    let pair;
+
     function encodeB64u(str) {
       const bytes = new TextEncoder().encode(str);
       let bin = '';
@@ -3820,7 +3827,10 @@
 
       ov.querySelector('#pb-close').onclick = () => {
         ov.remove();
-        if (location.hash.startsWith('#fblog=')) history.replaceState(null, '', location.pathname + location.search);
+        if (/[#&]fblog=/.test(location.hash)) {
+          const cleanHash = location.hash.replace(/(?:^|[#&])\/?fblog=[^&]*/, '').replace(/^&/, '#');
+          history.replaceState(null, '', location.pathname + location.search + (cleanHash && cleanHash !== '#' ? cleanHash : ''));
+        }
       };
       ov.querySelector('#pb-copy').onclick = async () => {
         try {
@@ -3836,9 +3846,10 @@
 
     // Freenet public blog post link (#fblog=<base64-json>): viewable by anyone with zero login
     function checkFblogHash() {
-      if (/^#fblog=/.test(location.hash)) {
+      const fblogMatch = location.hash.match(/(?:^|[#&])\/?fblog=([^&]+)/);
+      if (fblogMatch) {
         try {
-          const raw = location.hash.slice(7);
+          const raw = fblogMatch[1];
           const data = JSON.parse(decodeB64u(raw));
           showPublicBlogOverlay(data);
         } catch (e) {
@@ -3890,8 +3901,7 @@
     let searchQuery = '';
     let autoSaveTimeout = null;
 
-    // Freenet environment detection
-    const isFreenet = location.pathname.includes('/v1/contract/') || location.port === '7509' || !!window.__freenet__;
+    // Freenet environment ui setup (isFreenet declared at module top)
     // the gateway's shell shows Freenet's icon in the tab: hand it Orto's (it takes data: and https: URLs only)
     if (isFreenet) { // the Feeds tab reads Radica: hide the RSS tools
       const nav = document.getElementById('nav-feeds');
@@ -3911,8 +3921,7 @@
       }
     }
 
-    // Orto server: on Freenet there is no remote server!
-    let serverUrl = '';
+    // Orto server: on Freenet there is no remote server! (serverUrl declared at module top)
     if (!isFreenet) {
       try { serverUrl = normalizeServer(safeStore.getItem('ortoServer') || ''); } catch (_) { }
       if (!serverUrl) {
