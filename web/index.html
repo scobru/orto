@@ -3892,6 +3892,8 @@
 
     // Freenet environment detection
     const isFreenet = location.pathname.includes('/v1/contract/') || location.port === '7509' || !!window.__freenet__;
+    // the gateway's shell shows Freenet's icon in the tab: hand it Orto's (it takes data: and https: URLs only)
+    if (isFreenet && window.parent !== window) fetch('icon.svg').then((r) => r.text()).then((svg) => window.parent.postMessage({ __freenet_shell__: true, type: 'favicon', href: 'data:image/svg+xml,' + encodeURIComponent(svg) }, '*')).catch(() => {});
 
     function hasServiceWorker() {
       if (isFreenet) return false;
