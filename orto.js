@@ -200,7 +200,7 @@ const checkLinks = (links) => {
 const vaultable = (key, rec) => /^[^\s|]{1,160}$/.test(key) && key.includes(':') && (rec.deleted || (typeof rec.data === 'string' && rec.data.length <= 2 * 1024 * 1024));
 const COLLECTIONS = ['vault', 'calendar', 'tasks', 'bookmarks', 'contacts', 'secrets', 'feeds', 'files', 'shares']; // encrypted ones; `posts` is public
 // Freenet keeps no browser storage between visits, so the vault carries posts too: they are public, stored as plain JSON in `data`
-const VAULT_COLLS = [...COLLECTIONS, 'posts'];
+const VAULT_COLLS = [...COLLECTIONS, 'posts', 'spaces']; // `spaces`: one encrypted record, the list of your Freenet spaces
 const toVault = (coll, rec) => rec && coll === 'posts' && !rec.deleted ? { ...rec, data: JSON.stringify(rec) } : rec;
 const toB64u = (u8) => toB64(u8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const fromB64u = (b) => fromB64(b.replace(/-/g, '+').replace(/_/g, '/'));
@@ -517,7 +517,7 @@ export class Orto {
       let rec = r.deleted ? { soul, deleted: true, updatedAt: r.updated_at } : { soul, data: r.data, encrypted: true, updatedAt: r.updated_at };
       if (coll === 'posts' && !r.deleted) try { rec = { ...JSON.parse(r.data), soul, updatedAt: r.updated_at }; } catch (_) { continue; }
       this._safeStorageSet(v.prefix + k, JSON.stringify(rec));
-      for (const s of this._subs || []) if (s.coll === coll) try { s.handle(r.deleted ? { coll, soul, deleted: true } : { coll, record: rec, soul }); } catch (_) {}
+      for (const s of this._subs || []) if (s.coll === coll || (coll === 'spaces' && s.coll === '_spaces')) try { s.handle(r.deleted ? { coll, soul, deleted: true } : { coll, record: rec, soul }); } catch (_) {}
     }
     for (const k of this._safeStorageKeys(v.prefix)) {
       const key = k.slice(v.prefix.length), coll = key.slice(0, key.indexOf(':'));
@@ -1231,12 +1231,30 @@ export class Orto {
   _spaceOnly() { if (!this._space) throw new Error('Open a space first: openSpace(id)'); }
   _spaceOwner() { this._spaceOnly(); if (this._role !== 'owner') throw new Error('Only the owner of the space can do that'); }
 
+  // Freenet: the list of your spaces (with their keys) is one record of your vault, encrypted with your key, so it is
+  // private and comes back on every visit and device. shortcut: the whole list is last-write-wins, two devices joining at once may drop one join.
+  async _fnSpaces() {
+    const base = this._base || this, k = base._vaultPrefix() + 'spaces:list', raw = base._safeStorageGet(k);
+    if (raw) { const r = JSON.parse(raw); return r.deleted ? [] : base.decrypt(r.data); }
+    let old = []; // before: plain JSON under one key shared by every account in this browser
+    try { old = JSON.parse(base._safeStorageGet('orto_freenet_spaces') || '[]'); } catch (_) {}
+    if (old.length) { await base._fnSaveSpaces(old); base._safeStorageRemove('orto_freenet_spaces'); }
+    return old;
+  }
+
+  async _fnSaveSpaces(list) {
+    const base = this._base || this, rec = { soul: 'list', data: await base.encrypt(list), encrypted: true, updatedAt: Date.now() };
+    base._safeStorageSet(base._vaultPrefix() + 'spaces:list', JSON.stringify(rec));
+    base._vaultQueue('spaces', 'list', rec);
+    for (const s of base._subs || []) if (s.coll === '_spaces') try { s.handle({}); } catch (_) {}
+  }
+
   /** Your spaces and pending invitations: [{id, name, role, status: 'active'|'pending', invitedBy, createdAt}]. */
   async spaces() {
     const kp = await this._kp();
     if (this.mode === 'freenet') {
       let list = [];
-      try { list = JSON.parse(this._safeStorageGet('orto_freenet_spaces') || '[]'); } catch (_) {}
+      list = await this._fnSpaces();
       return Promise.all(list.map(async (m) => {
         let name = m.name;
         if (!name && m.wrapped) {
@@ -1264,9 +1282,9 @@ export class Orto {
       const raw = crypto.getRandomValues(new Uint8Array(32));
       const wrapped = await wrapFor(kp.pub, { name, key: toB64u(raw) });
       let list = [];
-      try { list = JSON.parse(this._safeStorageGet('orto_freenet_spaces') || '[]'); } catch (_) {}
+      list = await this._fnSpaces();
       list.push({ id, name, role: 'owner', status: 'active', wrapped, rawKey: toB64u(raw), createdAt: Date.now() });
-      this._safeStorageSet('orto_freenet_spaces', JSON.stringify(list));
+      await this._fnSaveSpaces(list);
       return this.openSpace(id);
     }
     const { id } = await this._json('POST', '/sp', { wrapped: await wrapFor(kp.pub, { name, key: toB64u(crypto.getRandomValues(new Uint8Array(32))) }) });
@@ -1278,7 +1296,7 @@ export class Orto {
     const base = this._base || this, kp = await base._kp();
     if (base.mode === 'freenet') {
       let list = [];
-      try { list = JSON.parse(base._safeStorageGet('orto_freenet_spaces') || '[]'); } catch (_) {}
+      list = await base._fnSpaces();
       const m = list.find((x) => String(x.id) === String(id));
       if (!m) throw new Error('No such space: ' + id);
       let raw;
@@ -1326,9 +1344,9 @@ export class Orto {
     const base = this._base || this;
     if (base.mode === 'freenet') {
       let list = [];
-      try { list = JSON.parse(base._safeStorageGet('orto_freenet_spaces') || '[]'); } catch (_) {}
+      list = await base._fnSpaces();
       const m = list.find(x => String(x.id) === String(id));
-      if (m) { m.status = 'active'; base._safeStorageSet('orto_freenet_spaces', JSON.stringify(list)); }
+      if (m) { m.status = 'active'; await base._fnSaveSpaces(list); }
       return this.openSpace(id);
     }
     await this._json('POST', `/sp/${Number(id)}/accept`);
@@ -1336,13 +1354,13 @@ export class Orto {
   }
 
   /** Decline an invitation, or leave a space you do not own. */
-  leaveSpace(id) {
+  async leaveSpace(id) {
     const base = this._base || this;
     if (base.mode === 'freenet') {
       let list = [];
-      try { list = JSON.parse(base._safeStorageGet('orto_freenet_spaces') || '[]'); } catch (_) {}
+      list = await base._fnSpaces();
       list = list.filter((x) => String(x.id) !== String(id));
-      base._safeStorageSet('orto_freenet_spaces', JSON.stringify(list));
+      await base._fnSaveSpaces(list);
       return { left: id };
     }
     return this._json('DELETE', `/sp/${Number(id)}/members/${encodeURIComponent((this._base || this).username)}`);
@@ -1448,14 +1466,14 @@ export class Orto {
   }
 
   /** Delete the space and everything in it, for everyone. */
-  deleteSpace() {
+  async deleteSpace() {
     this._spaceOwner();
     const base = this._base || this;
     if (base.mode === 'freenet') {
       let list = [];
-      try { list = JSON.parse(base._safeStorageGet('orto_freenet_spaces') || '[]'); } catch (_) {}
+      list = await base._fnSpaces();
       list = list.filter((x) => String(x.id) !== String(this._space));
-      base._safeStorageSet('orto_freenet_spaces', JSON.stringify(list));
+      await base._fnSaveSpaces(list);
       return { deleted: this._space };
     }
     return this._json('DELETE', `/sp/${this._space}`);
@@ -1525,10 +1543,10 @@ export class Orto {
       if (!unwrapped?.key) throw new Error('Could not decrypt invite: this invite was encrypted for a different public key');
       const spaceId = data.id || ('sp_' + Date.now().toString(36));
       let list = [];
-      try { list = JSON.parse(base._safeStorageGet('orto_freenet_spaces') || '[]'); } catch (_) {}
+      list = await base._fnSpaces();
       if (!list.some(x => String(x.id) === String(spaceId))) {
         list.push({ id: spaceId, name: unwrapped.name || 'Shared Space', role: unwrapped.role || 'editor', status: 'active', rawKey: unwrapped.key, createdAt: Date.now() });
-        base._safeStorageSet('orto_freenet_spaces', JSON.stringify(list));
+        await base._fnSaveSpaces(list);
       }
       return base.openSpace(spaceId);
     }
@@ -1541,10 +1559,10 @@ export class Orto {
       try { p = JSON.parse(new TextDecoder().decode(fromB64u(payloadB64))); } catch (_) {}
       if (!p?.k || !p?.id) throw new Error('Invalid capability invite link');
       let list = [];
-      try { list = JSON.parse(base._safeStorageGet('orto_freenet_spaces') || '[]'); } catch (_) {}
+      list = await base._fnSpaces();
       if (!list.some(x => String(x.id) === String(p.id))) {
         list.push({ id: p.id, name: p.n || 'Shared Space', role: p.r || 'viewer', status: 'active', rawKey: p.k, createdAt: Date.now() });
-        base._safeStorageSet('orto_freenet_spaces', JSON.stringify(list));
+        await base._fnSaveSpaces(list);
       }
       return base.openSpace(p.id);
     }
@@ -1555,9 +1573,9 @@ export class Orto {
     if (base.mode === 'freenet' && p?.k) {
       const spaceId = 'sp_' + Date.now().toString(36);
       let list = [];
-      try { list = JSON.parse(base._safeStorageGet('orto_freenet_spaces') || '[]'); } catch (_) {}
+      list = await base._fnSpaces();
       list.push({ id: spaceId, name: p.n || 'Shared Space', role: 'editor', status: 'active', rawKey: p.k, createdAt: Date.now() });
-      base._safeStorageSet('orto_freenet_spaces', JSON.stringify(list));
+      await base._fnSaveSpaces(list);
       return base.openSpace(spaceId);
     }
     const { id } = await base._json('POST', '/sp/join/' + token, { wrapped: await wrapFor(kp.pub, { name: String(p?.n || 'Shared space'), key: p.k }) });

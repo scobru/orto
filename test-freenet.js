@@ -364,6 +364,22 @@ try {
   await settle();
   const sent = Object.values(vaults.get(vaultOf(viso))?.records ?? {});
   assert.ok(sent.length && sent.every((r) => r.cert?.challenge === cert.challenge), 'records are stored with the delegation cert, signed by the app key');
+
+  // the list of your spaces (with their keys) comes back on a fresh visit, encrypted, for a password and a Viso sign-in alike
+  const spaceSecret = (await devA.createSpace('Kept on Freenet')).spaceId;
+  const visoSpace = (await viso.createSpace('Viso space')).spaceId;
+  await settle();
+  assert.ok(![...sharedMap.values()].some((v) => v.includes('rawKey')), 'no space key in plain text in browser storage');
+  const keepAll = new Map(sharedMap);
+  sharedMap.clear();
+  const devD = createClient(); await devD.login('fn_vault_user', 'vault-pass');
+  const visoAgain = createClient(); await visoAgain.login('fn_viso', appSeed, { delegation: { persona, appPath, cert } });
+  await settle();
+  assert.ok((await devD.spaces()).some((x) => x.id === spaceSecret), 'the space list came back from the vault');
+  assert.ok((await visoAgain.spaces()).some((x) => x.id === visoSpace), 'the space list came back for the Viso persona');
+  assert.ok(!(await devD.spaces()).some((x) => x.id === visoSpace), 'one account does not see another account spaces');
+  assert.equal((await devD.openSpace(spaceSecret)).spaceName, 'Kept on Freenet', 'its key opens it again');
+  for (const [k, v] of keepAll) if (!sharedMap.has(k)) sharedMap.set(k, v);
   delete globalThis.FreenetVault;
 
   console.log('ok - all freenet tests passed');
