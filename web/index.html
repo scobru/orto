@@ -3810,7 +3810,7 @@
               ${dateStr ? `<span>${escapeHtml(dateStr)}</span>` : ''}
               ${tagsStr ? `<span style="margin-left:12px;background:var(--tag-bg,rgba(196,83,47,0.08));color:var(--tag-text,#c4532f);padding:2px 8px;border-radius:4px;font-size:0.8rem">#${escapeHtml(tagsStr)}</span>` : ''}
             </div>
-            <div id="pb-content" style="font-size:1.1rem">
+            <div id="pb-content" class="markdown-rendered-view" style="font-size:1.1rem">
               ${window.marked ? DOMPurify.sanitize(window.marked.parse(p.content || '')) : escapeHtml(p.content || '').replace(/\n/g, '<br>')}
             </div>
           </article>
@@ -5932,7 +5932,7 @@ print("Welcome to Orto!")
             <button class="cal-btn" onclick="blogEdit('${escapeHtml(cur.id)}')"><i class="ti ti-pencil"></i> Edit</button>
             <button class="cal-btn" onclick="blogDelete('${escapeHtml(cur.id)}')"><i class="ti ti-trash"></i> Delete</button>
           </div>
-          <article>
+          <article class="markdown-rendered-view">
             <h1>${escapeHtml(cur.title)}</h1>
             ${window.marked ? DOMPurify.sanitize(window.marked.parse(cur.content || '')) : escapeHtml(cur.content || '').replace(/\n/g, '<br>')}
           </article>`
