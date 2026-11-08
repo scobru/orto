@@ -11,6 +11,7 @@ import {
 import { ContractCodeT } from "@freenetorg/freenet-stdlib/common";
 import { RelatedContractsT } from "@freenetorg/freenet-stdlib/client-request";
 import { blake3 } from "@noble/hashes/blake3.js";
+import { encodeFEC, decodeFEC, regenerateShard } from "freenet-blob/fec";
 
 // ---------------------------------------------------------------- WebSocket connection
 function getWsUrl(): URL {
@@ -212,5 +213,8 @@ if (typeof globalThis !== "undefined") {
     resetSocket,
     getWasmCode,
     api,
+    encodeFEC,
+    decodeFEC,
+    regenerateShard,
   };
 }

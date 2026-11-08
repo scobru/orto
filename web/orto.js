@@ -256,6 +256,17 @@ const openChunk = async (key, bytes, nonce, i, n) => new Uint8Array(await crypto
 const chunkLen = (m, i) => (i < m.chunked.n - 1 ? m.chunked.size : m.size - (m.chunked.n - 1) * m.chunked.size) + GCM; // stored length of chunk i
 const chunked = async (items, fn, n = 20) => { for (let i = 0; i < items.length; i += n) await Promise.all(items.slice(i, i + n).map(fn)); };
 
+async function getFecEngine() {
+  if (typeof globalThis !== 'undefined' && globalThis.FreenetChunks?.encodeFEC) {
+    return globalThis.FreenetChunks;
+  }
+  try {
+    return await import('freenet-blob');
+  } catch (_) {
+    return null;
+  }
+}
+
 /**
  * Open a public share link (`<server>/s/<id>#<key>`), no login needed. The key is the part after `#`: it never reaches the server.
  * @returns {Promise<{kind:'note', title, body, cat} | {kind:'file', name, type, data:Uint8Array}>}
@@ -1019,15 +1030,68 @@ export class Orto {
    * and the file can be played or read piece by piece with readFileRange(). `onProgress(0..1)`.
    * @returns {Promise<object>} the index entry: {id, name, size, encrypted, chunked: {size, n, nonce}, addedAt, ...}
    */
-  async uploadFileChunked(data, name, { type, thumb, addedAt, folder, album, playlist, chunkSize = CHUNK, onProgress } = {}) {
+  async uploadFileChunked(data, name, { type, thumb, addedAt, folder, album, playlist, chunkSize = CHUNK, onProgress, fec = true } = {}) {
     this._needKey();
     const blob = data instanceof Blob ? data : new Blob([data]);
     const size = blob.size, n = Math.max(1, Math.ceil(size / chunkSize)), nonce = crypto.getRandomValues(new Uint8Array(16));
     const fnChunks = this.mode === 'freenet' && typeof globalThis !== 'undefined' && globalThis.FreenetChunks ? globalThis.FreenetChunks : null;
     let chunkAddrs = null;
+    let parityAddrs = null;
+    let fecMeta = null;
     let id;
 
     if (fnChunks) {
+      const fecEngine = fec ? await getFecEngine() : null;
+
+      if (fecEngine && fecEngine.encodeFEC) {
+        const fullBytes = new Uint8Array(await blob.arrayBuffer());
+        const fecRes = fecEngine.encodeFEC(fullBytes, { shardSize: chunkSize });
+        const total = fecRes.totalShards;
+        chunkAddrs = [];
+        parityAddrs = [];
+
+        for (let i = 0; i < total; i++) {
+          const shard = fecRes.shards[i];
+          const body = await sealChunk(this.key, shard.data, nonce, i, total);
+          const addr = await fnChunks.putChunk(body);
+          if (i < fecRes.k) {
+            chunkAddrs.push(addr);
+          } else {
+            parityAddrs.push(addr);
+          }
+          onProgress?.((i + 1) / total);
+        }
+
+        fecMeta = {
+          enabled: true,
+          k: fecRes.k,
+          m: fecRes.m,
+          total: fecRes.totalShards,
+          shardSize: fecRes.shardSize,
+          originalSize: fecRes.originalSize,
+        };
+        id = 'fn_' + chunkAddrs[0].slice(0, 16) + '_' + Date.now().toString(36);
+
+        const g = { folder: groupName('folder', folder), album: groupName('album', album), playlist: groupName('playlist', playlist) };
+        const meta = {
+          id, name, size, encrypted: true,
+          chunked: {
+            size: fecRes.shardSize,
+            n: fecRes.k,
+            nonce: toB64(nonce),
+            freenetChunks: chunkAddrs,
+            ...(parityAddrs.length > 0 && { parityChunks: parityAddrs }),
+            fec: fecMeta,
+          },
+          addedAt: addedAt ?? Date.now(),
+          ...(type && { type }),
+          ...(thumb && { thumb }),
+          ...Object.fromEntries(Object.entries(g).filter(([, v]) => v))
+        };
+        await this.put('files', id, meta);
+        return meta;
+      }
+
       chunkAddrs = [];
       for (let i = 0; i < n; i++) {
         const plain = new Uint8Array(await blob.slice(i * chunkSize, (i + 1) * chunkSize).arrayBuffer());
@@ -1063,20 +1127,54 @@ export class Orto {
     this._needKey();
     meta ??= await this._get('files', id);
     if (!meta?.chunked) return (await this.downloadFile(id, { meta })).subarray(start, end);
-    const { size: P, n, nonce, freenetChunks } = meta.chunked, nonceBytes = fromB64(nonce);
+    const { size: P, n, nonce, freenetChunks, parityChunks, fec } = meta.chunked, nonceBytes = fromB64(nonce);
+    const effectiveChunkSize = fec?.enabled ? (fec.shardSize || P) : P;
     end = Math.min(end, meta.size);
     if (start >= end) return new Uint8Array(0);
-    const first = Math.floor(start / P), last = Math.floor((end - 1) / P);
+    const first = Math.floor(start / effectiveChunkSize), last = Math.floor((end - 1) / effectiveChunkSize);
 
     const fnChunks = typeof globalThis !== 'undefined' && globalThis.FreenetChunks ? globalThis.FreenetChunks : null;
     if (freenetChunks && Array.isArray(freenetChunks) && fnChunks) {
+      const fecEngine = fec?.enabled ? await getFecEngine() : null;
+      const totalShards = fec?.enabled ? (fec.total ?? (freenetChunks.length + (parityChunks?.length ?? 0))) : n;
+      const allShardsList = fec?.enabled ? [...freenetChunks, ...(parityChunks ?? [])] : freenetChunks;
+
       const out = new Uint8Array(end - start);
       for (let i = first; i <= last; i++) {
-        const addr = freenetChunks[i];
-        const encryptedChunk = await fnChunks.getChunk(addr);
-        const plain = await openChunk(this.key, encryptedChunk, nonceBytes, i, n);
-        const a = Math.max(start, i * P), b = Math.min(end, i * P + plain.length);
-        out.set(plain.subarray(a - i * P, b - i * P), a - start);
+        let plain = null;
+        try {
+          const addr = freenetChunks[i];
+          const encryptedChunk = await fnChunks.getChunk(addr);
+          plain = await openChunk(this.key, encryptedChunk, nonceBytes, i, totalShards);
+        } catch (fetchErr) {
+          if (fec?.enabled && fecEngine?.regenerateShard) {
+            const available = [];
+            for (let sIdx = 0; sIdx < allShardsList.length; sIdx++) {
+              if (sIdx === i) continue;
+              try {
+                const sEnc = await fnChunks.getChunk(allShardsList[sIdx]);
+                const sPlain = await openChunk(this.key, sEnc, nonceBytes, sIdx, totalShards);
+                available.push({ index: sIdx, data: sPlain });
+                if (available.length >= fec.k) break;
+              } catch (_) {}
+            }
+            if (available.length < fec.k) {
+              throw new Error(`Orto FEC: unable to reconstruct missing chunk ${i} (${available.length}/${fec.k} available)`);
+            }
+            const recovered = fecEngine.regenerateShard(available, i, fec);
+            plain = recovered;
+
+            try {
+              const healedBody = await sealChunk(this.key, plain, nonceBytes, i, totalShards);
+              fnChunks.putChunk(healedBody).catch(() => {});
+            } catch (_) {}
+          } else {
+            throw fetchErr;
+          }
+        }
+
+        const a = Math.max(start, i * effectiveChunkSize), b = Math.min(end, i * effectiveChunkSize + plain.length);
+        out.set(plain.subarray(a - i * effectiveChunkSize, b - i * effectiveChunkSize), a - start);
       }
       return out;
     }
@@ -1097,19 +1195,25 @@ export class Orto {
 
   // Re-encrypt a chunked file with `newKey`, chunk by chunk, and swap it in place. Safe to run twice: a file already on the new key is left alone.
   async _rekeyChunked(id, meta, oldKey, newKey) {
-    const { n, nonce, freenetChunks } = meta.chunked, nonceBytes = fromB64(nonce), P = meta.chunked.size;
+    const { n, nonce, freenetChunks, parityChunks, fec } = meta.chunked, nonceBytes = fromB64(nonce), P = meta.chunked.size;
     const fnChunks = typeof globalThis !== 'undefined' && globalThis.FreenetChunks ? globalThis.FreenetChunks : null;
     if (freenetChunks && Array.isArray(freenetChunks) && fnChunks) {
-      const firstChunk = await fnChunks.getChunk(freenetChunks[0]);
-      try { await openChunk(newKey, firstChunk, nonceBytes, 0, n); return false; } catch (_) {}
+      const totalShards = fec?.enabled ? (fec.total ?? (freenetChunks.length + (parityChunks?.length ?? 0))) : n;
+      const allShards = fec?.enabled ? [...freenetChunks, ...(parityChunks ?? [])] : freenetChunks;
+      const firstChunk = await fnChunks.getChunk(allShards[0]);
+      try { await openChunk(newKey, firstChunk, nonceBytes, 0, totalShards); return false; } catch (_) {}
       const newAddrs = [];
-      for (let i = 0; i < n; i++) {
-        const enc = await fnChunks.getChunk(freenetChunks[i]);
-        const plain = await openChunk(oldKey, enc, nonceBytes, i, n);
-        const body = await sealChunk(newKey, plain, nonceBytes, i, n);
-        newAddrs.push(await fnChunks.putChunk(body));
+      const newParityAddrs = [];
+      for (let i = 0; i < allShards.length; i++) {
+        const enc = await fnChunks.getChunk(allShards[i]);
+        const plain = await openChunk(oldKey, enc, nonceBytes, i, totalShards);
+        const body = await sealChunk(newKey, plain, nonceBytes, i, totalShards);
+        const addr = await fnChunks.putChunk(body);
+        if (i < freenetChunks.length) newAddrs.push(addr);
+        else newParityAddrs.push(addr);
       }
       meta.chunked.freenetChunks = newAddrs;
+      if (newParityAddrs.length) meta.chunked.parityChunks = newParityAddrs;
       await this.put('files', id, meta);
       return true;
     }

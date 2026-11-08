@@ -269,8 +269,11 @@ try {
   for (let i = 0; i < testAudio.length; i++) testAudio[i] = (i * 7) % 256;
   const audioMeta = await os10.uploadFileChunked(testAudio, 'Faso.mp3', { chunkSize: 150, type: 'audio/mpeg' });
   assert.ok(audioMeta.chunked);
-  assert.ok(audioMeta.chunked.freenetChunks && audioMeta.chunked.freenetChunks.length === 4, 'Split into 4 chunks');
-  assert.equal(chunkStore.size, 4, 'Chunks published to FreenetChunks');
+  assert.ok(audioMeta.chunked.freenetChunks && audioMeta.chunked.freenetChunks.length === 4, 'Split into 4 data chunks');
+  assert.ok(audioMeta.chunked.parityChunks && audioMeta.chunked.parityChunks.length === 2, 'Generated 2 parity shards');
+  assert.equal(audioMeta.chunked.fec?.k, 4);
+  assert.equal(audioMeta.chunked.fec?.m, 2);
+  assert.equal(chunkStore.size, 6, 'All 6 shards (4 data + 2 parity) published to FreenetChunks');
 
   // Verify range read
   const rangePart = await os10.readFileRange(audioMeta.id, 50, 200, audioMeta);
@@ -285,6 +288,26 @@ try {
   // Download whole file from FreenetChunks
   const downloadedAudio = await osReloaded.downloadFile(audioMeta.id);
   assert.deepEqual(downloadedAudio, testAudio, 'Audio downloaded byte-for-byte across simulated reload');
+
+  // Test Reed-Solomon FEC resilience and auto-healing: delete chunk 1
+  const missingAddr = audioMeta.chunked.freenetChunks[1];
+  chunkStore.delete(missingAddr);
+  assert.equal(chunkStore.has(missingAddr), false, 'Chunk 1 was deleted to simulate node churn');
+
+  // Download whole file again: Reed-Solomon auto-healing must reconstruct the missing chunk
+  const healedAudio = await osReloaded.downloadFile(audioMeta.id);
+  assert.deepEqual(healedAudio, testAudio, 'Reed-Solomon FEC successfully reconstructed missing chunk on the fly');
+
+  // Range read covering the missing chunk must also work seamlessly
+  const healedRange = await osReloaded.readFileRange(audioMeta.id, 140, 290, audioMeta);
+  assert.deepEqual(healedRange, testAudio.subarray(140, 290), 'Range read across missing chunk reconstructed perfectly');
+
+  // Exceeding parity capacity: delete 2 more shards (total 3 missing > M=2 parity)
+  chunkStore.delete(audioMeta.chunked.freenetChunks[0]);
+  chunkStore.delete(audioMeta.chunked.freenetChunks[2]);
+  await assert.rejects(async () => {
+    await osReloaded.downloadFile(audioMeta.id);
+  }, /Orto FEC: unable to reconstruct missing chunk/);
 
   delete globalThis.FreenetChunks;
 
