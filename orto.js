@@ -1997,12 +1997,12 @@ export class Orto {
   // ─── Blog (public, plaintext) ───────────────────────────────
 
   /** Publish (or edit, with the same `id`) a public markdown post. Readable by anyone at /api/u/<username>/posts. */
-  async publishBlogPost({ title, content, tags = [], id = null, createdAt = Date.now() }) {
+  async publishBlogPost({ title, content, tags = [], id = null, createdAt = Date.now(), authorAlias = this.username }) {
     if (!this.token) throw new Error('Not authenticated.');
     const postId = id || ('post-' + Date.now());
     await this._json('PUT', `/c/posts/${encodeURIComponent(postId)}`, {
       id: postId, title: title.trim(), content: content.trim(), tags: asList(tags).join(', '),
-      authorAlias: this.username, authorPub: this.pub, createdAt, deleted: false
+      authorAlias: String(authorAlias || this.username).trim().slice(0, 60), authorPub: this.pub, createdAt, deleted: false
     });
     return { id: postId, status: 'published', authorPub: this.pub };
   }

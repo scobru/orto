@@ -161,6 +161,8 @@ const anon = new Orto({ server: url }); // no login: public read
 const read = await anon.readBlogPosts('Test-User');
 assert.deepEqual([read[0].title, read[0].tags, read[0].authorAlias], ['Hello', ['zen', 'os'], 'test-user']);
 assert.equal((await anon.getBlogPost('post-1', 'test-user')).content, '# Welcome');
+await os.publishBlogPost({ title: 'Hello', content: '# Welcome', id: 'post-1', authorAlias: 'My Blog' });
+assert.equal((await anon.getBlogPost('post-1', 'test-user')).authorAlias, 'My Blog');
 assert.equal(await anon.resolveAlias('TEST-user'), 'test-user');
 assert.equal(await anon.resolveAlias('ghost'), null);
 assert.deepEqual(await other.readBlogPosts('mallory'), []);
