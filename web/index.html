@@ -3886,9 +3886,6 @@
       } catch (e) { box.textContent = 'Cannot open this link (is it complete, including the part after #?).'; }
     })();
 
-    let os;       // the client the app reads and writes through: a view of `root` on your own data, or on one shared space
-    let root;     // the signed-in client itself (spaces list, invitations, password)
-    let pair;
     // encrypt/decrypt helpers over the SDK's AES-GCM (the cache and bookmark code call them with the key pair)
     const ZEN = { encrypt: (v) => os.encrypt(v), decrypt: (c) => os.decrypt(c) };
     let isAuthenticated = false;
