@@ -3237,6 +3237,7 @@
         <div class="blog-list-head"><span style="display:flex;align-items:center;gap:6px"><button class="mobile-menu-btn" onclick="toggleSidebar()" title="Menu" aria-label="Menu"><i class="ti ti-menu-2"></i></button>Blog</span><span id="blog-header-links"><span id="blog-rss-wrap"><a id="blog-rss-link" target="_blank" rel="noopener" title="RSS feed of your public posts">RSS</a> · </span><a id="blog-open-link" target="_blank" rel="noopener">Open public page ↗</a></span></div>
         <div style="display:flex;gap:8px;padding:8px 12px">
           <button class="cal-btn primary" onclick="blogEdit()"><i class="ti ti-plus"></i> New post</button>
+          <button class="cal-btn" onclick="blogRename()" title="Name shown on your public blog"><i class="ti ti-pencil"></i> Blog name</button>
         </div>
         <div id="blog-items"></div>
       </div>
@@ -5953,6 +5954,15 @@ print("Welcome to Orto!")
           </article>`
         : '';
     }
+    const blogName = () => Object.values(blogPosts)[0]?.authorAlias || os.username;
+    async function blogRename() {
+      const name = (prompt('Blog name (shown on your public posts):', blogName()) || '').trim();
+      if (!name || name === blogName()) return;
+      try { // the name lives inside each post, so republish them all with it
+        for (const p of Object.values(blogPosts)) await os.publishBlogPost({ title: p.title, content: p.content, tags: p.tags, id: p.id, createdAt: p.createdAt, authorAlias: name });
+        showToast('Blog renamed');
+      } catch (e) { showToast(e.message); }
+    }
     function blogSelect(id) { blogSelected = id; renderBlog(); }
     function blogPublicView(id) {
       const p = blogPosts[id || blogSelected] || Object.values(blogPosts)[0];
@@ -5991,7 +6001,7 @@ print("Welcome to Orto!")
         const v = (k) => document.getElementById('blog-e-' + k).value.trim();
         if (!v('title') || !v('content')) return showToast('Title and content are required');
         try {
-          const r = await os.publishBlogPost({ title: v('title'), content: v('content'), tags: v('tags'), id: id || null, createdAt: p ? p.createdAt : Date.now() });
+          const r = await os.publishBlogPost({ title: v('title'), content: v('content'), tags: v('tags'), id: id || null, createdAt: p ? p.createdAt : Date.now(), authorAlias: blogName() });
           blogSelected = r.id; bg.remove(); showToast('Post published (public)');
         } catch (e) { showToast(e.message); }
       };
@@ -6001,7 +6011,7 @@ print("Welcome to Orto!")
       if (!confirm('Delete this post?')) return;
       try { await os.deleteBlogPost(id); delete blogPosts[id]; renderBlog(); showToast('Post deleted'); } catch (e) { showToast(e.message); }
     }
-    Object.assign(window, { openBlog, blogSelect, blogEdit, blogDelete, blogPublicView, blogShareLink });
+    Object.assign(window, { openBlog, blogRename, blogSelect, blogEdit, blogDelete, blogPublicView, blogShareLink });
 
 
     // ═══════════════════════════════════════════════════════════════
