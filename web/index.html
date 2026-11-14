@@ -152,6 +152,7 @@
       width: 100%;
       height: 100%;
       position: relative;
+      overflow: hidden;
     }
 
     /* ════════════════════════════════════════════════════════════
@@ -164,7 +165,7 @@
       display: flex;
       flex-direction: column;
       flex-shrink: 0;
-      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
       z-index: 100;
       user-select: none;
     }
@@ -212,45 +213,10 @@
       border: 1px solid rgba(0, 0, 0, 0.15);
     }
 
-    /* ── Collapsible Sidebar (Icon Only) ─────────────────────── */
+    /* ── Collapsible Sidebar (Hide to the side) ──────────────── */
     .sidebar.collapsed {
-      width: 56px;
-    }
-
-    .sidebar.collapsed .sidebar-header {
-      justify-content: center;
-      padding: 14px 0 10px;
-    }
-
-    .sidebar.collapsed .mac-window-controls {
-      display: none;
-    }
-
-    .sidebar.collapsed .nav-text,
-    .sidebar.collapsed .nav-count,
-    .sidebar.collapsed .nav-section-title,
-    .sidebar.collapsed #sidebar-tags-list {
-      display: none;
-    }
-
-    .sidebar.collapsed .nav-item {
-      justify-content: center;
-      padding: 9px 0;
-    }
-
-    .sidebar.collapsed .sidebar-footer {
-      padding: 10px 0;
-      align-items: center;
-    }
-
-    .sidebar.collapsed .sync-status-badge {
-      display: none;
-    }
-
-    .sidebar.collapsed .sidebar-actions-row {
-      flex-direction: column;
-      width: 100%;
-      padding: 0 8px;
+      margin-left: -240px;
+      pointer-events: none;
     }
 
     .sidebar-header-actions {
@@ -282,17 +248,18 @@
       background: transparent;
       border: none;
       color: var(--text-sidebar);
-      font-size: 18px;
+      font-size: 17px;
       cursor: pointer;
-      display: none;
+      display: flex;
       padding: 4px;
       border-radius: 6px;
       align-items: center;
       justify-content: center;
+      transition: color 0.2s, background-color 0.2s;
     }
 
     .hamburger-close:hover {
-      color: #ffffff;
+      color: var(--text-sidebar-hover);
       background: var(--bg-sidebar-hover);
     }
 
@@ -495,26 +462,8 @@
       position: relative;
     }
 
-    /* menu button for the views that have no header of their own: phones only (the sidebar is a drawer there) */
-    .mobile-menu-btn {
-      display: none;
-      background: transparent;
-      border: none;
-      color: var(--text-secondary);
-      width: 34px;
-      height: 34px;
-      border-radius: 7px;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      font-size: 18px;
-      flex: none;
-    }
-
-    @media (max-width: 768px) {
-      .mobile-menu-btn { display: inline-flex; }
-    }
-
+    /* Sidebar toggle button across notes, calendar, and specialized views */
+    .mobile-menu-btn,
     .sidebar-toggle-btn {
       background: transparent;
       border: none;
@@ -527,9 +476,11 @@
       justify-content: center;
       cursor: pointer;
       font-size: 16px;
+      flex: none;
       transition: all 0.15s ease;
     }
 
+    .mobile-menu-btn:hover,
     .sidebar-toggle-btn:hover {
       background: var(--bg-card-selected);
       color: var(--text-primary);
@@ -2858,7 +2809,9 @@
         bottom: 0;
         width: 270px;
         max-width: 85vw;
+        margin-left: 0 !important;
         transform: translateX(-100%);
+        transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         z-index: 1000;
       }
 
@@ -3029,15 +2982,15 @@
         <!-- macOS window dots -->
         <div class="mac-window-controls">
           <span class="mac-dot mac-dot-close" onclick="logout()" title="Lock Orto"></span>
-          <span class="mac-dot mac-dot-minimize" onclick="toggleSidebar()" title="Collapse Sidebar"></span>
+          <span class="mac-dot mac-dot-minimize" onclick="toggleSidebar()" title="Hide Sidebar"></span>
           <span class="mac-dot mac-dot-zoom" onclick="createNewNote()" title="New Note"></span>
         </div>
         <div class="sidebar-header-actions">
           <button class="sidebar-header-action" onclick="toggleTheme()" title="Switch Light/Dark Theme">
             <i class="ti ti-adjustments-horizontal"></i>
           </button>
-          <button class="hamburger-close" onclick="toggleSidebar()" aria-label="Close menu">
-            <i class="ti ti-x"></i>
+          <button class="hamburger-close" id="sidebar-close-btn" onclick="toggleSidebar()" aria-label="Hide Sidebar" title="Hide Sidebar">
+            <i class="ti ti-layout-sidebar-left-collapse"></i>
           </button>
         </div>
       </div>
@@ -3195,10 +3148,10 @@
     <main class="note-list-pane" id="note-list-pane">
       <header class="list-header">
         <div class="list-header-left">
-          <!-- Sidebar Toggle (Drawer) Button -->
+          <!-- Sidebar Toggle Button -->
           <button class="sidebar-toggle-btn" id="sidebar-toggle-btn" onclick="toggleSidebar()"
-            title="Open Sidebar / Tags">
-            <i class="ti ti-menu-2"></i>
+            title="Hide Sidebar (Ctrl+\)" aria-label="Hide Sidebar">
+            <i class="ti ti-layout-sidebar-left-collapse"></i>
           </button>
 
           <!-- Dropdown Menu a Tendina Wrapper -->
@@ -3258,8 +3211,8 @@
     ════════════════════════════════════════════════════════════ -->
     <section class="calendar-pane" id="calendar-pane">
       <header class="cal-header">
-        <button class="editor-tool-btn mobile-back-btn" onclick="toggleSidebar()" title="Menu"><i
-            class="ti ti-menu-2"></i></button>
+        <button class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Hide Sidebar" aria-label="Hide Sidebar"><i
+            class="ti ti-layout-sidebar-left-collapse"></i></button>
         <button class="cal-btn" onclick="calToday()">Today</button>
         <button class="cal-btn" onclick="calNav(-1)" title="Previous"><i class="ti ti-chevron-left"></i></button>
         <button class="cal-btn" onclick="calNav(1)" title="Next"><i class="ti ti-chevron-right"></i></button>
@@ -4138,6 +4091,11 @@
       }
 
       applyTheme();
+      if (window.innerWidth > 768 && safeStore.getItem('orto_sidebar_collapsed') === '1') {
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar) sidebar.classList.add('collapsed');
+      }
+      updateSidebarToggleState();
       syncStart();
       loadNotes();
       loadCalendar();
@@ -4596,10 +4554,13 @@
       }
 
       html += `<div class="dropdown-divider"></div>`;
+      const isSidebarHidden = window.innerWidth <= 768
+        ? !document.getElementById('sidebar')?.classList.contains('open')
+        : document.getElementById('sidebar')?.classList.contains('collapsed');
       html += `
         <button class="dropdown-item" onclick="toggleSidebar(); toggleFilterDropdown();">
-          <i class="ti ti-layout-sidebar"></i>
-          <span>Open Full Sidebar</span>
+          <i class="ti ${isSidebarHidden ? 'ti-layout-sidebar-left-expand' : 'ti-layout-sidebar-left-collapse'}"></i>
+          <span>${isSidebarHidden ? 'Show Sidebar' : 'Hide Sidebar'}</span>
         </button>
       `;
 
@@ -5445,19 +5406,38 @@ print("Welcome to Orto!")
       input.select();
     }
 
+    function updateSidebarToggleState() {
+      const sidebar = document.getElementById('sidebar');
+      if (!sidebar) return;
+      const isMobile = window.innerWidth <= 768;
+      const isHidden = isMobile ? !sidebar.classList.contains('open') : sidebar.classList.contains('collapsed');
+
+      document.querySelectorAll('.sidebar-toggle-btn, .mobile-menu-btn').forEach(btn => {
+        btn.title = isHidden ? 'Show Sidebar (Ctrl+\\)' : 'Hide Sidebar (Ctrl+\\)';
+        btn.setAttribute('aria-label', btn.title);
+        const icon = btn.querySelector('i');
+        if (icon) {
+          icon.className = isHidden ? 'ti ti-layout-sidebar-left-expand' : 'ti ti-layout-sidebar-left-collapse';
+        }
+      });
+    }
+
     function toggleSidebar() {
       const sidebar = document.getElementById('sidebar');
       const overlay = document.getElementById('sidebar-overlay');
+      if (!sidebar) return;
 
       if (window.innerWidth <= 768) {
         // Mobile: toggle drawer open/closed
         sidebar.classList.toggle('open');
-        overlay.classList.toggle('hidden');
+        if (overlay) overlay.classList.toggle('hidden');
       } else {
-        // Desktop: toggle icon-only collapsed mode
+        // Desktop: toggle hide/show sidebar to the side
         sidebar.classList.toggle('collapsed');
+        safeStore.setItem('orto_sidebar_collapsed', sidebar.classList.contains('collapsed') ? '1' : '0');
       }
 
+      updateSidebarToggleState();
       closePopovers();
     }
 
@@ -5506,6 +5486,7 @@ print("Welcome to Orto!")
         if (editorPane) editorPane.classList.remove('mobile-active');
         if (overlay) overlay.classList.add('hidden');
       }
+      updateSidebarToggleState();
     });
 
     // Mobile Swipe Gestures
@@ -5643,6 +5624,9 @@ print("Welcome to Orto!")
       } else if (isCmdOrCtrl && e.key.toLowerCase() === 's') {
         e.preventDefault();
         saveActiveNote(false);
+      } else if (isCmdOrCtrl && e.key === '\\') {
+        e.preventDefault();
+        toggleSidebar();
       }
     });
 
@@ -5660,6 +5644,7 @@ print("Welcome to Orto!")
     window.clearSearch = clearSearch;
     window.toggleSearchInput = toggleSearchInput;
     window.toggleSidebar = toggleSidebar;
+    window.updateSidebarToggleState = updateSidebarToggleState;
     window.toggleFilterDropdown = toggleFilterDropdown;
     window.mobileBackToList = mobileBackToList;
     window.toggleEditViewMode = toggleEditViewMode;
