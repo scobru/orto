@@ -212,6 +212,47 @@
       border: 1px solid rgba(0, 0, 0, 0.15);
     }
 
+    /* ── Collapsible Sidebar (Icon Only) ─────────────────────── */
+    .sidebar.collapsed {
+      width: 56px;
+    }
+
+    .sidebar.collapsed .sidebar-header {
+      justify-content: center;
+      padding: 14px 0 10px;
+    }
+
+    .sidebar.collapsed .mac-window-controls {
+      display: none;
+    }
+
+    .sidebar.collapsed .nav-text,
+    .sidebar.collapsed .nav-count,
+    .sidebar.collapsed .nav-section-title,
+    .sidebar.collapsed #sidebar-tags-list {
+      display: none;
+    }
+
+    .sidebar.collapsed .nav-item {
+      justify-content: center;
+      padding: 9px 0;
+    }
+
+    .sidebar.collapsed .sidebar-footer {
+      padding: 10px 0;
+      align-items: center;
+    }
+
+    .sidebar.collapsed .sync-status-badge {
+      display: none;
+    }
+
+    .sidebar.collapsed .sidebar-actions-row {
+      flex-direction: column;
+      width: 100%;
+      padding: 0 8px;
+    }
+
     .sidebar-header-actions {
       display: flex;
       align-items: center;
@@ -5407,8 +5448,16 @@ print("Welcome to Orto!")
     function toggleSidebar() {
       const sidebar = document.getElementById('sidebar');
       const overlay = document.getElementById('sidebar-overlay');
-      sidebar.classList.toggle('open');
-      overlay.classList.toggle('hidden');
+
+      if (window.innerWidth <= 768) {
+        // Mobile: toggle drawer open/closed
+        sidebar.classList.toggle('open');
+        overlay.classList.toggle('hidden');
+      } else {
+        // Desktop: toggle icon-only collapsed mode
+        sidebar.classList.toggle('collapsed');
+      }
+
       closePopovers();
     }
 
