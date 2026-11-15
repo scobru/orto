@@ -49,14 +49,34 @@ const crcChunk = (type, data) => {
 /** A smooth gradient with a few soft circles, as a PNG (no dependencies). */
 export function makePng(w, h, r = { n: Math.random }) {
   const h1 = r.n() * 360, h2 = (h1 + 40 + r.n() * 120) % 360, c1 = hsl(h1, 0.65, 0.55), c2 = hsl(h2, 0.7, 0.45);
-  const dots = Array.from({ length: 3 + Math.floor(r.n() * 3) }, () => ({ x: r.n() * w, y: r.n() * h, r: (0.12 + r.n() * 0.2) * w, c: hsl((h1 + r.n() * 90) % 360, 0.6, 0.75) }));
-  const raw = Buffer.alloc((w * 3 + 1) * h);
+  const dots = Array.from({ length: 3 + Math.floor(r.n() * 3) }, () => {
+    const rad = (0.12 + r.n() * 0.2) * w;
+    return { x: r.n() * w, y: r.n() * h, r2: rad * rad, c: hsl((h1 + r.n() * 90) % 360, 0.6, 0.75) };
+  });
+  const stride = w * 3 + 1;
+  const raw = Buffer.allocUnsafe(stride * h);
+  const clamp = (v) => (v <= 0 ? 0 : v >= 255 ? 255 : Math.round(v));
   for (let y = 0; y < h; y++) {
-    const row = y * (w * 3 + 1);
+    const row = y * stride, t = y / h;
+    const gr = c1[0] + (c2[0] - c1[0]) * t;
+    const gg = c1[1] + (c2[1] - c1[1]) * t;
+    const gb = c1[2] + (c2[2] - c1[2]) * t;
+    raw[row] = 0;
     for (let x = 0; x < w; x++) {
-      let px = c1.map((v, i) => v + (c2[i] - v) * (y / h));
-      for (const d of dots) { const k = Math.hypot(x - d.x, y - d.y) / d.r; if (k < 1) px = px.map((v, i) => v + (d.c[i] - v) * 0.6 * (1 - k * k)); }
-      px.forEach((v, i) => { raw[row + 1 + x * 3 + i] = Math.round(v); });
+      let pr = gr, pg = gg, pb = gb;
+      for (let i = 0; i < dots.length; i++) {
+        const d = dots[i], dx = x - d.x, dy = y - d.y, d2 = dx * dx + dy * dy;
+        if (d2 < d.r2) {
+          const wgt = 0.6 * (1 - d2 / d.r2);
+          pr += (d.c[0] - pr) * wgt;
+          pg += (d.c[1] - pg) * wgt;
+          pb += (d.c[2] - pb) * wgt;
+        }
+      }
+      const p = row + 1 + x * 3;
+      raw[p] = clamp(pr);
+      raw[p + 1] = clamp(pg);
+      raw[p + 2] = clamp(pb);
     }
   }
   const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr.set([8, 2, 0, 0, 0], 8);
@@ -86,7 +106,7 @@ export async function seedDemo(os, { rng = Math.random, hours = 3 } = {}) {
   });
   for (const [url, title, folder] of shuffle(SITES)) jobs.push(() => os.writeBookmark({ url, title, folder, tags: [] }));
   const names = new Set();
-  while (names.size < 7) names.add(`${r.pick(FIRST)} ${r.pick(LAST)}`);
+  for (let tries = 0; names.size < 7 && tries < 100; tries++) names.add(`${r.pick(FIRST)} ${r.pick(LAST)}`);
   for (const name of names) jobs.push(() => os.writeContact({ name, emails: [name.toLowerCase().replace(' ', '.') + '@example.com'], phones: [`+1 555 01${String(Math.floor(rng() * 100)).padStart(2, '0')}`], org: r.pick(ORGS), tags: [r.pick(['friends', 'work', 'family'])] }));
   jobs.push(() => os.writeSecret({ name: 'Home Wi-Fi', kind: 'password', secret: generatePassword(16), notes: 'Demo only: not a real password', tags: ['home'] }));
   jobs.push(() => os.writeSecret({ name: 'Example account', kind: 'password', username: r.pick(FIRST).toLowerCase() + Math.floor(rng() * 90 + 10), secret: generatePassword(20), url: 'https://example.com', tags: [] }));

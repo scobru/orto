@@ -4028,23 +4028,34 @@
     }
 
     // Per-collection cache of decrypted records
-    const idb = (mode, fn) => new Promise((resolve, reject) => {
+    let _idbPromise = null;
+    const getIdb = () => {
+      if (_idbPromise) return _idbPromise;
+      _idbPromise = new Promise((resolve, reject) => {
+        try {
+          if (typeof indexedDB === 'undefined') return reject(new Error('no indexedDB'));
+          const req = indexedDB.open('orto', 1);
+          req.onupgradeneeded = () => { try { req.result.createObjectStore('cache'); } catch (_) {} };
+          req.onerror = () => { _idbPromise = null; reject(req.error); };
+          req.onsuccess = () => {
+            const db = req.result;
+            db.onclose = db.onversionchange = () => { _idbPromise = null; };
+            resolve(db);
+          };
+        } catch (err) {
+          _idbPromise = null;
+          reject(err);
+        }
+      });
+      return _idbPromise;
+    };
+    const idb = (mode, fn) => getIdb().then((db) => new Promise((resolve, reject) => {
       try {
-        if (typeof indexedDB === 'undefined') return reject(new Error('no indexedDB'));
-        const req = indexedDB.open('orto', 1);
-        req.onupgradeneeded = () => { try { req.result.createObjectStore('cache'); } catch (_) {} };
-        req.onerror = () => reject(req.error);
-        req.onsuccess = () => {
-          try {
-            const tx = req.result.transaction('cache', mode), q = fn(tx.objectStore('cache'));
-            tx.oncomplete = () => resolve(q && q.result);
-            tx.onerror = () => reject(tx.error);
-          } catch (e) { reject(e); }
-        };
-      } catch (err) {
-        reject(err);
-      }
-    });
+        const tx = db.transaction('cache', mode), q = fn(tx.objectStore('cache'));
+        tx.oncomplete = () => resolve(q && q.result);
+        tx.onerror = () => reject(tx.error);
+      } catch (e) { reject(e); }
+    }));
     function createCache(name) {
       const entries = {}; // soul -> { c: signature, b: record }
       let timer = null;
@@ -4145,6 +4156,8 @@
         if (demoCfg && pair.pub === demoCfg.user) setTimeout(() => showToast(`Demo account: random fake data, reset every ${demoCfg.hours} h.`), 800);
 
         initDashboard();
+        btn.innerHTML = '<i class="ti ti-lock-open"></i> Unlock Orto';
+        btn.disabled = false;
       } catch (e) {
         console.error("Login Error:", e);
         alert("Login failed: " + e.message);
@@ -4458,13 +4471,19 @@
     }
 
     // Extract thumbnail image from note markdown
+    function safeHttpUrl(raw) {
+      if (!raw || typeof raw !== 'string') return '';
+      try {
+        const u = new URL(raw.trim());
+        return (u.protocol === 'http:' || u.protocol === 'https:') ? u.href : '';
+      } catch (_) { return ''; }
+    }
+
     function extractThumbnail(text) {
       if (!text) return null;
       const mdImg = text.match(/!\[.*?\]\((https?:\/\/[^\s\)]+)\)/i);
-      if (mdImg) return mdImg[1];
-      const directImg = text.match(/(https?:\/\/[^\s"'<>]+\.(?:png|jpg|jpeg|gif|webp|svg)(?:\?[^\s"'<>]*)?)/i);
-      if (directImg) return directImg[1];
-      return null;
+      const raw = mdImg ? mdImg[1] : (text.match(/(https?:\/\/[^\s"'<>]+\.(?:png|jpg|jpeg|gif|webp|svg)(?:\?[^\s"'<>]*)?)/i)?.[1] || null);
+      return safeHttpUrl(raw) || null;
     }
 
     // Format text snippet with highlighted tags
@@ -4557,7 +4576,7 @@
           const isActive = currentFilter === `tag:${tagName}`;
           const iconHtml = getTagIcon(tagName);
           html += `
-            <button class="dropdown-item ${isActive ? 'active' : ''}" onclick="selectFilterAndClose('tag:${tagName}')">
+            <button class="dropdown-item ${isActive ? 'active' : ''}" data-filter="${escapeHtml(encodeURIComponent('tag:' + tagName))}" onclick="selectFilterAndClose(decodeURIComponent(this.dataset.filter))">
               ${iconHtml}
               <span>#${escapeHtml(tagName)}</span>
               <span class="nav-count">${count}</span>
@@ -4706,8 +4725,8 @@
           );
         } else {
           filtered = filtered.filter(n =>
-            n.title.toLowerCase().includes(q) ||
-            n.body.toLowerCase().includes(q) ||
+            (n.title || '').toLowerCase().includes(q) ||
+            (n.body || '').toLowerCase().includes(q) ||
             extractTagsFromNote(n).some(t => t.includes(q))
           );
         }
@@ -4788,14 +4807,14 @@
                   <div class="note-card-footer" style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
                     <span class="note-card-date">${dateStr}</span>
                     <div style="display:flex;gap:4px;" onclick="event.stopPropagation()">
-                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" onclick="restoreTrashItem('note', '${item.id}')" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
-                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" onclick="deleteTrashItemForever('note', '${item.id}')" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" data-kind="note" data-id="${escapeHtml(item.id)}" onclick="restoreTrashItem(this.dataset.kind, this.dataset.id)" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" data-kind="note" data-id="${escapeHtml(item.id)}" onclick="deleteTrashItemForever(this.dataset.kind, this.dataset.id)" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
                     </div>
                   </div>
                 </div>
                 ${thumbUrl ? `
                   <div class="note-card-thumb">
-                    <img src="${thumbUrl}" alt="Thumbnail" loading="lazy" onerror="this.parentElement.style.display='none'">
+                    <img src="${escapeHtml(thumbUrl)}" alt="Thumbnail" loading="lazy" onerror="this.parentElement.style.display='none'">
                   </div>
                 ` : ''}
               `;
@@ -4815,8 +4834,8 @@
                   <div class="note-card-footer" style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
                     <span class="note-card-date">${formatRelativeDate(item.updatedAt || item.start)}</span>
                     <div style="display:flex;gap:4px;" onclick="event.stopPropagation()">
-                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" onclick="restoreTrashItem('event', '${item.id}')" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
-                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" onclick="deleteTrashItemForever('event', '${item.id}')" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" data-kind="event" data-id="${escapeHtml(item.id)}" onclick="restoreTrashItem(this.dataset.kind, this.dataset.id)" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" data-kind="event" data-id="${escapeHtml(item.id)}" onclick="deleteTrashItemForever(this.dataset.kind, this.dataset.id)" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
                     </div>
                   </div>
                 </div>
@@ -4836,8 +4855,8 @@
                   <div class="note-card-footer" style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
                     <span class="note-card-date">${formatRelativeDate(item.updatedAt || item.createdAt)}</span>
                     <div style="display:flex;gap:4px;" onclick="event.stopPropagation()">
-                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" onclick="restoreTrashItem('task', '${item.id}')" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
-                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" onclick="deleteTrashItemForever('task', '${item.id}')" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" data-kind="task" data-id="${escapeHtml(item.id)}" onclick="restoreTrashItem(this.dataset.kind, this.dataset.id)" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" data-kind="task" data-id="${escapeHtml(item.id)}" onclick="deleteTrashItemForever(this.dataset.kind, this.dataset.id)" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
                     </div>
                   </div>
                 </div>
@@ -4857,8 +4876,8 @@
                   <div class="note-card-footer" style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
                     <span class="note-card-date">${formatRelativeDate(item.addedAt)}</span>
                     <div style="display:flex;gap:4px;" onclick="event.stopPropagation()">
-                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" onclick="restoreTrashItem('bookmark', '${item.id}')" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
-                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" onclick="deleteTrashItemForever('bookmark', '${item.id}')" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" data-kind="bookmark" data-id="${escapeHtml(item.id)}" onclick="restoreTrashItem(this.dataset.kind, this.dataset.id)" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" data-kind="bookmark" data-id="${escapeHtml(item.id)}" onclick="deleteTrashItemForever(this.dataset.kind, this.dataset.id)" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
                     </div>
                   </div>
                 </div>
@@ -4879,8 +4898,8 @@
                   <div class="note-card-footer" style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
                     <span class="note-card-date">${formatRelativeDate(item.addedAt)}</span>
                     <div style="display:flex;gap:4px;" onclick="event.stopPropagation()">
-                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" onclick="restoreTrashItem('contact', '${item.id}')" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
-                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" onclick="deleteTrashItemForever('contact', '${item.id}')" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" data-kind="contact" data-id="${escapeHtml(item.id)}" onclick="restoreTrashItem(this.dataset.kind, this.dataset.id)" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" data-kind="contact" data-id="${escapeHtml(item.id)}" onclick="deleteTrashItemForever(this.dataset.kind, this.dataset.id)" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
                     </div>
                   </div>
                 </div>
@@ -4900,8 +4919,8 @@
                   <div class="note-card-footer" style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
                     <span class="note-card-date">${formatRelativeDate(item.createdAt)}</span>
                     <div style="display:flex;gap:4px;" onclick="event.stopPropagation()">
-                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" onclick="restoreTrashItem('secret', '${item.id}')" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
-                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" onclick="deleteTrashItemForever('secret', '${item.id}')" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" data-kind="secret" data-id="${escapeHtml(item.id)}" onclick="restoreTrashItem(this.dataset.kind, this.dataset.id)" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" data-kind="secret" data-id="${escapeHtml(item.id)}" onclick="deleteTrashItemForever(this.dataset.kind, this.dataset.id)" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
                     </div>
                   </div>
                 </div>
@@ -4932,7 +4951,7 @@
               </div>
               ${thumbUrl ? `
                 <div class="note-card-thumb">
-                  <img src="${thumbUrl}" alt="Thumbnail" loading="lazy" onerror="this.parentElement.style.display='none'">
+                  <img src="${escapeHtml(thumbUrl)}" alt="Thumbnail" loading="lazy" onerror="this.parentElement.style.display='none'">
                 </div>
               ` : ''}
             `;
@@ -4950,9 +4969,11 @@
       const placeholder = document.getElementById('editor-placeholder');
       const content = document.getElementById('editor-content-wrapper');
 
-      if (!selectedNoteId) {
+      if (!selectedNoteId || (selectedNoteId !== 'new' && !localNotes[selectedNoteId])) {
+        selectedNoteId = null;
         placeholder.classList.remove('hidden');
         content.classList.add('hidden');
+        if (window.innerWidth <= 768 && typeof mobileBackToList === 'function') mobileBackToList();
         return;
       }
 
@@ -4994,24 +5015,22 @@
           textarea.value = note.body || '';
         }
 
-        // Render preview with marked and custom interactive checkboxes
-        const parsedHtml = renderMarkdownWithInteractions(note.body || '');
-        renderedView.innerHTML = parsedHtml;
-
-        // Attach event listeners to interactive checkboxes in preview!
-        renderedView.querySelectorAll('.bear-checkbox').forEach(box => {
-          box.addEventListener('change', (e) => {
-            e.stopPropagation();
-            if (note.trash) return;
-            const index = parseInt(e.target.dataset.todoIndex, 10);
-            toggleCheckboxAtIndex(index, e.target.checked);
+        // Render preview only when preview pane is visible
+        if (!isEditMode) {
+          renderedView.replaceChildren(renderMarkdownWithInteractions(note.body || ''));
+          renderedView.querySelectorAll('.bear-checkbox').forEach(box => {
+            box.addEventListener('change', (e) => {
+              e.stopPropagation();
+              if (note.trash) return;
+              const index = parseInt(e.target.dataset.todoIndex, 10);
+              toggleCheckboxAtIndex(index, e.target.checked);
+            });
+            box.addEventListener('click', (e) => {
+              e.stopPropagation();
+            });
           });
-          box.addEventListener('click', (e) => {
-            e.stopPropagation();
-          });
-        });
-
-        noteHydrateAttachments(renderedView);
+          noteHydrateAttachments(renderedView);
+        }
 
         // Update stats
         updateStats(note.body || '');
@@ -5055,34 +5074,73 @@
 
     // Markdown Parser with Task List interactivity & Highlighted Bear Tags
     function renderMarkdownWithInteractions(text) {
-      if (!text) return '<p style="color:var(--text-muted);font-style:italic;">Empty note. Click to start writing...</p>';
-
-      let rawHtml = '';
-      if (window.marked) {
-        rawHtml = DOMPurify.sanitize(window.marked.parse(text));
-      } else {
-        rawHtml = escapeHtml(text).replace(/\n/g, '<br>');
+      const wrap = document.createElement('div');
+      if (!text) {
+        const p = document.createElement('p');
+        p.style.cssText = 'color:var(--text-muted);font-style:italic;';
+        p.textContent = 'Empty note. Click to start writing...';
+        wrap.appendChild(p);
+        return wrap;
       }
 
-      // Replace markdown checklists with interactive checkboxes
+      if (window.marked) {
+        wrap.appendChild(DOMPurify.sanitize(window.marked.parse(text), { RETURN_DOM_FRAGMENT: true }));
+      } else {
+        const lines = text.split('\n');
+        lines.forEach((line, i) => {
+          if (i > 0) wrap.appendChild(document.createElement('br'));
+          wrap.appendChild(document.createTextNode(line));
+        });
+      }
+
       let todoCount = 0;
-      rawHtml = rawHtml.replace(/<input[^>]*type=["']?checkbox["']?[^>]*>/gi, (match) => {
-        const isChecked = /checked/i.test(match);
-        const idx = todoCount++;
-        return `<input type="checkbox" class="bear-checkbox" data-todo-index="${idx}" ${isChecked ? 'checked' : ''}>`;
+      wrap.querySelectorAll('input[type="checkbox"]').forEach((box) => {
+        box.className = 'bear-checkbox';
+        box.dataset.todoIndex = String(todoCount++);
+        box.disabled = false;
+        const li = box.closest('li');
+        if (li) li.classList.add('task-list-item');
       });
 
-      // Remove default bullet point for list items containing checkboxes
-      rawHtml = rawHtml.replace(/<li(\s*[^>]*)>(?:\s*<p>)?\s*(<input[^>]*class="bear-checkbox"[^>]*>)/gi, (match, liAttrs, inputHtml) => {
-        return `<li class="task-list-item" ${liAttrs}>${inputHtml}`;
+      // Highlight Bear #tags in safe text nodes only (never inside pre/code/a or HTML attributes)
+      const tagRe = /(^|\s)#([a-zA-Z0-9_\u00C0-\u017F\/\-]+)/g;
+      const walker = document.createTreeWalker(wrap, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          if (!node.nodeValue || !node.nodeValue.includes('#')) return NodeFilter.FILTER_REJECT;
+          let p = node.parentNode;
+          while (p && p !== wrap) {
+            if (p.nodeName === 'PRE' || p.nodeName === 'CODE' || p.nodeName === 'A') return NodeFilter.FILTER_REJECT;
+            p = p.parentNode;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        }
       });
+      const textNodes = [];
+      let cur;
+      while ((cur = walker.nextNode())) textNodes.push(cur);
+      for (const node of textNodes) {
+        const s = node.nodeValue;
+        tagRe.lastIndex = 0;
+        let last = 0, m, frag = null;
+        while ((m = tagRe.exec(s)) !== null) {
+          if (!frag) frag = document.createDocumentFragment();
+          const leadLen = m[1].length;
+          if (m.index + leadLen > last) frag.appendChild(document.createTextNode(s.slice(last, m.index + leadLen)));
+          const pill = document.createElement('span');
+          pill.className = 'bear-tag-pill';
+          pill.textContent = '#' + m[2];
+          frag.appendChild(pill);
+          last = tagRe.lastIndex;
+        }
+        if (frag) {
+          if (last < s.length) frag.appendChild(document.createTextNode(s.slice(last)));
+          node.parentNode.replaceChild(frag, node);
+        }
+      }
 
-      // Highlight Bear tags in text
-      rawHtml = rawHtml.replace(/(^|\s)#([a-zA-Z0-9_\u00C0-\u017F\/\-]+)/g, (match, prefix, tag) => {
-        return `${prefix}<span class="bear-tag-pill">#${tag}</span>`;
-      });
-
-      return rawHtml;
+      const out = document.createDocumentFragment();
+      while (wrap.firstChild) out.appendChild(wrap.firstChild);
+      return out;
     }
 
     // Attachments: a note holds `[name](#orto-file=ID)` / `![name](#orto-file=ID)` pointing at a file in Files (encrypted, fetched on view).
@@ -5109,7 +5167,7 @@
       });
     }
     async function noteAttach() {
-      if (!selectedNoteId) return;
+      if (!selectedNoteId || localNotes[selectedNoteId]?.trash) return;
       let files;
       try { files = await os.listFiles(); filesCache = files; } catch (e) { return showToast(e.message); }
       if (!files.length) return showToast('No files yet. Upload some in Files first.');
@@ -5140,7 +5198,7 @@
     function toggleCheckboxAtIndex(targetIndex, newChecked) {
       if (!selectedNoteId) return;
       const note = localNotes[selectedNoteId];
-      if (!note || !note.body) return;
+      if (!note || note.trash || !note.body) return;
 
       let count = 0;
       const updatedBody = note.body.replace(/^([\s]*(?:[-*+]|\d+\.)\s*\[)([ xX])(\])/gm, (match, prefix, state, suffix) => {
@@ -5175,39 +5233,50 @@
     async function saveActiveNote(silent = false) {
       if (!isAuthenticated || !selectedNoteId) return;
 
+      const activeId = selectedNoteId;
+      const isNew = activeId === 'new';
+      const currentNote = isNew ? {} : (localNotes[activeId] || {});
+      if (currentNote.trash) return;
+
       const titleInput = document.getElementById('editor-title');
       const bodyInput = document.getElementById('editor-textarea');
-
       const title = titleInput.value.trim() || 'Untitled Note';
       const body = bodyInput.value;
-      const isNew = selectedNoteId === 'new';
-
-      let currentNote = isNew ? {} : (localNotes[selectedNoteId] || {});
+      const cat = currentNote.cat || '';
       const isPinned = !!currentNote.pinned;
-      const soul = isNew ? ('vault-' + Date.now() + '-' + Math.random().toString(36).substring(7)) : selectedNoteId;
+      const savedAt = Date.now();
+      const soul = isNew ? ('vault-' + savedAt + '-' + Math.random().toString(36).substring(7)) : activeId;
 
       try {
         await os.writeVaultNote({
           title,
           body,
-          cat: currentNote.cat || '',
+          cat,
           pinned: isPinned,
+          trash: false,
           soul
         });
-        localNotes[soul] = {
+        const isSameActive = isNew ? selectedNoteId === 'new' : selectedNoteId === soul;
+        if (isSameActive && !isNew && (titleInput.value !== title || bodyInput.value !== body)) {
+          queueAutoSave();
+          return;
+        }
+        const savedRec = {
           id: soul,
           title,
           body,
-          cat: currentNote.cat || '',
+          cat,
           pinned: isPinned,
-          timestamp: Date.now()
+          trash: false,
+          timestamp: savedAt
         };
+        if (isSameActive || !localNotes[soul]) localNotes[soul] = savedRec;
         if (isNew) {
           delete localNotes['new'];
-          selectedNoteId = soul;
+          if (selectedNoteId === 'new') selectedNoteId = soul;
         }
-        const sig = JSON.stringify([title, body, currentNote.cat || '', isPinned, false, Date.now()]);
-        notesCache.set(soul, sig, localNotes[soul]);
+        const sig = JSON.stringify([title, body, cat, isPinned, false, savedAt]);
+        notesCache.set(soul, sig, savedRec);
         if (typeof notesCache.flush === 'function') {
           await notesCache.flush();
         }
@@ -5232,17 +5301,20 @@
 
     function handleTitleInput(val) {
       if (selectedNoteId) {
+        if (localNotes[selectedNoteId]?.trash) return;
         if (!localNotes[selectedNoteId]) {
           localNotes[selectedNoteId] = { id: selectedNoteId, title: '', body: '', timestamp: Date.now(), pinned: false, cat: '' };
         }
         localNotes[selectedNoteId].title = val;
+        const selectedTitle = document.querySelector('#notes-container .note-card.selected .note-card-title');
+        if (selectedTitle) selectedTitle.textContent = val.trim() || 'Untitled Note';
         queueAutoSave();
-        triggerRender();
       }
     }
 
     function handleBodyInput(val) {
       if (selectedNoteId) {
+        if (localNotes[selectedNoteId]?.trash) return;
         if (!localNotes[selectedNoteId]) {
           localNotes[selectedNoteId] = { id: selectedNoteId, title: '', body: '', timestamp: Date.now(), pinned: false, cat: '' };
         }
@@ -5254,7 +5326,7 @@
 
     // ── Floating Toolbar Formatting Actions ──
     function formatToolbarAction(action) {
-      if (!selectedNoteId) return;
+      if (!selectedNoteId || localNotes[selectedNoteId]?.trash) return;
       isEditMode = true;
       renderEditor();
 
@@ -5682,14 +5754,25 @@ print("Welcome to Orto!")
       if (!confirm(`Permanently delete all ${total} items in Trash? This cannot be undone.`)) return;
 
       try {
-        for (const [id] of tNotes) { await os.deleteVaultNote(id).catch(() => {}); delete localNotes[id]; notesCache.del(id); }
-        for (const [id] of tEvents) { await os.deleteCalendarEvent(id).catch(() => {}); delete calEvents[id]; calCache.del(id); }
-        for (const [id] of tTasks) { await os.deleteTask(id).catch(() => {}); delete tasks[id]; tasksCache.del(id); }
-        for (const [id] of tBookmarks) { await os.deleteBookmark(id).catch(() => {}); delete bookmarks[id]; bmCache.del(id); }
-        for (const [id] of tContacts) { await os.deleteContact(id).catch(() => {}); delete contacts[id]; }
-        for (const [id] of tSecrets) { await os.deleteSecret(id).catch(() => {}); delete secrets[id]; }
-        if (typeof notesCache.flush === 'function') await notesCache.flush();
-        selectedNoteId = null;
+        const runBatched = async (items, fn) => {
+          for (let i = 0; i < items.length; i += 8) await Promise.all(items.slice(i, i + 8).map(fn));
+        };
+        await runBatched(tNotes, ([id]) => os.deleteVaultNote(id).then(() => { delete localNotes[id]; notesCache.del(id); }).catch(() => {}));
+        await runBatched(tEvents, ([id]) => os.deleteCalendarEvent(id).then(() => { delete calEvents[id]; calCache.del(id); }).catch(() => {}));
+        await runBatched(tTasks, ([id]) => os.deleteTask(id).then(() => { delete tasks[id]; tasksCache.del(id); }).catch(() => {}));
+        await runBatched(tBookmarks, ([id]) => os.deleteBookmark(id).then(() => { delete bookmarks[id]; bmCache.del(id); }).catch(() => {}));
+        await runBatched(tContacts, ([id]) => os.deleteContact(id).then(() => { delete contacts[id]; }).catch(() => {}));
+        await runBatched(tSecrets, ([id]) => os.deleteSecret(id).then(() => { delete secrets[id]; }).catch(() => {}));
+        for (const c of [notesCache, calCache, tasksCache, bmCache]) {
+          if (typeof c.flush === 'function') await c.flush();
+        }
+        document.getElementById('count-calendar').textContent = Object.values(calEvents).filter(e => !e.trash).length;
+        document.getElementById('count-tasks').textContent = Object.values(tasks).filter(t => !t.trash).length;
+        document.getElementById('count-bookmarks').textContent = Object.values(bookmarks).filter(b => !b.trash).length;
+        document.getElementById('count-contacts').textContent = Object.values(contacts).filter(c => !c.trash).length;
+        document.getElementById('count-secrets').textContent = Object.values(secrets).filter(s => !s.trash).length;
+        if (selectedNoteId && !localNotes[selectedNoteId]) selectedNoteId = null;
+        if (typeof window.syncHashState === 'function') await window.syncHashState(true);
         showToast('Trash emptied');
         triggerRender();
       } catch (err) {
@@ -5863,14 +5946,26 @@ print("Welcome to Orto!")
       window.os = null;
       window.pair = null;
 
-      // Reset caches and active note
+      // Reset caches, timers, blob URLs, and all in-memory collections
+      if (autoSaveTimeout) { clearTimeout(autoSaveTimeout); autoSaveTimeout = null; }
+      if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
+      if (bmTimer) { clearTimeout(bmTimer); bmTimer = null; }
       for (const c of [bmCache, notesCache, calCache, tasksCache]) {
         try { c.reset(); } catch (_) {}
       }
-      for (const k of Object.keys(localNotes)) {
-        delete localNotes[k];
+      for (const map of [localNotes, calEvents, blogPosts, bookmarks, contacts, secrets, feeds, feedData, tasks]) {
+        for (const k of Object.keys(map)) delete map[k];
       }
+      secShown.clear();
+      mediaParams.clear();
+      attachCache.forEach((u) => { try { URL.revokeObjectURL(u); } catch (_) {} });
+      attachCache.clear();
+      filesCache = []; filesGroups = {};
+      currentSpace = null; spaceList = [];
       selectedNoteId = null;
+      document.querySelectorAll('.nav-count').forEach((el) => { el.textContent = '0'; });
+      const loginBtn = document.getElementById('login-btn');
+      if (loginBtn) { loginBtn.innerHTML = '<i class="ti ti-lock-open"></i> Unlock Orto'; loginBtn.disabled = false; }
 
       // In Freenet mode, remove #sk= from parent hash so reload doesn't auto-unlock
       if (window.parent !== window) {
@@ -6069,7 +6164,24 @@ print("Welcome to Orto!")
         .sort((a, b) => (b.allDay - a.allDay) || a.start - b.start);
     }
 
-    const chip = (ev) => `<span class="cal-chip" style="--ev:${ev.color || CAL_COLORS[0]}" onclick="event.stopPropagation();calEditEvent('${ev.soul}')" title="${escapeHtml(ev.title)}">${ev.allDay ? '' : fmtTime(ev.start) + ' '}${escapeHtml(ev.title)}</span>`;
+    const chip = (ev) => `<span class="cal-chip" style="--ev:${ev.color || CAL_COLORS[0]}" data-soul="${escapeHtml(ev.soul)}" onclick="event.stopPropagation();calEditEvent(this.dataset.soul)" title="${escapeHtml(ev.title)}">${ev.allDay ? '' : fmtTime(ev.start) + ' '}${escapeHtml(ev.title)}</span>`;
+
+    // Pre-index active events per day for [start, start + numDays) in one pass over calEvents
+    function indexCalDays(start, numDays) {
+      const t0 = sod(start).getTime(), tEnd = t0 + numDays * DAY_MS;
+      const buckets = Array.from({ length: numDays }, () => []);
+      for (const [soul, ev] of Object.entries(calEvents)) {
+        if (!ev || ev.trash) continue;
+        const end = Math.max(ev.end ?? ev.start, ev.start + 1);
+        if (ev.start >= tEnd || end <= t0) continue;
+        const item = { soul, ...ev };
+        const loIdx = Math.max(0, Math.floor((ev.start - t0) / DAY_MS));
+        const hiIdx = Math.min(numDays - 1, Math.floor((end - 1 - t0) / DAY_MS));
+        for (let i = loIdx; i <= hiIdx; i++) buckets[i].push(item);
+      }
+      for (const list of buckets) list.sort((a, b) => (b.allDay - a.allDay) || a.start - b.start);
+      return buckets;
+    }
 
     function renderCalendar() {
       const body = document.getElementById('cal-body');
@@ -6082,10 +6194,11 @@ print("Welcome to Orto!")
         title = calCursor.toLocaleDateString(loc, { month: 'long', year: 'numeric' });
         const first = new Date(calCursor.getFullYear(), calCursor.getMonth(), 1);
         const start = weekStart(first);
+        const buckets = indexCalDays(start, 42);
         html = '<div class="cal-month">';
         for (let i = 0; i < 7; i++) html += `<div class="cal-dow">${addDays(start, i).toLocaleDateString(loc, { weekday: 'short' })}</div>`;
         for (let i = 0; i < 42; i++) {
-          const d = addDays(start, i), evs = eventsOn(d);
+          const d = addDays(start, i), evs = buckets[i];
           html += `<div class="cal-cell ${d.getMonth() !== first.getMonth() ? 'other' : ''} ${dayKey(d) === todayKey ? 'cal-today' : ''}" onclick="calNewEvent('${dayKey(d)}')">
             <span class="cal-daynum">${d.getDate()}</span>${evs.slice(0, 3).map(chip).join('')}${evs.length > 3 ? `<div class="cal-more">+${evs.length - 3} more</div>` : ''}</div>`;
         }
@@ -6094,21 +6207,23 @@ print("Welcome to Orto!")
         const n = calView === 'week' ? 7 : 1;
         const start = calView === 'week' ? weekStart(calCursor) : sod(calCursor);
         const days = Array.from({ length: n }, (_, i) => addDays(start, i));
+        const buckets = indexCalDays(start, n);
         title = n === 1 ? start.toLocaleDateString(loc, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
           : start.toLocaleDateString(loc, { day: 'numeric', month: 'short' }) + ' – ' + days[6].toLocaleDateString(loc, { day: 'numeric', month: 'short', year: 'numeric' });
         const spansDays = (ev) => ev.allDay || sod(ev.start).getTime() !== sod(Math.max(ev.end ?? ev.start, ev.start) - 1).getTime();
         html = `<div class="cal-time" style="--cols:${n}"><div class="cal-time-head" style="grid-column:1/-1;display:grid;grid-template-columns:52px repeat(${n},1fr)">
           <div></div>${days.map(d => `<div class="cal-hcell ${dayKey(d) === todayKey ? 'cal-today' : ''}" onclick="calNewEvent('${dayKey(d)}')">${d.toLocaleDateString(loc, { weekday: 'short' })} <b>${d.getDate()}</b></div>`).join('')}
-          <div style="font-size:10px;color:var(--text-muted);padding:4px;text-align:right">all-day</div>${days.map(d => `<div class="cal-allday">${eventsOn(d).filter(spansDays).map(chip).join('')}</div>`).join('')}</div>
+          <div style="font-size:10px;color:var(--text-muted);padding:4px;text-align:right">all-day</div>${days.map((_, idx) => `<div class="cal-allday">${buckets[idx].filter(spansDays).map(chip).join('')}</div>`).join('')}</div>
           <div class="cal-hours">${Array.from({ length: 24 }, (_, h) => `<div class="cal-hour">${h ? pad(h) + ':00' : ''}</div>`).join('')}</div>`;
-        for (const d of days) {
-          const evs = eventsOn(d).filter(e => !spansDays(e));
+        for (let idx = 0; idx < n; idx++) {
+          const d = days[idx];
+          const evs = buckets[idx].filter(e => !spansDays(e)).map(e => ({ ...e }));
           // greedy lanes so overlapping events sit side by side
           const lanes = []; evs.forEach(e => { let l = lanes.findIndex(end => end <= e.start); if (l < 0) l = lanes.length; lanes[l] = Math.max(e.end ?? e.start, e.start + 15 * 60000); e.lane = l; });
           const t0 = sod(d).getTime();
           html += `<div class="cal-col" data-day="${dayKey(d)}" onclick="calColClick(event,'${dayKey(d)}')">${evs.map(e => {
             const top = (e.start - t0) / 3600000 * 48, h = Math.max(((e.end ?? e.start) - e.start) / 3600000 * 48, 18), w = 100 / lanes.length;
-            return `<div class="cal-ev" style="--ev:${e.color || CAL_COLORS[0]};top:${top}px;height:${h}px;left:${e.lane * w}%;width:${w}%" onclick="event.stopPropagation();calEditEvent('${e.soul}')"><b>${escapeHtml(e.title)}</b><small>${fmtTime(e.start)}</small></div>`;
+            return `<div class="cal-ev" style="--ev:${e.color || CAL_COLORS[0]};top:${top}px;height:${h}px;left:${e.lane * w}%;width:${w}%" data-soul="${escapeHtml(e.soul)}" onclick="event.stopPropagation();calEditEvent(this.dataset.soul)"><b>${escapeHtml(e.title)}</b><small>${fmtTime(e.start)}</small></div>`;
           }).join('')}${dayKey(d) === todayKey ? `<div class="cal-now" style="top:${(Date.now() - t0) / 3600000 * 48}px"></div>` : ''}</div>`;
         }
         html += '</div>';
@@ -6345,16 +6460,16 @@ print("Welcome to Orto!")
       const posts = Object.values(blogPosts).sort((a, b) => b.createdAt - a.createdAt);
       if (!blogPosts[blogSelected]) blogSelected = posts[0] ? posts[0].id : null;
       document.getElementById('blog-items').innerHTML = posts.length ? posts.map(p => `
-        <div class="blog-item ${p.id === blogSelected ? 'active' : ''}" onclick="blogSelect('${escapeHtml(p.id)}')">
+        <div class="blog-item ${p.id === blogSelected ? 'active' : ''}" data-id="${escapeHtml(p.id)}" onclick="blogSelect(this.dataset.id)">
           <h4>${escapeHtml(p.title)}</h4><small>${p.createdAt ? new Date(p.createdAt).toLocaleDateString(navigator.language || 'en-US') : ''}${p.tags ? ' · ' + escapeHtml(String(p.tags)) : ''}</small>
         </div>`).join('') : '<div class="blog-empty">No posts yet.<br>Use New post to publish one.</div>';
       const cur = blogPosts[blogSelected];
       document.getElementById('blog-reader').innerHTML = cur
         ? `<div style="display:flex;gap:8px;justify-content:flex-end;padding:8px 16px">
-            <button class="cal-btn" onclick="blogPublicView('${escapeHtml(cur.id)}')"><i class="ti ti-external-link"></i> Public view</button>
-            <button class="cal-btn" onclick="blogShareLink('${escapeHtml(cur.id)}')"><i class="ti ti-share"></i> Public link</button>
-            <button class="cal-btn" onclick="blogEdit('${escapeHtml(cur.id)}')"><i class="ti ti-pencil"></i> Edit</button>
-            <button class="cal-btn" onclick="blogDelete('${escapeHtml(cur.id)}')"><i class="ti ti-trash"></i> Delete</button>
+            <button class="cal-btn" data-id="${escapeHtml(cur.id)}" onclick="blogPublicView(this.dataset.id)"><i class="ti ti-external-link"></i> Public view</button>
+            <button class="cal-btn" data-id="${escapeHtml(cur.id)}" onclick="blogShareLink(this.dataset.id)"><i class="ti ti-share"></i> Public link</button>
+            <button class="cal-btn" data-id="${escapeHtml(cur.id)}" onclick="blogEdit(this.dataset.id)"><i class="ti ti-pencil"></i> Edit</button>
+            <button class="cal-btn" data-id="${escapeHtml(cur.id)}" onclick="blogDelete(this.dataset.id)"><i class="ti ti-trash"></i> Delete</button>
           </div>
           <article class="markdown-rendered-view">
             <h1>${escapeHtml(cur.title)}</h1>
@@ -6505,7 +6620,7 @@ print("Welcome to Orto!")
           bookmarks[soul] = bm;
           bmCache.set(soul, bm.url, bm);
         }
-        document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
+        document.getElementById('count-bookmarks').textContent = Object.values(bookmarks).filter(b => !b.trash).length;
         if (bmMode) bmScheduleRender();
       }, bmCache.fresh);
       if (!Object.keys(cached).length) live();
@@ -6513,7 +6628,7 @@ print("Welcome to Orto!")
       else setTimeout(live, 1500);
     }
     // imports fire thousands of updates; coalesce renders
-    let bmTimer = null;
+    let bmTimer = null, bmSearchTimer = null;
     function bmScheduleRender() { clearTimeout(bmTimer); bmTimer = setTimeout(renderBookmarks, 150); }
 
     function openBookmarks() {
@@ -6530,7 +6645,11 @@ print("Welcome to Orto!")
       document.body.classList.remove('bm-mode');
       document.getElementById('nav-bookmarks').classList.remove('active');
     }
-    const bmSearch = (v) => { bmQuery = v.toLowerCase().split(/\s+/).filter(Boolean); renderBookmarks(); };
+    const bmSearch = (v) => {
+      bmQuery = v.toLowerCase().split(/\s+/).filter(Boolean);
+      clearTimeout(bmSearchTimer);
+      bmSearchTimer = setTimeout(renderBookmarks, 150);
+    };
     const bmPickFolder = (f) => { bmFolder = f; renderBookmarks(); };
 
     function renderBookmarks() {
@@ -6539,7 +6658,7 @@ print("Welcome to Orto!")
       // every ancestor path is a folder too, counting everything below it
       all.forEach(b => { const parts = (b.folder || '').split('/').filter(Boolean); if (!parts.length) folders[''] = (folders[''] || 0) + 1; parts.forEach((_, i) => { const f = parts.slice(0, i + 1).join('/'); folders[f] = (folders[f] || 0) + 1; }); });
       if (bmFolder !== null && !folders[bmFolder]) bmFolder = null;
-      const fb = (name, label, n, depth = 0) => `<div class="bm-folder ${bmFolder === name ? 'active' : ''}" style="padding-left:${10 + depth * 14}px" onclick="bmPickFolder(${name === null ? 'null' : `decodeURIComponent('${encodeURIComponent(name)}')`})"><span>${escapeHtml(label)}</span><span>${n}</span></div>`;
+      const fb = (name, label, n, depth = 0) => `<div class="bm-folder ${bmFolder === name ? 'active' : ''}" style="padding-left:${10 + depth * 14}px" data-folder="${name === null ? '' : escapeHtml(name)}" data-all="${name === null ? '1' : ''}" onclick="bmPickFolder(this.dataset.all ? null : this.dataset.folder)"><span>${escapeHtml(label)}</span><span>${n}</span></div>`;
       document.getElementById('bm-folders').innerHTML = fb(null, 'All', all.length) + Object.keys(folders).sort().map(f => fb(f, f ? f.split('/').pop() : 'Unfiled', folders[f], f ? f.split('/').length - 1 : 0)).join('');
       document.getElementById('bm-rename').classList.toggle('hidden', !bmFolder);
       document.getElementById('bm-del-folder').classList.toggle('hidden', !bmFolder);
@@ -6550,9 +6669,10 @@ print("Welcome to Orto!")
         .sort((a, b) => b.addedAt - a.addedAt);
       document.getElementById('bm-items').innerHTML = shown.length ? shown.map(b => {
         let host = ''; try { host = new URL(b.url).hostname; } catch (_) { }
-        return `<div class="bm-item"><a href="${escapeHtml(b.url)}" target="_blank" rel="noopener noreferrer"><b>${escapeHtml(b.title)}</b><small>${escapeHtml(host)}${b.folder ? ' · ' + escapeHtml(b.folder) : ''}${(b.tags || []).length ? ' · #' + (b.tags || []).map(escapeHtml).join(' #') : ''}</small></a>
-          <button class="bm-del" title="Edit" onclick="bmEdit('${b.soul}')"><i class="ti ti-pencil"></i></button>
-          <button class="bm-del" title="Delete" onclick="bmDelete('${b.soul}')"><i class="ti ti-trash"></i></button></div>`;
+        const href = safeHttpUrl(b.url) || '#';
+        return `<div class="bm-item"><a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer"><b>${escapeHtml(b.title)}</b><small>${escapeHtml(host)}${b.folder ? ' · ' + escapeHtml(b.folder) : ''}${(b.tags || []).length ? ' · #' + (b.tags || []).map(escapeHtml).join(' #') : ''}</small></a>
+          <button class="bm-del" title="Edit" data-soul="${escapeHtml(b.soul)}" onclick="bmEdit(this.dataset.soul)"><i class="ti ti-pencil"></i></button>
+          <button class="bm-del" title="Delete" data-soul="${escapeHtml(b.soul)}" onclick="bmDelete(this.dataset.soul)"><i class="ti ti-trash"></i></button></div>`;
       }).join('') : bmQuery.length ? '<div class="blog-empty">No bookmarks match.</div>' : '<div class="blog-empty">No bookmarks yet.<br>Use Import to load a Brave/Chrome/Firefox export (Bookmarks → Export), or Add.</div>';
     }
 
@@ -6561,6 +6681,7 @@ print("Welcome to Orto!")
       const soul = await bmSoul(b.url);
       const rec = { url: b.url, title: b.title || b.url, folder: b.folder || '', tags: b.tags || [], addedAt: b.addedAt || Date.now(), trash: !!b.trash };
       bookmarks[soul] = rec;
+      bmCache.set(soul, rec.url, rec);
       return os.put('bookmarks', soul, rec).then(() => null, (e) => ({ err: e.message }));
     }
     // thousands of bookmarks: encrypt and write 100 at a time instead of all at once
@@ -6802,6 +6923,8 @@ print("Welcome to Orto!")
         } else {
           await os.writeContact({ ...c, trash: true });
         }
+        if (contacts[soul]) contacts[soul] = { ...contacts[soul], trash: true };
+        document.getElementById('count-contacts').textContent = Object.values(contacts).filter(x => !x.trash).length;
         showToast('Contact moved to Trash');
         renderContacts();
         renderApp();
@@ -6816,6 +6939,8 @@ print("Welcome to Orto!")
         } else {
           await os.writeContact({ ...c, trash: false });
         }
+        if (contacts[soul]) contacts[soul] = { ...contacts[soul], trash: false };
+        document.getElementById('count-contacts').textContent = Object.values(contacts).filter(x => !x.trash).length;
         showToast('Contact restored');
         renderContacts();
         renderApp();
@@ -6922,7 +7047,9 @@ print("Welcome to Orto!")
         } else {
           await os.writeSecret({ ...x, trash: true });
         }
+        if (secrets[soul]) secrets[soul] = { ...secrets[soul], trash: true };
         secShown.delete(soul);
+        document.getElementById('count-secrets').textContent = Object.values(secrets).filter(s => !s.trash).length;
         showToast('Secret moved to Trash');
         renderSecrets();
         renderApp();
@@ -6937,6 +7064,8 @@ print("Welcome to Orto!")
         } else {
           await os.writeSecret({ ...x, trash: false });
         }
+        if (secrets[soul]) secrets[soul] = { ...secrets[soul], trash: false };
+        document.getElementById('count-secrets').textContent = Object.values(secrets).filter(s => !s.trash).length;
         showToast('Secret restored');
         renderSecrets();
         renderApp();
@@ -7107,12 +7236,13 @@ print("Welcome to Orto!")
     const feedItem = (key) => { const [soul, idx] = key.split(':'); return { f: feeds[soul], it: feedData[soul]?.feed?.items[+idx] }; };
     function feedOpen(key) {
       const { f, it } = feedItem(key); if (!it) return;
+      const safeLink = safeHttpUrl(it.link);
       const bg = modal(`<h2 style="margin:0 0 4px">${escapeHtml(it.title)}</h2><small style="color:var(--text-muted)">${escapeHtml(feedTitle(f))}${it.date ? ' · ' + new Date(it.date).toLocaleString() : ''}</small>
         <div class="feed-art" style="margin-top:12px">${feedHtml(it.content || it.summary) || '<i>No text in the feed: open the original.</i>'}</div>
-        <div class="cal-actions">${it.link ? `<a class="cal-btn" href="${escapeHtml(it.link)}" target="_blank" rel="noopener noreferrer"><i class="ti ti-external-link"></i> Original</a><button class="cal-btn" id="feed-save"><i class="ti ti-bookmark-plus"></i> Save</button>` : ''}<button class="cal-btn primary" id="feed-close">Close</button></div>`);
+        <div class="cal-actions">${safeLink ? `<a class="cal-btn" href="${escapeHtml(safeLink)}" target="_blank" rel="noopener noreferrer"><i class="ti ti-external-link"></i> Original</a><button class="cal-btn" id="feed-save"><i class="ti ti-bookmark-plus"></i> Save</button>` : ''}<button class="cal-btn primary" id="feed-close">Close</button></div>`);
       bg.firstElementChild.style.cssText = 'max-width:720px;width:92vw;max-height:86vh;overflow:auto';
       document.getElementById('feed-close').onclick = () => bg.remove();
-      if (it.link) document.getElementById('feed-save').onclick = () => feedSave(key);
+      if (safeLink) document.getElementById('feed-save').onclick = () => feedSave(key);
     }
     async function feedSave(key) {
       const { it } = feedItem(key);
@@ -7350,20 +7480,24 @@ print("Welcome to Orto!")
       bg.firstChild.style.maxWidth = 'min(94vw, 900px)';
       const $ = (x) => bg.querySelector('#' + x);
       let url, bytes;
+      const cleanup = () => { if (url) { URL.revokeObjectURL(url); url = null; } };
+      const obs = new MutationObserver(() => { if (!bg.isConnected) { cleanup(); obs.disconnect(); } });
+      obs.observe(document.body, { childList: true });
       if (f.thumb) $('photo-full').src = f.thumb; // Show instant thumbnail preview immediately while full file loads
-      $('ph-close').onclick = () => { closeModal('photo-modal-bg'); if (url) URL.revokeObjectURL(url); };
+      $('ph-close').onclick = () => { closeModal('photo-modal-bg'); cleanup(); };
       $('ph-del').onclick = () => filesDelete(id);
       $('ph-album').onclick = () => { $('ph-close').onclick(); filesMove(id, 'album'); };
       $('ph-share').onclick = () => filesShare(id);
       $('ph-dl').onclick = () => bytes && download(new Blob([bytes]), f.name);
       try {
         bytes = await os.downloadFile(id, { meta: f });
+        if (!bg.isConnected) return;
         const mime = f.type || (/\.webp$/i.test(f.name) ? 'image/webp' : /\.png$/i.test(f.name) ? 'image/png' : /\.jpe?g$/i.test(f.name) ? 'image/jpeg' : /\.gif$/i.test(f.name) ? 'image/gif' : /\.svg$/i.test(f.name) ? 'image/svg+xml' : 'image/jpeg');
         url = URL.createObjectURL(new Blob([bytes], { type: mime }));
         $('photo-full').src = url;
       }
       catch (e) {
-        if (!f.thumb) showToast('File preview unavailable: ' + e.message);
+        if (!f.thumb && bg.isConnected) showToast('File preview unavailable: ' + e.message);
       }
     }
 
@@ -7432,16 +7566,17 @@ print("Welcome to Orto!")
       if (music) shown.sort((a, b) => sel ? a.name.localeCompare(b.name, undefined, { numeric: true }) : 0);
       window.mediaShown = shown;
       const playing = mediaQueue[mediaIdx]?.id;
-      items.innerHTML = shown.length ? shown.map(f => `<div class="bm-item file-item media-row ${f.id === playing ? 'playing' : ''}" onclick="mediaPlay('${escapeHtml(f.id)}')">
+      items.innerHTML = shown.length ? shown.map(f => `<div class="bm-item file-item media-row ${f.id === playing ? 'playing' : ''}" data-id="${escapeHtml(f.id)}" data-name="${escapeHtml(f.name)}" onclick="mediaPlay(this.dataset.id)">
           <i class="ti ti-${music ? (f.id === playing ? 'volume' : 'music') : 'movie'} media-ico"></i>
           <div style="flex:1;min-width:0"><b>${escapeHtml(mediaTitle(f))}</b><small>${humanSize(f.size)}${f.playlist ? ' · ' + escapeHtml(f.playlist) : ''}${f.chunked ? '' : ' · plays after download'}</small></div>
-          <button class="bm-del" title="Add to playlist" onclick="event.stopPropagation();filesMove('${escapeHtml(f.id)}','playlist')"><i class="ti ti-playlist-add"></i></button>
-          <button class="bm-del" title="Download" onclick="event.stopPropagation();filesDownload('${escapeHtml(f.id)}','${encodeURIComponent(f.name)}')"><i class="ti ti-download"></i></button>
-          <button class="bm-del" title="Delete" onclick="event.stopPropagation();filesDelete('${escapeHtml(f.id)}')"><i class="ti ti-trash"></i></button></div>`).join('')
+          <button class="bm-del" title="Add to playlist" onclick="event.stopPropagation();filesMove(this.parentElement.dataset.id,'playlist')"><i class="ti ti-playlist-add"></i></button>
+          <button class="bm-del" title="Download" onclick="event.stopPropagation();filesDownload(this.parentElement.dataset.id,encodeURIComponent(this.parentElement.dataset.name))"><i class="ti ti-download"></i></button>
+          <button class="bm-del" title="Delete" onclick="event.stopPropagation();filesDelete(this.parentElement.dataset.id)"><i class="ti ti-trash"></i></button></div>`).join('')
         : '<div class="blog-empty">' + (sel === null && !q ? (music ? 'No music yet. Use Upload (mp3, m4a, ogg, flac, wav...).' : 'No video yet. Use Upload (mp4, webm...).') : 'Nothing here.') + '</div>';
     }
 
     // music: one <audio> that keeps playing while you move around the app; the mini player is its remote
+    let mediaReqSeq = 0;
     function $a() { return document.getElementById('media-audio'); }
     async function mediaPlay(id) {
       const f = filesCache.find(x => x.id === id); if (!f) return;
@@ -7453,10 +7588,17 @@ print("Welcome to Orto!")
       const f = mediaQueue[mediaIdx]; if (!f) return;
       const a = $a();
       if (!a) return;
+      const seq = ++mediaReqSeq;
       document.getElementById('mini-player').classList.remove('hidden'); document.body.classList.add('has-player');
       document.getElementById('mp-title').textContent = mediaTitle(f);
       a.pause(); mediaFree();
-      try { a.src = await mediaUrl(f); await a.play(); } catch (e) { if (e.name !== 'AbortError') showToast('Cannot play ' + mediaTitle(f) + ': ' + e.message); }
+      try {
+        const src = await mediaUrl(f);
+        if (seq !== mediaReqSeq || mediaQueue[mediaIdx]?.id !== f.id) return;
+        a.src = src;
+        await a.play();
+      } catch (e) { if (seq === mediaReqSeq && e.name !== 'AbortError') showToast('Cannot play ' + mediaTitle(f) + ': ' + e.message); }
+      if (seq !== mediaReqSeq) return;
       if ('mediaSession' in navigator) { try { navigator.mediaSession.metadata = new MediaMetadata({ title: mediaTitle(f), artist: 'Orto' }); } catch (_) { } }
       if (mediaMode) renderMedia();
     }
@@ -7492,13 +7634,18 @@ print("Welcome to Orto!")
     // video: a modal with the native controls
     async function videoOpen(f) {
       $a().pause();
+      const seq = ++mediaReqSeq;
       const bg = openModal(`<b>${escapeHtml(mediaTitle(f))}</b><div style="text-align:center;margin-top:8px"><video id="vid" controls autoplay playsinline style="max-width:100%;max-height:68vh;background:#000;border-radius:8px"></video></div>
         <div class="cal-actions"><button class="cal-btn primary" id="vid-close">Close</button></div>`, 'video-modal-bg');
       bg.firstChild.style.maxWidth = 'min(94vw, 900px)';
-      const v = bg.querySelector('#vid'), done = () => { v.pause(); v.removeAttribute('src'); v.load(); mediaFree(); closeModal('video-modal-bg'); };
+      const v = bg.querySelector('#vid'), done = () => { ++mediaReqSeq; v.pause(); v.removeAttribute('src'); v.load(); mediaFree(); closeModal('video-modal-bg'); };
       bg.querySelector('#vid-close').onclick = done;
       bg.addEventListener('mousedown', (e) => { if (e.target === bg) done(); });
-      try { v.src = await mediaUrl(f); } catch (e) { showToast(e.message); }
+      try {
+        const src = await mediaUrl(f);
+        if (seq !== mediaReqSeq || !bg.isConnected) return;
+        v.src = src;
+      } catch (e) { if (seq === mediaReqSeq && bg.isConnected) showToast(e.message); }
     }
 
     // Public share links: the item is encrypted with a fresh key that only lives in the link's #fragment
@@ -7725,9 +7872,11 @@ print("Welcome to Orto!")
           if (btnDl) btnDl.onclick = () => {
             const blob = new Blob([`Orto Sovereign Freenet Key: Keep this safe!\n${storedSecret}\n`], { type: 'text/plain' });
             const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
+            const url = URL.createObjectURL(blob);
+            a.href = url;
             a.download = `orto-freenet-key.txt`;
             a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
           };
           return;
         }
@@ -7740,7 +7889,14 @@ print("Welcome to Orto!")
         if (p1 !== $('st-pw2').value) return showToast('Passwords do not match');
         if (!confirm('Change the password now? If you forget the new one, the data cannot be recovered.')) return;
         $('st-pw').disabled = true; showToast('Re-encrypting everything…');
-        try { await root.changePassword(p1); if (!os._space) Object.assign(os, { key: root.key, _auth: root._auth }); showToast('Password changed'); closeModal(); }
+        try {
+          await root.changePassword(p1);
+          if (!os._space) Object.assign(os, { key: root.key, _auth: root._auth });
+          for (const c of [bmCache, notesCache, calCache, tasksCache]) { try { c.reset(); } catch (_) {} }
+          mediaParams.clear();
+          try { if (hasServiceWorker()) navigator.serviceWorker.controller?.postMessage({ type: 'orto-media-clear' }); } catch (_) {}
+          showToast('Password changed'); closeModal();
+        }
         catch (e) { showToast(e.message + ' (nothing is lost: you can retry with the same new password)'); $('st-pw').disabled = false; }
       };
       if ($('st-ai') && $('st-ai-status')) aiSettings($('st-ai'), $('st-ai-status'), $('st-ai-download'));
@@ -8525,6 +8681,10 @@ print("Welcome to Orto!")
         } else {
           await taskSaveDirect({ ...t, soul, trash: true });
         }
+        if (tasks[soul]) {
+          tasks[soul] = { ...tasks[soul], trash: true };
+          tasksCache.set(soul, JSON.stringify(tasks[soul]), tasks[soul]);
+        }
         closeTaskModal();
         showToast('Task moved to Trash');
         document.getElementById('count-tasks').textContent = Object.values(tasks).filter(x => !x.trash).length;
@@ -8544,6 +8704,10 @@ print("Welcome to Orto!")
           await os.restoreTask(soul);
         } else {
           await taskSaveDirect({ ...t, soul, trash: false });
+        }
+        if (tasks[soul]) {
+          tasks[soul] = { ...tasks[soul], trash: false };
+          tasksCache.set(soul, JSON.stringify(tasks[soul]), tasks[soul]);
         }
         closeTaskModal();
         showToast('Task restored');

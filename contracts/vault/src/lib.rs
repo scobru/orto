@@ -43,7 +43,7 @@ pub type DeltaBody = VaultState;
 type Summary = BTreeMap<String, (u64, String)>;
 
 fn version(r: &VaultRecord) -> (u64, String) {
-    (r.updated_at, r.sig.chars().take(16).collect())
+    (r.updated_at, r.sig.clone())
 }
 
 const MAX_KEY_LEN: usize = 160;
@@ -72,33 +72,52 @@ pub fn record_msg(params: &str, key: &str, r: &VaultRecord) -> String {
     format!("orto1|{params}|{key}|{}|{}|{}", r.updated_at, r.deleted, r.data)
 }
 
+struct Verifier<'a> {
+    params: &'a str,
+    owner_hex: &'a str,
+    vk: ed25519_dalek::VerifyingKey,
+    app: Option<String>,
+}
+
+impl<'a> Verifier<'a> {
+    fn new(params: &'a str) -> R<Self> {
+        if !params.is_ascii() || params.len() < 96 {
+            return Err("parameters too short: need at least 48 bytes".into());
+        }
+        let owner_hex = &params[..64];
+        let pk: [u8; 32] = hex::decode(owner_hex).map_err(|e| e.to_string())?.try_into().map_err(|_| "bad owner key")?;
+        let vk = ed25519_dalek::VerifyingKey::from_bytes(&pk).map_err(|e| format!("invalid key: {e}"))?;
+        let app = app_of(params)?;
+        Ok(Self { params, owner_hex, vk, app })
+    }
+
+    fn verify(&self, key: &str, r: &VaultRecord) -> R<()> {
+        let msg = record_msg(self.params, key, r);
+        match &r.cert {
+            None => {
+                let sg: [u8; 64] = hex::decode(&r.sig).map_err(|e| e.to_string())?.try_into().map_err(|_| "bad signature length")?;
+                self.vk.verify_strict(msg.as_bytes(), &ed25519_dalek::Signature::from_bytes(&sg))
+                    .map_err(|e| format!("signature failed: {e}"))
+            }
+            Some(cert) => {
+                let app = self.app.as_deref().ok_or_else(|| "parameters carry no app path, needed for Viso delegation".to_string())?;
+                let app_key = whoiam_delegation::check(self.owner_hex, app, cert).map_err(|e| format!("delegation: {e}"))?;
+                whoiam_delegation::verify(&app_key, msg.as_bytes(), &r.sig).map_err(|e| format!("delegated signature: {e}"))
+            }
+        }
+    }
+}
+
 /// Verify one record: direct owner signature (no cert) or delegated app key (cert).
 pub fn verify_record(params: &str, key: &str, r: &VaultRecord) -> R<()> {
-    if params.len() < 96 {
-        return Err("parameters too short: need at least 48 bytes".into());
-    }
-    let owner_hex = &params[..64];
-    let msg = record_msg(params, key, r);
-    match &r.cert {
-        None => {
-            let pk: [u8; 32] = hex::decode(owner_hex).map_err(|e| e.to_string())?.try_into().map_err(|_| "bad owner key")?;
-            let vk = ed25519_dalek::VerifyingKey::from_bytes(&pk).map_err(|e| format!("invalid key: {e}"))?;
-            let sg: [u8; 64] = hex::decode(&r.sig).map_err(|e| e.to_string())?.try_into().map_err(|_| "bad signature length")?;
-            vk.verify_strict(msg.as_bytes(), &ed25519_dalek::Signature::from_bytes(&sg))
-                .map_err(|e| format!("signature failed: {e}"))
-        }
-        Some(cert) => {
-            let app = app_of(params)?.ok_or_else(|| "parameters carry no app path, needed for Viso delegation".to_string())?;
-            let app_key = whoiam_delegation::check(owner_hex, &app, cert).map_err(|e| format!("delegation: {e}"))?;
-            whoiam_delegation::verify(&app_key, msg.as_bytes(), &r.sig).map_err(|e| format!("delegated signature: {e}"))
-        }
-    }
+    Verifier::new(params)?.verify(key, r)
 }
 
 pub fn check_state(params: &str, s: &VaultState) -> R<()> {
     if s.records.len() > MAX_TOTAL_RECORDS {
         return Err("too many records".into());
     }
+    let verifier = Verifier::new(params)?;
     for (k, r) in &s.records {
         if !is_valid_key(k) {
             return Err(format!("invalid record key: {k}"));
@@ -106,7 +125,7 @@ pub fn check_state(params: &str, s: &VaultState) -> R<()> {
         if r.data.len() > MAX_RECORD_DATA_BYTES {
             return Err(format!("record too big: {k}"));
         }
-        verify_record(params, k, r)?;
+        verifier.verify(k, r)?;
     }
     Ok(())
 }
@@ -118,6 +137,10 @@ fn newer(a: &VaultRecord, b: &VaultRecord) -> bool {
 /// Merge verified incoming records into the state (last write wins per record).
 pub fn merge(params: &str, mut state: VaultState, incoming: VaultState) -> R<VaultState> {
     check_state(params, &incoming)?;
+    let added = incoming.records.keys().filter(|k| !state.records.contains_key(*k)).count();
+    if state.records.len().saturating_add(added) > MAX_TOTAL_RECORDS {
+        return Err("too many records".into());
+    }
     for (k, r) in incoming.records {
         match state.records.get(&k) {
             Some(cur) if !newer(&r, cur) => {}
@@ -136,16 +159,20 @@ pub fn summary_of(state: &VaultState) -> Summary {
 
 /// Records the peer lacks or holds an older version of.
 pub fn delta_for(state: &VaultState, peer: &Summary) -> Vec<u8> {
+    #[derive(Serialize)]
+    struct DeltaRef<'a> {
+        records: BTreeMap<&'a String, &'a VaultRecord>,
+        updated_at: u64,
+    }
     let records: BTreeMap<_, _> = state
         .records
         .iter()
         .filter(|(k, r)| peer.get(*k).map_or(true, |v| version(r) > *v))
-        .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     if records.is_empty() {
         return Vec::new();
     }
-    serde_json::to_vec(&VaultState { records, updated_at: state.updated_at }).unwrap_or_default()
+    serde_json::to_vec(&DeltaRef { records, updated_at: state.updated_at }).unwrap_or_default()
 }
 
 fn params_hex(p: &Parameters) -> String {

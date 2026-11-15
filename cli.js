@@ -25,12 +25,14 @@ const SHORT_ALIASES = {
 
 function parseArgs(args) {
   const flags = {};
+  const isVal = (v) => v !== undefined && (!v.startsWith('-') || /^-\d/.test(v));
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    if (arg === '--') break;
     if (arg.startsWith('--')) {
       const key = arg.slice(2);
       const next = args[i + 1];
-      if (next && !next.startsWith('-')) {
+      if (isVal(next)) {
         flags[key] = next;
         i++;
       } else {
@@ -40,7 +42,7 @@ function parseArgs(args) {
       const raw = arg.slice(1);
       const key = SHORT_ALIASES[raw] || raw;
       const next = args[i + 1];
-      if (next && !next.startsWith('-')) {
+      if (isVal(next)) {
         flags[key] = next;
         flags[raw] = next;
         i++;
@@ -96,9 +98,11 @@ if (process.cwd() !== __dirname) {
 // ORTO_* settings; the old ZENOS_* names still work
 const ev = (name) => process.env['ORTO_' + name] || process.env['ZENOS_' + name];
 
+const str = (v) => (typeof v === 'string' ? v : '');
+
 function requireCredentials() {
-  const user = flags.user || ev('USER') || ev('USERNAME');
-  const pass = flags.pass || ev('PASS') || ev('PASSWORD');
+  const user = str(flags.user) || ev('USER') || ev('USERNAME');
+  const pass = str(flags.pass) || ev('PASS') || ev('PASSWORD');
   if (!user || !pass) {
     throw new Error('User and password required: provide --user and --pass flags, or set ORTO_USER and ORTO_PASS in .env file.');
   }
@@ -109,7 +113,12 @@ function requireCredentials() {
 const grp = (v) => (v === true ? '' : v);
 
 function safeExit(code = 0) {
-  process.exit(code);
+  process.stdout.write('', () => process.exit(code));
+}
+
+function fmtDate(v, n) {
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? '' : (n ? d.toISOString().slice(0, n) : d.toISOString());
 }
 
 function fmtSize(n) {
@@ -155,18 +164,18 @@ function outputResults(items, flags) {
         if (item.title !== undefined) row.Title = item.title ? item.title.slice(0, 40) : '';
         if (item.status !== undefined) row.Status = item.status || '';
         if (item.priority !== undefined) row.Priority = item.priority || '';
-        if (item.dueDate !== undefined) row.Due = item.dueDate ? new Date(item.dueDate).toISOString().slice(0, 10) : '';
+        if (item.dueDate !== undefined) row.Due = item.dueDate ? fmtDate(item.dueDate, 10) : '';
         if (item.assignee !== undefined && item.assignee) row.Assignee = item.assignee;
         if (item.folder !== undefined) row.Folder = item.folder || '';
         if (item.album !== undefined) row.Album = item.album || '';
         if (item.playlist !== undefined) row.Playlist = item.playlist || '';
         if (item.url !== undefined) row.URL = item.url ? item.url.slice(0, 50) : '';
-        if (item.start !== undefined) row.Start = new Date(item.start).toISOString();
+        if (item.start !== undefined) row.Start = fmtDate(item.start);
         if (item.cat !== undefined) row.Cat = item.cat;
         if (item.type !== undefined) row.Type = item.type || '';
         if (item.size !== undefined) row.Size = fmtSize(item.size);
         if (item.encrypted !== undefined) row.Enc = item.encrypted ? 'yes' : 'no';
-        if (item.addedAt !== undefined) row.Added = new Date(item.addedAt).toISOString().slice(0, 16).replace('T', ' ');
+        if (item.addedAt !== undefined) row.Added = fmtDate(item.addedAt, 16).replace('T', ' ');
         if (item.soul !== undefined) row.Soul = item.soul;
         return row;
       }));
@@ -314,7 +323,7 @@ Server (all commands):
 
   const server = normalizeServer(typeof flags.server === 'string' ? flags.server : ev('SERVER') || DEFAULT_SERVER);
   const os = new Orto({ server });
-  const spaceId = flags.space ?? ev('SPACE');
+  const spaceId = str(flags.space) || ev('SPACE');
   if (spaceId) { // every command below then reads and writes that shared space instead of your own data
     const login = os.login.bind(os);
     os.login = async (...a) => { const pair = await login(...a), v = await os.openSpace(spaceId); Object.assign(os, { key: v.key, _space: v._space, _role: v._role, _raw: v._raw, spaceName: v.spaceName }); return pair; };
@@ -500,9 +509,9 @@ Server (all commands):
     }
 
     case 'vault-write': {
-      const title = flags.title;
-      const body = flags.body || flags.content;
-      if (!title || !body) {
+      const title = str(flags.title);
+      const body = flags.body !== undefined ? str(flags.body) : str(flags.content);
+      if (!title || (flags.body === undefined && flags.content === undefined) || flags.body === true || flags.content === true) {
         throw new Error('--title and --body (or --content) are required.');
       }
       const { user, pass } = requireCredentials();
@@ -568,8 +577,8 @@ Server (all commands):
 
     case 'calendar-write':
     case 'calendar-add': {
-      const title = flags.title;
-      const start = flags.start || flags.from;
+      const title = str(flags.title);
+      const start = str(flags.start) || str(flags.from);
       if (!title || !start) throw new Error('--title and --start (or --from) are required.');
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
@@ -655,19 +664,19 @@ Server (all commands):
       const fn = cmd === 'event-link' ? 'linkToEvent' : 'unlinkFromEvent';
       const target = flags.note ? { kind: 'note', soul: flags.note } : (flags.bookmark ? { kind: 'bookmark', soul: flags.bookmark } : { kind: 'task', soul: flags.task });
       console.log(JSON.stringify(await os[fn](flags.event, target), null, 2));
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
     // ─── Contacts ─────────────────────────────────────────────────────
     case 'contact-write':
     case 'contact-add': {
-      if (!flags.name) throw new Error('--name is required.');
+      if (!str(flags.name)) throw new Error('--name is required.');
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       const res = await os.writeContact({ soul: flags.soul || null, name: flags.name, emails: flags.email || '', phones: flags.phone || '', org: flags.org || '', notes: flags.notes || '', tags: flags.tags || '', pub: flags.pub || '' });
       console.log(JSON.stringify(res, null, 2));
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -698,7 +707,7 @@ Server (all commands):
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       console.log(JSON.stringify(await os.deleteContact(flags.soul), null, 2));
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -707,7 +716,7 @@ Server (all commands):
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       console.log(JSON.stringify(await os.importContactsVcf(fs.readFileSync(flags.file, 'utf8')), null, 2));
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -739,7 +748,7 @@ Server (all commands):
       await os.login(user, pass);
       const res = await os.writeSecret({ soul: flags.soul || null, name: flags.name, kind: flags.kind || 'password', username: flags.username || '', secret, url: flags.url || '', notes: flags.notes || '', tags: flags.tags || '' });
       console.log(JSON.stringify(flags.generate ? { ...res, generated: secret } : res, null, 2));
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -771,7 +780,7 @@ Server (all commands):
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       console.log(JSON.stringify(await os.deleteSecret(flags.soul), null, 2));
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -779,7 +788,7 @@ Server (all commands):
 
     case 'bookmarks-write':
     case 'bookmarks-add': {
-      if (!flags.url) throw new Error('--url is required.');
+      if (!str(flags.url)) throw new Error('--url is required.');
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       const tags = flags.tags ? String(flags.tags).split(',').map(t => t.trim()).filter(Boolean) : [];
@@ -790,7 +799,7 @@ Server (all commands):
         tags
       });
       console.log(JSON.stringify(res, null, 2));
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -827,7 +836,7 @@ Server (all commands):
       await os.login(user, pass);
       const res = await os.deleteBookmark(soul);
       console.log(JSON.stringify(res, null, 2));
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -836,7 +845,7 @@ Server (all commands):
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       console.log(JSON.stringify(await os.importBookmarksHtml(fs.readFileSync(flags.file, 'utf8')), null, 2));
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -854,7 +863,7 @@ Server (all commands):
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       console.log(JSON.stringify(await os.updateBookmarks(JSON.parse(fs.readFileSync(flags.file, 'utf8'))), null, 2));
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -867,7 +876,7 @@ Server (all commands):
       let url = flags.url, title = flags.title || '';
       if (!flags['no-check']) { const f = await os.findFeed(url); url = f.url; title = title || f.feed.title; } // a web page address works too
       console.log(JSON.stringify(await os.addFeed(url, { title, folder: flags.folder || '' }), null, 2));
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -900,7 +909,7 @@ Server (all commands):
       if (!soul && flags.url) soul = (await os.readFeeds()).find((f) => f.url === flags.url)?.soul;
       if (!soul) throw new Error('--soul or the --url of a followed feed is required.');
       console.log(JSON.stringify(await os.deleteFeed(soul), null, 2));
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -909,7 +918,7 @@ Server (all commands):
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       console.log(JSON.stringify(await os.importFeedsOpml(fs.readFileSync(flags.file, 'utf8')), null, 2));
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -926,7 +935,7 @@ Server (all commands):
 
     case 'task-write':
     case 'task-add': {
-      const title = flags.title;
+      const title = str(flags.title);
       if (!title) throw new Error('--title is required.');
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
@@ -943,7 +952,7 @@ Server (all commands):
         soul: flags.soul
       });
       console.log(JSON.stringify(res, null, 2));
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -978,7 +987,7 @@ Server (all commands):
       if (flags.column !== undefined) patch.column = flags.column;
       const res = await os.updateTask(flags.soul, patch);
       console.log(JSON.stringify(res, null, 2));
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -1002,7 +1011,7 @@ Server (all commands):
       await os.login(user, pass);
       const res = await os.deleteTask(flags.soul);
       console.log(JSON.stringify(res, null, 2));
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -1022,7 +1031,7 @@ Server (all commands):
             ? { kind: 'bookmark', soul: flags.bookmark }
             : { kind: 'task', soul: flags['linked-task'] }));
       console.log(JSON.stringify(await os[fn](flags.task, target), null, 2));
-      setTimeout(() => process.exit(0), 500);
+      safeExit(0);
       break;
     }
 
@@ -1050,8 +1059,8 @@ Server (all commands):
 
     case 'blog-publish':
     case 'blog-write': {
-      const title = flags.title;
-      const content = flags.content || flags.body;
+      const title = str(flags.title);
+      const content = str(flags.content) || str(flags.body);
       if (!title || !content) {
         throw new Error('--title and --content (or --body) are required.');
       }

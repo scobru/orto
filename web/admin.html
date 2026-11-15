@@ -59,20 +59,21 @@ const fmt = (n) => n >= MB * 1024 ? (n / MB / 1024).toFixed(1) + ' GB' : n >= MB
 function out() { token = ''; try { sessionStorage.removeItem('orto-admin'); } catch (_) {} $('app').hidden = true; $('login').hidden = false; }
 async function load() {
   try {
-    const s = await call('GET', 'settings');
+    const [s, users] = await Promise.all([call('GET', 'settings'), call('GET', 'users')]);
     $('registration').value = s.settings.registration;
     $('maxUpload').value = +(s.settings.maxUpload / MB).toFixed(2);
     $('quota').value = +(s.settings.quota / MB).toFixed(2);
     $('info').textContent = `Env defaults: registration ${s.defaults.registration}, upload ${s.defaults.maxUpload / MB} MB, quota ${s.defaults.quota / MB} MB. Demo account: ${s.demo ? 'on (set via ORTO_DEMO)' : 'off'}. Data folder: ${s.dataDir}`;
     const body = $('users'); body.textContent = '';
-    for (const u of await call('GET', 'users')) {
+    for (const u of users) {
       const tr = body.insertRow();
       for (const v of [u.name, new Date(u.createdAt).toISOString().slice(0, 10), u.records, u.files, fmt(u.bytes), u.sessions]) tr.insertCell().textContent = v;
       const cell = tr.insertCell(); cell.className = 'row';
+      const eu = encodeURIComponent(u.name);
       const lo = Object.assign(document.createElement('button'), { textContent: 'Sign out' });
-      lo.onclick = () => act(() => call('POST', `users/${u.name}/logout`), `${u.name} signed out everywhere`);
+      lo.onclick = () => act(() => call('POST', `users/${eu}/logout`), `${u.name} signed out everywhere`);
       const del = Object.assign(document.createElement('button'), { textContent: 'Delete', className: 'd' });
-      del.onclick = () => { if (prompt(`Delete "${u.name}" and ALL their data? Type the name to confirm.`) === u.name) act(() => call('DELETE', `users/${u.name}`), `${u.name} deleted`); };
+      del.onclick = () => { if (prompt(`Delete "${u.name}" and ALL their data? Type the name to confirm.`) === u.name) act(() => call('DELETE', `users/${eu}`), `${u.name} deleted`); };
       cell.append(lo, del);
     }
     $('login').hidden = true; $('app').hidden = false;
@@ -84,7 +85,11 @@ $('login').onsubmit = async (e) => {
   try { token = (await call('POST', 'login', { pass: $('pass').value })).token; try { sessionStorage.setItem('orto-admin', token); } catch (_) {} $('pass').value = ''; say(''); await load(); }
   catch (e) { say(e.message, true); }
 };
-$('save').onclick = () => act(() => call('PUT', 'settings', { registration: $('registration').value, maxUpload: Math.round($('maxUpload').value * MB), quota: Math.round($('quota').value * MB) }), 'Saved');
+$('save').onclick = () => {
+  const maxUpload = Math.round(Number($('maxUpload').value) * MB), quota = Math.round(Number($('quota').value) * MB);
+  if (!(maxUpload >= 1) || !(quota >= 1)) return say('Upload limit and quota must be positive numbers.', true);
+  act(() => call('PUT', 'settings', { registration: $('registration').value, maxUpload, quota }), 'Saved');
+};
 $('reset').onclick = () => act(() => call('PUT', 'settings', { registration: null, maxUpload: null, quota: null }), 'Back to env defaults');
 $('backup').onclick = () => act(() => call('POST', 'backup'), (r) => 'Backup written to ' + r.path);
 $('out').onclick = out;

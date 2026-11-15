@@ -23,26 +23,37 @@ export type VaultRecord = { data: string; updated_at: number; deleted: boolean; 
 export type VaultState = { records: Record<string, VaultRecord>; updated_at: number };
 
 const TIMEOUT_MS = 15000;
-const withTimeout = <T>(p: Promise<T>): Promise<T> =>
-  Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error("Freenet request timeout")), TIMEOUT_MS))]);
+const withTimeout = <T>(p: Promise<T>): Promise<T> => {
+  let t: ReturnType<typeof setTimeout>;
+  return Promise.race([p, new Promise<never>((_, rej) => { t = setTimeout(() => rej(new Error("Freenet request timeout")), TIMEOUT_MS); })])
+    .finally(() => clearTimeout(t));
+};
 
 const hexBytes = (h: string) => Uint8Array.from(h.match(/../g) ?? [], (b) => parseInt(b, 16));
 
-let codeP: Promise<{ code: Uint8Array; hash: Uint8Array }> | undefined;
-function vaultCode() {
-  return (codeP ??= (async () => {
+type VaultCode = { codeArr: number[]; hash: Uint8Array; hashArr: number[] };
+let codeP: Promise<VaultCode> | undefined;
+function vaultCode(): Promise<VaultCode> {
+  if (codeP) return codeP;
+  codeP = (async () => {
     const base = globalThis.location?.pathname?.replace(/[^/]*$/, "") ?? "./";
     const origin = globalThis.location?.origin && globalThis.location.origin !== "null" ? globalThis.location.origin : "";
     const r = await fetch(`${origin}${base}orto_vault.wasm`);
     if (!r.ok) throw new Error(`Cannot load orto_vault.wasm: HTTP ${r.status}`);
     const code = new Uint8Array(await r.arrayBuffer());
-    return { code, hash: blake3(code) };
-  })());
+    const hash = blake3(code);
+    return { codeArr: Array.from(code), hash, hashArr: Array.from(hash) };
+  })().catch((e) => { codeP = undefined; throw e; });
+  return codeP;
 }
 
 async function vaultKey(paramsHex: string): Promise<ContractKey> {
   const { hash } = await vaultCode();
-  return new ContractKey(blake3(new Uint8Array([...hash, ...hexBytes(paramsHex)])), hash);
+  const pb = hexBytes(paramsHex);
+  const pre = new Uint8Array(hash.length + pb.length);
+  pre.set(hash, 0);
+  pre.set(pb, hash.length);
+  return new ContractKey(blake3(pre), hash);
 }
 
 /** The vault on the network (subscribing to its changes), or null when it was never published. */
@@ -66,8 +77,8 @@ export async function pushVault(paramsHex: string, delta: VaultState, exists: bo
     await withTimeout(client.update(new UpdateRequest(key, new UpdateData(UpdateDataType.DeltaUpdate, new DeltaUpdate(bytes)))));
     return;
   }
-  const { code, hash } = await vaultCode();
-  const contract = new WasmContractV1(new ContractCodeT(Array.from(code), Array.from(hash)), Array.from(hexBytes(paramsHex)), key);
+  const { codeArr, hashArr } = await vaultCode();
+  const contract = new WasmContractV1(new ContractCodeT(codeArr, hashArr), Array.from(hexBytes(paramsHex)), key);
   await withTimeout(client.put(new PutRequest(new ContractContainer(ContractType.WasmContractV1, contract), bytes, new RelatedContractsT(), true)));
 }
 

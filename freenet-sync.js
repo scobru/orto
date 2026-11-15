@@ -55,11 +55,16 @@ export function createIdentity(dataDir, secretHex, salt) {
 
 export const paramsHex = (id) => id.pub + id.salt;
 
+/** One record, signed using an already-parsed keypair and hex parameters. */
+function signWithKey(priv, pHex, key, data, updated_at, deleted = false) {
+  const sig = crypto.sign(null, Buffer.from(`orto1|${pHex}|${key}|${updated_at}|${deleted}|${data}`), priv).toString('hex');
+  return { data, updated_at, deleted, sig, cert: null };
+}
+
 /** One record, signed for the contract of this identity. */
 export function signRecord(id, key, data, updated_at, deleted = false) {
   const { priv } = keyFromSecret(id.secret);
-  const sig = crypto.sign(null, Buffer.from(`orto1|${paramsHex(id)}|${key}|${updated_at}|${deleted}|${data}`), priv).toString('hex');
-  return { data, updated_at, deleted, sig, cert: null };
+  return signWithKey(priv, paramsHex(id), key, data, updated_at, deleted);
 }
 
 const rowKey = (r) => `${r.coll}:${r.soul}`;
@@ -68,7 +73,9 @@ const rowKey = (r) => `${r.coll}:${r.soul}`;
 export function buildDelta(db, id, userId, since = id.lastPush) {
   const rows = db.prepare(`SELECT coll, soul, data, updated_at FROM records WHERE user_id = ? AND updated_at > ? AND coll IN (${SYNC_COLLS.map(() => '?').join(',')})`).all(userId, since, ...SYNC_COLLS);
   if (!rows.length) return null;
-  const records = Object.fromEntries(rows.map(r => [rowKey(r), signRecord(id, rowKey(r), r.data, r.updated_at)]));
+  const { priv } = keyFromSecret(id.secret);
+  const pHex = paramsHex(id);
+  const records = Object.fromEntries(rows.map(r => { const k = rowKey(r); return [k, signWithKey(priv, pHex, k, r.data, r.updated_at)]; }));
   const ts = Math.max(...rows.map(r => r.updated_at));
   return { signed: JSON.stringify({ records, updated_at: ts }), ts, count: rows.length };
 }
@@ -79,53 +86,80 @@ export function applyState(db, userId, vault) {
   const put = db.prepare('INSERT INTO records VALUES (?, ?, ?, ?, ?) ON CONFLICT (user_id, coll, soul) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at');
   const del = db.prepare('DELETE FROM records WHERE user_id = ? AND coll = ? AND soul = ?');
   let n = 0;
-  for (const [k, r] of Object.entries(vault.records || {})) {
-    const i = k.indexOf(':'); const coll = k.slice(0, i), soul = k.slice(i + 1);
-    if (!SYNC_COLLS.includes(coll)) continue;
-    const cur = get.get(userId, coll, soul);
-    if (cur && cur.updated_at >= r.updated_at) continue;
-    if (r.deleted) del.run(userId, coll, soul); else put.run(userId, coll, soul, r.data, r.updated_at);
-    n++;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const [k, r] of Object.entries(vault.records || {})) {
+      const i = k.indexOf(':');
+      if (i <= 0) continue;
+      const coll = k.slice(0, i), soul = k.slice(i + 1);
+      if (!SYNC_COLLS.includes(coll)) continue;
+      const cur = get.get(userId, coll, soul);
+      if (cur && cur.updated_at >= r.updated_at) continue;
+      if (r.deleted) del.run(userId, coll, soul); else put.run(userId, coll, soul, r.data, r.updated_at);
+      n++;
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    try { db.exec('ROLLBACK'); } catch (_) {}
+    throw e;
   }
   return n;
 }
 
 // ── transport: the node's own CLI ───────────────────────────────────────────────────────────────────────────
 const fdev = (args, opts = {}) => execFileSync('fdev', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts });
-const tmp = (name, content) => { const f = path.join(os.tmpdir(), `orto-${process.pid}-${name}`); fs.writeFileSync(f, content); return f; };
-const paramsFile = (id) => tmp('params.bin', Buffer.from(paramsHex(id), 'hex'));
+const withTmp = (fn) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orto-'));
+  const tmp = (name, content) => {
+    const f = path.join(dir, name);
+    if (content !== undefined) fs.writeFileSync(f, content);
+    return f;
+  };
+  try { return fn(tmp); } finally { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {} }
+};
 
 /** Instance id (base58) of this identity's vault contract. */
 export function contractId(id) {
-  const out = fdev(['execute', 'get-contract-id', '--code', WASM(), '--parameters', paramsFile(id)]);
-  const m = out.match(/[1-9A-HJ-NP-Za-km-z]{43,44}/);
-  if (!m) throw new Error('Could not read the contract id from fdev: ' + out.trim());
-  return m[0];
+  return withTmp((tmp) => {
+    const out = fdev(['execute', 'get-contract-id', '--code', WASM(), '--parameters', tmp('params.bin', Buffer.from(paramsHex(id), 'hex'))]);
+    const m = out.match(/[1-9A-HJ-NP-Za-km-z]{43,44}/);
+    if (!m) throw new Error('Could not read the contract id from fdev: ' + out.trim());
+    return m[0];
+  });
 }
 
 const emptyState = () => JSON.stringify({ records: {}, updated_at: 0 });
 
-export function publish(id) {
-  fdev(['execute', 'put', '--code', WASM(), '--parameters', paramsFile(id), 'contract', '--state', tmp('state.json', emptyState())]);
-  return contractId(id);
+export function publish(id, cid) {
+  return withTmp((tmp) => {
+    fdev(['execute', 'put', '--code', WASM(), '--parameters', tmp('params.bin', Buffer.from(paramsHex(id), 'hex')), 'contract', '--state', tmp('state.json', emptyState())]);
+    return cid || contractId(id);
+  });
 }
 
-export function fetchVault(id) {
-  const cid = contractId(id), out = path.join(os.tmpdir(), `orto-${process.pid}-get.json`);
-  fdev(['execute', 'get', cid, '-o', out]);
-  return JSON.parse(fs.readFileSync(out, 'utf8'));
+export function fetchVault(id, cid = contractId(id)) {
+  return withTmp((tmp) => {
+    const out = tmp('get.json');
+    fdev(['execute', 'get', cid, '-o', out]);
+    return JSON.parse(fs.readFileSync(out, 'utf8'));
+  });
 }
 
 /** One round: pull what others wrote, then push what changed here. SQLite is touched only through applyState. */
 export function sync(db, dataDir, userId) {
   const id = loadIdentity(dataDir);
   if (!id) throw new Error('No Freenet identity yet: run `freenet-identity --new` (or `--import <key>`).');
+  const cid = contractId(id);
   const res = { pulled: 0, pushed: 0 };
   let exists = true;
-  try { res.pulled = applyState(db, userId, fetchVault(id)); } catch (e) { exists = false; if (!/not found|NotFound|timeout/i.test(String(e.stderr || e.message))) throw e; }
-  if (!exists) { publish(id); id.lastPush = 0; } // a new (or re-keyed) vault is empty: send every row
+  try { res.pulled = applyState(db, userId, fetchVault(id, cid)); } catch (e) { exists = false; if (!/not found|NotFound/i.test(String(e.stderr || e.message))) throw e; }
+  if (!exists) { publish(id, cid); id.lastPush = 0; } // a new (or re-keyed) vault is empty: send every row
   const d = buildDelta(db, id, userId);
-  if (d) { fdev(['execute', 'update', contractId(id), tmp('delta.json', d.signed)]); res.pushed = d.count; id.lastPush = d.ts; }
+  if (d) {
+    withTmp((tmp) => { fdev(['execute', 'update', cid, tmp('delta.json', d.signed)]); });
+    res.pushed = d.count;
+    id.lastPush = d.ts;
+  }
   id.lastPull = Date.now();
   saveIdentity(dataDir, id);
   return res;

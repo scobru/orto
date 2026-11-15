@@ -57,11 +57,25 @@ const settings = { ...Object.fromEntries(Object.entries(process.env).filter(([k]
 // Reader: browsers cannot fetch other sites' feeds (CORS), so a logged-in user asks the server to fetch one (GET /api/feed?url=).
 // The server only relays the XML; it is parsed in the browser. Private/loopback addresses are refused (SSRF), checked at connect time.
 const isPrivateIp = (ip) => {
-  const m = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip), h = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(ip); // URL() turns ::ffff:127.0.0.1 into ::ffff:7f00:1
-  if (m) ip = m[1]; else if (h) { const n = (parseInt(h[1], 16) << 16 | parseInt(h[2], 16)) >>> 0; ip = [n >>> 24, n >>> 16 & 255, n >>> 8 & 255, n & 255].join('.'); }
-  if (net.isIPv6(ip)) return /^(::1?$|f[cd][0-9a-f]{2}:|fe[89ab][0-9a-f]:)/i.test(ip);
+  const m = /^::(?:ffff:(?:0:)?)?(\d+\.\d+\.\d+\.\d+)$/i.exec(ip);
+  const h = /^::(?:ffff:(?:0:)?)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(ip); // URL() turns ::ffff:127.0.0.1 into ::ffff:7f00:1
+  if (m) ip = m[1]; else if (h) { const n = ((parseInt(h[1], 16) << 16) | parseInt(h[2], 16)) >>> 0; ip = [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.'); }
+  if (net.isIPv6(ip)) return /^(::1?$|f[cd][0-9a-f]{2}:|fe[89ab][0-9a-f]:|ff[0-9a-f]{2}:)/i.test(ip);
   return /^(0\.|10\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|2(2[4-9]|[3-5]\d)\.)/.test(ip);
 };
+const safeDecode = (s) => { try { return decodeURIComponent(s); } catch (_) { throw new HttpError(400, 'Bad URL encoding'); } };
+const posNum = (v, fallback) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : fallback; };
+function pipeFile(file, res, opts) {
+  const s = fs.createReadStream(file, opts);
+  const cleanup = () => s.destroy();
+  res.on('close', cleanup);
+  s.on('error', () => {
+    res.off('close', cleanup);
+    if (!res.headersSent) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Not found' })); }
+    else res.destroy();
+  });
+  s.pipe(res);
+}
 function fetchFeed(target, { allowPrivate = false, hops = 3, maxBytes = 2e6, timeout = 10000 } = {}) {
   return new Promise((resolve, reject) => {
     let u;
@@ -75,20 +89,26 @@ function fetchFeed(target, { allowPrivate = false, hops = 3, maxBytes = 2e6, tim
       if (!allowPrivate && list.some((x) => isPrivateIp(x.address))) return cb(new Error('Private addresses are not allowed'));
       cb(null, addr, fam);
     });
+    let settled = false;
+    const finish = (fn, v) => { if (!settled) { settled = true; clearTimeout(deadline); fn(v); } };
     const req = (u.protocol === 'https:' ? https : http).get(u, { lookup, timeout, headers: { 'User-Agent': 'Orto feed reader', Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.5' } }, (r) => {
       if (r.statusCode >= 300 && r.statusCode < 400 && r.headers.location) {
         r.resume();
-        if (!hops) return reject(new HttpError(502, 'Too many redirects'));
-        return fetchFeed(new URL(r.headers.location, u).href, { allowPrivate, hops: hops - 1, maxBytes, timeout }).then(resolve, reject);
+        if (!hops) return finish(reject, new HttpError(502, 'Too many redirects'));
+        let nextUrl;
+        try { nextUrl = new URL(r.headers.location, u).href; } catch (_) { return finish(reject, new HttpError(502, 'Bad feed redirect')); }
+        clearTimeout(deadline); settled = true;
+        return fetchFeed(nextUrl, { allowPrivate, hops: hops - 1, maxBytes, timeout }).then(resolve, reject);
       }
-      if (r.statusCode !== 200) { r.resume(); return reject(new HttpError(502, 'Feed answered ' + r.statusCode)); }
+      if (r.statusCode !== 200) { r.resume(); return finish(reject, new HttpError(502, 'Feed answered ' + r.statusCode)); }
       const chunks = []; let n = 0;
-      r.on('data', (d) => { n += d.length; if (n > maxBytes) { req.destroy(); reject(new HttpError(502, 'Feed is too big')); } else chunks.push(d); });
-      r.on('end', () => resolve(Buffer.concat(chunks)));
-      r.on('error', () => reject(new HttpError(502, 'Could not read the feed')));
+      r.on('data', (d) => { n += d.length; if (n > maxBytes) { req.destroy(); finish(reject, new HttpError(502, 'Feed is too big')); } else chunks.push(d); });
+      r.on('end', () => finish(resolve, Buffer.concat(chunks)));
+      r.on('error', () => finish(reject, new HttpError(502, 'Could not read the feed')));
     });
-    req.on('timeout', () => { req.destroy(); reject(new HttpError(504, 'The feed took too long')); });
-    req.on('error', (e) => reject(e instanceof HttpError ? e : new HttpError(502, /private/i.test(e.message) ? 'Private addresses are not allowed' : 'Could not reach the feed')));
+    const deadline = setTimeout(() => { req.destroy(); finish(reject, new HttpError(504, 'The feed took too long')); }, timeout);
+    req.on('timeout', () => { req.destroy(); finish(reject, new HttpError(504, 'The feed took too long')); });
+    req.on('error', (e) => finish(reject, e instanceof HttpError ? e : new HttpError(502, /private/i.test(e.message) ? 'Private addresses are not allowed' : 'Could not reach the feed')));
   });
 }
 const xmlEsc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
@@ -100,13 +120,13 @@ export function createServer(opts = {}) {
   const webDir = path.resolve(opts.webDir || env.ORTO_WEB || path.join(here, 'web'));
   const defaults = {
     registration: opts.registration || env.ORTO_REGISTRATION || 'open',
-    maxUpload: Number(opts.maxUpload || env.ORTO_MAX_UPLOAD || 200 * 1024 * 1024),
-    quota: Number(opts.quota || env.ORTO_QUOTA || 5 * 1024 ** 3)
+    maxUpload: posNum(opts.maxUpload ?? env.ORTO_MAX_UPLOAD, 200 * 1024 * 1024),
+    quota: posNum(opts.quota ?? env.ORTO_QUOTA, 5 * 1024 ** 3)
   };
   const adminPass = String(opts.adminPass || env.ORTO_ADMIN_PASS || '');
   const adminOn = adminPass.length >= 8;
   const demoOn = opts.demo ?? !['', '0', 'false', undefined].includes(env.ORTO_DEMO);
-  const demoHours = Number(opts.demoHours || env.ORTO_DEMO_HOURS || 3);
+  const demoHours = posNum(opts.demoHours ?? env.ORTO_DEMO_HOURS, 3);
   const DEMO = { user: 'demo', pass: 'demo', quota: 10 * 1024 ** 2, maxRecords: 1000, maxFiles: 40 };
   const modelsDir = path.resolve(opts.modelsDir || env.ORTO_MODELS || path.join(dataDir, 'models')); // optional add-ons, served at /models/*
   const feedsPrivate = opts.feedsPrivate ?? ['1', 'true'].includes(env.ORTO_FEEDS_PRIVATE); // let the feed reader reach private addresses (LAN feeds)
@@ -115,7 +135,7 @@ export function createServer(opts = {}) {
   fs.mkdirSync(filesDir, { recursive: true });
   // unfinished chunked uploads (see /files/begin) older than a day
   for (const d of fs.readdirSync(filesDir)) {
-    try { for (const f of fs.readdirSync(path.join(filesDir, d))) { const p = path.join(filesDir, d, f); if (f.endsWith('.part') && Date.now() - fs.statSync(p).mtimeMs > 864e5) fs.rmSync(p); } } catch (_) { }
+    try { for (const f of fs.readdirSync(path.join(filesDir, d))) { const p = path.join(filesDir, d, f); if ((f.endsWith('.part') || f.includes('.tmp.')) && Date.now() - fs.statSync(p).mtimeMs > 864e5) fs.rmSync(p, { force: true }); } } catch (_) { }
   }
 
   // zenos.db is the file name from before the rename: keep using it if that is what is on disk
@@ -161,10 +181,13 @@ export function createServer(opts = {}) {
     mySpaces: db.prepare('SELECT m.space_id AS id, m.role, m.status, m.wrapped, m.created_at AS createdAt, (SELECT name FROM users WHERE id = m.invited_by) AS invitedBy FROM members m WHERE m.user_id = ? ORDER BY m.created_at'),
     member: db.prepare('SELECT role, status FROM members WHERE space_id = ? AND user_id = ?'),
     members: db.prepare('SELECT u.name, m.role, m.status, u.pub FROM members m JOIN users u ON u.id = m.user_id WHERE m.space_id = ? ORDER BY m.created_at'),
+    memberIds: db.prepare('SELECT user_id FROM members WHERE space_id = ?'),
     addMember: db.prepare('INSERT INTO members VALUES (?, ?, ?, ?, ?, ?, ?)'),
     setMember: db.prepare('UPDATE members SET role = COALESCE(?, role), wrapped = COALESCE(?, wrapped), status = COALESCE(?, status) WHERE space_id = ? AND user_id = ?'),
     delMember: db.prepare('DELETE FROM members WHERE space_id = ? AND user_id = ?'),
     ownedSpaces: db.prepare("SELECT COUNT(*) AS n FROM members WHERE user_id = ? AND role = 'owner'"),
+    recordCount: db.prepare('SELECT COUNT(*) AS n FROM records WHERE user_id = ?'),
+    fileCount: db.prepare('SELECT COUNT(*) AS n FROM files WHERE user_id = ?'),
     addLink: db.prepare('INSERT INTO space_links VALUES (?, ?, ?, ?)'),
     links: db.prepare('SELECT token, role, created_at AS createdAt FROM space_links WHERE space_id = ?'),
     link: db.prepare('SELECT space_id, role FROM space_links WHERE token = ?'),
@@ -173,12 +196,56 @@ export function createServer(opts = {}) {
 
   const toRecord = (r) => ({ soul: r.soul, ...JSON.parse(r.data), updatedAt: r.updated_at });
   const listeners = new Map(); // user_id -> Set<ServerResponse>
-  const emit = (uid, evt) => { for (const res of listeners.get(uid) || []) res.write('data: ' + JSON.stringify(evt) + '\n\n'); };
+  const emit = (uid, evt) => {
+    const set = listeners.get(uid); if (!set) return;
+    const msg = 'data: ' + JSON.stringify(evt) + '\n\n';
+    for (const res of set) {
+      if (res.writableEnded || res.destroyed) { set.delete(res); continue; }
+      try { res.write(msg); } catch (_) { set.delete(res); }
+    }
+    if (!set.size) listeners.delete(uid);
+  };
+  const closeListeners = (uid, pred = null) => {
+    const set = listeners.get(uid); if (!set) return;
+    for (const r of [...set]) {
+      if (pred && !pred(r)) continue;
+      set.delete(r);
+      try { r.end(); } catch (_) {}
+    }
+    if (!set.size) listeners.delete(uid);
+  };
 
   // ponytail: in-memory login throttle, resets on restart; put a reverse proxy rate limit in front for more
   const fails = new Map();
-  const throttled = (key) => { const f = fails.get(key); return f && f.n >= 10 && f.until > Date.now(); };
-  const failed = (key) => { const f = fails.get(key) || { n: 0 }; f.n++; f.until = Date.now() + 15 * 60e3; fails.set(key, f); };
+  const throttled = (key) => {
+    const f = fails.get(key);
+    if (!f) return false;
+    if (f.until <= Date.now()) { fails.delete(key); return false; }
+    return f.n >= 10;
+  };
+  const failed = (key) => {
+    const now = Date.now();
+    if (fails.size > 1024) for (const [k, v] of fails) if (v.until <= now) fails.delete(k);
+    const prev = fails.get(key);
+    const f = prev && prev.until > now ? prev : { n: 0 };
+    f.n++; f.until = now + 15 * 60e3; fails.set(key, f);
+  };
+  const uploadLocks = new Map();
+  const withUploadLock = (key, fn) => {
+    const prev = uploadLocks.get(key) || Promise.resolve();
+    const run = prev.then(fn, fn);
+    const tail = run.catch(() => {});
+    uploadLocks.set(key, tail);
+    return run.finally(() => { if (uploadLocks.get(key) === tail) uploadLocks.delete(key); });
+  };
+  const pendingPartStats = (uid) => {
+    const dir = path.join(filesDir, String(uid));
+    let bytes = 0, count = 0;
+    try {
+      for (const f of fs.readdirSync(dir)) if (f.endsWith('.part')) { count++; bytes += fs.statSync(path.join(dir, f)).size; }
+    } catch (_) {}
+    return { bytes, count };
+  };
 
   function authed(req) {
     const t = (req.headers.authorization || '').replace(/^Bearer /, '');
@@ -195,13 +262,15 @@ export function createServer(opts = {}) {
   // Stream the request body to disk (new file, or replace `id` in place). Written to a temp file first so a failed upload never damages the old blob.
   async function saveUpload(u, req, id = null) {
     const old = id && q.file.get(u.user_id, id);
+    const cl = Number(req.headers['content-length'] || 0);
+    if (cl > cfg.maxUpload) throw new HttpError(413, 'File too large');
     const limit = demoOn && u.name === DEMO.user ? DEMO.quota : cfg.quota;
-    const used = q.used.get(u.user_id).n - (old ? old.size : 0);
-    if (used + Number(req.headers['content-length'] || 0) > limit) throw new HttpError(413, 'Storage quota exceeded');
+    const used = q.used.get(u.user_id).n + pendingPartStats(u.user_id).bytes - (old ? old.size : 0);
+    if (used + cl > limit) throw new HttpError(413, 'Storage quota exceeded');
     id = id || crypto.randomBytes(12).toString('hex');
     const dir = path.join(filesDir, String(u.user_id));
     fs.mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, id), tmp = file + '.part', out = fs.createWriteStream(tmp);
+    const file = path.join(dir, id), tmp = file + '.tmp.' + crypto.randomBytes(4).toString('hex'), out = fs.createWriteStream(tmp);
     let size = 0;
     try {
       for await (const chunk of req) {
@@ -210,18 +279,27 @@ export function createServer(opts = {}) {
         if (!out.write(chunk)) await once(out, 'drain');
       }
       out.end(); await once(out, 'finish');
-      fs.renameSync(tmp, file);
+      return await withUploadLock(`${u.user_id}:${id}`, () => {
+        const curUsed = q.used.get(u.user_id).n + pendingPartStats(u.user_id).bytes - (old ? old.size : 0);
+        if (curUsed + size > limit) throw new HttpError(413, 'Storage quota exceeded');
+        if (old && !q.file.get(u.user_id, id)) throw new HttpError(404, 'Not found');
+        fs.renameSync(tmp, file);
+        if (old) q.setFileSize.run(size, u.user_id, id); else q.addFile.run(u.user_id, id, size);
+        return { id, size };
+      });
     } catch (e) { out.destroy(); fs.rmSync(tmp, { force: true }); throw e; }
-    if (old) q.setFileSize.run(size, u.user_id, id); else q.addFile.run(u.user_id, id, size);
-    return { id, size };
   }
   // Everything of a space (or, for removeUser, of one user) goes; a space's pseudo-user row last, after its members and links.
   function dropSpace(sid) {
-    for (const t of ['records', 'shares', 'files']) db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(sid);
-    for (const t of ['members', 'space_links']) db.prepare(`DELETE FROM ${t} WHERE space_id = ?`).run(sid);
-    db.prepare('DELETE FROM users WHERE id = ?').run(sid);
+    db.exec('BEGIN');
+    try {
+      for (const t of ['records', 'shares', 'files']) db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(sid);
+      for (const t of ['members', 'space_links']) db.prepare(`DELETE FROM ${t} WHERE space_id = ?`).run(sid);
+      db.prepare('DELETE FROM users WHERE id = ?').run(sid);
+      db.exec('COMMIT');
+    } catch (e) { try { db.exec('ROLLBACK'); } catch (_) {} throw e; }
     fs.rmSync(path.join(filesDir, String(sid)), { recursive: true, force: true });
-    for (const r of listeners.get(sid) || []) r.end();
+    closeListeners(sid);
   }
   const dropFile = (uid, id) => { q.delFile.run(uid, id); fs.rmSync(path.join(filesDir, String(uid), id), { force: true }); };
 
@@ -229,6 +307,8 @@ export function createServer(opts = {}) {
   const adminTokens = new Map();
   async function admin(req, json, b, c, d) {
     if (!adminOn) throw new HttpError(404, 'Admin panel is off: set ORTO_ADMIN_PASS (min 8 chars)');
+    const now = Date.now();
+    if (adminTokens.size > 64) for (const [k, expAt] of adminTokens) if (expAt < now) adminTokens.delete(k);
     if (b === 'login' && req.method === 'POST') {
       const { pass } = await readJson(req, 1e4);
       const key = req.socket.remoteAddress + '|admin';
@@ -236,11 +316,12 @@ export function createServer(opts = {}) {
       if (typeof pass !== 'string' || !crypto.timingSafeEqual(Buffer.from(sha(pass)), Buffer.from(sha(adminPass)))) { failed(key); throw new HttpError(401, 'Wrong admin password'); }
       fails.delete(key);
       const token = crypto.randomBytes(32).toString('hex');
-      adminTokens.set(sha(token), Date.now() + 12 * 36e5);
+      adminTokens.set(sha(token), now + 12 * 36e5);
       return json(200, { token });
     }
-    const exp = adminTokens.get(sha((req.headers.authorization || '').replace(/^Bearer /, '')));
-    if (!exp || exp < Date.now()) throw new HttpError(401, 'Unauthorized');
+    const tkHash = sha((req.headers.authorization || '').replace(/^Bearer /, ''));
+    const exp = adminTokens.get(tkHash);
+    if (!exp || exp < now) { adminTokens.delete(tkHash); throw new HttpError(401, 'Unauthorized'); }
 
     if (b === 'settings') {
       if (req.method === 'PUT') { // {key: value} sets, {key: null} goes back to the env default
@@ -265,16 +346,22 @@ export function createServer(opts = {}) {
         FROM users u WHERE u.name NOT LIKE '~%' ORDER BY u.id`).all(Date.now()));
     }
     if (b === 'users' && c) {
-      const user = q.userByName.get(c);
+      const targetName = String(c).toLowerCase();
+      const user = q.userByName.get(targetName);
       if (!user || user.name.startsWith('~')) throw new HttpError(404, 'Unknown user');
-      if (d === 'logout' && req.method === 'POST') { q.dropSessions.run(user.id, ''); return json(200, { name: c, loggedOut: true }); }
+      if (d === 'logout' && req.method === 'POST') { q.dropSessions.run(user.id, ''); closeListeners(user.id); return json(200, { name: targetName, loggedOut: true }); }
       if (!d && req.method === 'DELETE') { // data is end-to-end encrypted: there is no password reset, only removal
-        for (const m of db.prepare("SELECT space_id FROM members WHERE user_id = ? AND role = 'owner'").all(user.id)) dropSpace(m.space_id); // the spaces they own go with them
-        for (const t of ['records', 'shares', 'files', 'sessions', 'members']) db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(user.id);
-        db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+        const owned = db.prepare("SELECT space_id FROM members WHERE user_id = ? AND role = 'owner'").all(user.id);
+        for (const m of owned) dropSpace(m.space_id); // the spaces they own go with them
+        db.exec('BEGIN');
+        try {
+          for (const t of ['records', 'shares', 'files', 'sessions', 'members']) db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(user.id);
+          db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+          db.exec('COMMIT');
+        } catch (e) { try { db.exec('ROLLBACK'); } catch (_) {} throw e; }
         fs.rmSync(path.join(filesDir, String(user.id)), { recursive: true, force: true });
-        for (const r of listeners.get(user.id) || []) r.end();
-        return json(200, { name: c, deleted: true });
+        closeListeners(user.id);
+        return json(200, { name: targetName, deleted: true });
       }
     }
     if (b === 'backup' && req.method === 'POST') {
@@ -285,7 +372,7 @@ export function createServer(opts = {}) {
   }
 
   async function api(req, res, url) {
-    let parts = url.pathname.split('/').slice(2).map(decodeURIComponent); // after /api
+    let parts = url.pathname.split('/').slice(2).map(safeDecode); // after /api
     let [a, b, c] = parts;
     const json = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
     for (const p of parts) if (!SEG.test(p)) throw new HttpError(400, 'Bad path');
@@ -307,7 +394,7 @@ export function createServer(opts = {}) {
         try { q.addUser.run(name, hash, Date.now()); } catch (_) { throw new HttpError(409, 'Username taken'); }
       }
       const user = q.userByName.get(name);
-      if (!user) throw new HttpError(404, 'Unknown user');
+      if (!user) { failed(key); throw new HttpError(404, 'Unknown user'); }
       const ok = crypto.timingSafeEqual(Buffer.from(sha(hash)), Buffer.from(sha(user.auth_hash)));
       if (!ok) { failed(key); throw new HttpError(401, 'Wrong username or password'); }
       fails.delete(key);
@@ -329,18 +416,20 @@ export function createServer(opts = {}) {
       if (!sh) throw new HttpError(404, 'Not found');
       if (!sh.file_id) return json(200, { data: sh.data });
       const file = path.join(filesDir, String(sh.user_id), sh.file_id);
+      if (!fs.existsSync(file)) throw new HttpError(404, 'Not found');
       res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': fs.statSync(file).size });
-      return void fs.createReadStream(file).pipe(res);
+      return void pipeFile(file, res);
     }
 
     if (a === 'admin') return admin(req, json, b, c, parts[3]);
 
     let u = authed(req);
+    const actorId = u.user_id;
 
     if (demoOn && u.name === DEMO.user) { // the demo account is public: no sharing, no public posts, no password change, bounded size
       const off = (a === 'password') || (a === 'feed') || (a === 'sp') || (a === 'keys' && req.method !== 'GET') || (a === 's' && req.method !== 'GET') || (a === 'c' && b === 'posts' && req.method !== 'GET');
-      const full = (a === 'c' && req.method === 'PUT' && db.prepare('SELECT COUNT(*) AS n FROM records WHERE user_id = ?').get(u.user_id).n >= DEMO.maxRecords)
-        || (a === 'files' && req.method === 'POST' && db.prepare('SELECT COUNT(*) AS n FROM files WHERE user_id = ?').get(u.user_id).n >= DEMO.maxFiles);
+      const full = (a === 'c' && req.method === 'PUT' && !q.get.get(u.user_id, b || '', c || '') && q.recordCount.get(u.user_id).n >= DEMO.maxRecords)
+        || (a === 'files' && ((req.method === 'POST' && !b) || b === 'begin') && (q.fileCount.get(u.user_id).n + pendingPartStats(u.user_id).count) >= DEMO.maxFiles);
       if (off || full) throw new HttpError(403, 'Not available in the demo');
     }
 
@@ -377,7 +466,8 @@ export function createServer(opts = {}) {
       if (b === 'join' && c && req.method === 'POST') { // a registered user opens an invite link: the role is the link's, the key came in its #fragment
         const { wrapped } = await readJson(req, 1e4);
         const l = /^[a-f0-9]{32}$/.test(c) && q.link.get(c);
-        if (!l || !wrapOk(wrapped)) throw new HttpError(404, 'This link was revoked or never existed');
+        if (!l) throw new HttpError(404, 'This link was revoked or never existed');
+        if (!wrapOk(wrapped)) throw new HttpError(400, 'Bad key');
         const cur = q.member.get(l.space_id, u.user_id);
         if (cur?.status === 'active') return json(200, { id: l.space_id, role: cur.role });
         if (cur) q.setMember.run(l.role, wrapped, 'active', l.space_id, u.user_id);
@@ -387,7 +477,7 @@ export function createServer(opts = {}) {
       }
       const sid = /^\d+$/.test(b || '') ? Number(b) : 0, me = sid && q.member.get(sid, u.user_id);
       if (!me) throw new HttpError(404, 'Not found');
-      const owner = me.role === 'owner', target = parts[3] && q.userByName.get(parts[3]);
+      const owner = me.role === 'owner', target = parts[3] && q.userByName.get(String(parts[3]).toLowerCase());
       if (c === 'accept' && req.method === 'POST') {
         if (me.status !== 'pending') throw new HttpError(409, 'Nothing to accept');
         q.setMember.run(null, null, 'active', sid, u.user_id);
@@ -397,6 +487,7 @@ export function createServer(opts = {}) {
         const t = q.member.get(sid, target.id);
         if (!t || t.role === 'owner') throw new HttpError(400, 'The owner cannot be removed: delete the space');
         q.delMember.run(sid, target.id);
+        closeListeners(sid, (r) => r._actorId === target.id);
         poke(target.id);
         return json(200, { removed: target.name });
       }
@@ -409,7 +500,7 @@ export function createServer(opts = {}) {
         parts = parts.slice(2); [a, b, c] = parts;
       } else {
         if (!owner) throw new HttpError(403, 'Only the owner can do that');
-        if (!c && req.method === 'DELETE') { for (const m of q.members.all(sid)) poke(q.userByName.get(m.name).id); dropSpace(sid); return json(200, { id: sid, deleted: true }); }
+        if (!c && req.method === 'DELETE') { for (const m of q.memberIds.all(sid)) poke(m.user_id); dropSpace(sid); return json(200, { id: sid, deleted: true }); }
         if (c === 'members' && req.method === 'POST') {
           const { user: raw, role, wrapped } = await readJson(req, 1e4), who = q.userByName.get(String(raw || '').trim().toLowerCase());
           if (!who || who.name.startsWith('~')) throw new HttpError(404, 'Unknown user');
@@ -449,11 +540,23 @@ export function createServer(opts = {}) {
 
     if (a === 'events') { // live updates of the user's own collections (SSE)
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+      res._actorId = actorId;
       res.write(': ok\n\n');
-      if (!listeners.has(u.user_id)) listeners.set(u.user_id, new Set());
-      listeners.get(u.user_id).add(res);
-      const beat = setInterval(() => res.write(': hb\n\n'), 25000);
-      req.on('close', () => { clearInterval(beat); listeners.get(u.user_id)?.delete(res); });
+      let set = listeners.get(u.user_id);
+      if (!set) listeners.set(u.user_id, set = new Set());
+      set.add(res);
+      const cleanup = () => {
+        clearInterval(beat);
+        const s = listeners.get(u.user_id);
+        if (s) { s.delete(res); if (!s.size) listeners.delete(u.user_id); }
+      };
+      const beat = setInterval(() => {
+        if (res.writableEnded || res.destroyed) return cleanup();
+        try { res.write(': hb\n\n'); } catch (_) { cleanup(); }
+      }, 25000);
+      beat.unref();
+      req.on('close', cleanup);
+      res.on('error', cleanup);
       return;
     }
 
@@ -489,6 +592,7 @@ export function createServer(opts = {}) {
       if (throttled(key)) throw new HttpError(429, 'Too many attempts, try again later');
       const user = q.userByName.get(u.name);
       if (!crypto.timingSafeEqual(Buffer.from(sha(sha(auth))), Buffer.from(sha(user.auth_hash)))) { failed(key); throw new HttpError(401, 'Wrong password'); }
+      fails.delete(key);
       if (check) return json(200, { ok: true, check: true }); // dry run: lets the client fail before it re-encrypts anything
       q.setAuth.run(sha(newAuth), user.id);
       q.dropSessions.run(user.id, sha((req.headers.authorization || '').replace(/^Bearer /, '')));
@@ -498,7 +602,7 @@ export function createServer(opts = {}) {
     if (a === 's') {
       if (req.method === 'POST' && !b) { // JSON {data:"e1..."} = text share, raw bytes = file share
         const id = crypto.randomBytes(16).toString('hex');
-        if (String(req.headers['content-type'] || '').startsWith('application/json')) {
+        if (String(req.headers['content-type'] || '').toLowerCase().startsWith('application/json')) {
           const { data } = await readJson(req);
           if (typeof data !== 'string' || !data.startsWith('e1.')) throw new HttpError(400, 'data must be ciphertext');
           q.addShare.run(id, u.user_id, null, data, Date.now());
@@ -521,39 +625,60 @@ export function createServer(opts = {}) {
     // The client cuts the file in encrypted chunks (see orto.js uploadFileChunked), so memory stays small on both sides.
     // finish?replace=<id> swaps the new content into an existing file (used to re-encrypt after a password change).
     if (a === 'files' && b === 'begin' && req.method === 'POST') {
+      if (pendingPartStats(u.user_id).count >= 16) throw new HttpError(429, 'Too many unfinished uploads');
       const id = crypto.randomBytes(12).toString('hex');
       fs.mkdirSync(path.join(filesDir, String(u.user_id)), { recursive: true });
       fs.writeFileSync(path.join(filesDir, String(u.user_id), id + '.part'), '');
       return json(200, { id });
     }
     if (a === 'files' && /^[a-f0-9]{24}$/.test(b || '') && (c === 'append' || c === 'finish') && ((c === 'append' && req.method === 'PUT') || (c === 'finish' && req.method === 'POST'))) {
-      const part = path.join(filesDir, String(u.user_id), b + '.part');
-      if (!fs.existsSync(part)) throw new HttpError(404, 'Not found');
-      const have = fs.statSync(part).size;
-      if (c === 'append') {
-        if (Number(req.headers['x-offset']) !== have) throw new HttpError(409, 'Offset mismatch: ' + have);
+      return await withUploadLock(`${u.user_id}:${b}`, async () => {
+        const part = path.join(filesDir, String(u.user_id), b + '.part');
+        if (!fs.existsSync(part)) throw new HttpError(404, 'Not found');
+        const have = fs.statSync(part).size;
         const limit = demoOn && u.name === DEMO.user ? DEMO.quota : cfg.quota;
+        if (c === 'append') {
+          if (Number(req.headers['x-offset']) !== have) throw new HttpError(409, 'Offset mismatch: ' + have);
+          const cl = Number(req.headers['content-length'] || 0);
+          const replace = url.searchParams.get('replace');
+          const old = replace && /^[a-f0-9]{24}$/.test(replace) ? q.file.get(u.user_id, replace) : null;
+          const usedOther = q.used.get(u.user_id).n + Math.max(0, pendingPartStats(u.user_id).bytes - have) - (old ? old.size : 0);
+          if (have + cl > cfg.maxUpload || usedOther + have + cl > limit) throw new HttpError(413, have + cl > cfg.maxUpload ? 'File too large' : 'Storage quota exceeded');
+          const out = fs.createWriteStream(part, { flags: 'a' });
+          let size = have;
+          try {
+            for await (const chunk of req) {
+              size += chunk.length;
+              if (size > cfg.maxUpload || usedOther + size > limit) throw new HttpError(413, size > cfg.maxUpload ? 'File too large' : 'Storage quota exceeded');
+              if (!out.write(chunk)) await once(out, 'drain');
+            }
+            out.end(); await once(out, 'finish');
+          } catch (e) {
+            out.destroy();
+            await once(out, 'close').catch(() => {});
+            try { fs.truncateSync(part, have); } catch (_) {}
+            throw e;
+          } // back to the last good size: the client can retry the chunk
+          return json(200, { size });
+        }
+        const size = have, replace = url.searchParams.get('replace');
+        if (replace) {
+          const old = /^[a-f0-9]{24}$/.test(replace) && q.file.get(u.user_id, replace);
+          if (!old) throw new HttpError(404, 'Not found');
+          const used = q.used.get(u.user_id).n - old.size;
+          if (used + size > limit) throw new HttpError(413, 'Storage quota exceeded');
+          const dest = path.join(filesDir, String(u.user_id), replace);
+          fs.renameSync(part, dest);
+          q.setFileSize.run(size, u.user_id, replace);
+          return json(200, { id: replace, size });
+        }
         const used = q.used.get(u.user_id).n;
-        const out = fs.createWriteStream(part, { flags: 'a' });
-        let size = have;
-        try {
-          for await (const chunk of req) {
-            size += chunk.length;
-            if (size > cfg.maxUpload || used + size > limit) throw new HttpError(413, size > cfg.maxUpload ? 'File too large' : 'Storage quota exceeded');
-            if (!out.write(chunk)) await once(out, 'drain');
-          }
-          out.end(); await once(out, 'finish');
-        } catch (e) { out.destroy(); fs.truncateSync(part, have); throw e; } // back to the last good size: the client can retry the chunk
-        return json(200, { size });
-      }
-      const size = fs.statSync(part).size, replace = url.searchParams.get('replace');
-      if (replace) {
-        if (!/^[a-f0-9]{24}$/.test(replace) || !q.file.get(u.user_id, replace)) throw new HttpError(404, 'Not found');
-        fs.renameSync(part, path.join(filesDir, String(u.user_id), replace)); q.setFileSize.run(size, u.user_id, replace);
-        return json(200, { id: replace, size });
-      }
-      fs.renameSync(part, path.join(filesDir, String(u.user_id), b)); q.addFile.run(u.user_id, b, size);
-      return json(200, { id: b, size });
+        if (used + size > limit) throw new HttpError(413, 'Storage quota exceeded');
+        const dest = path.join(filesDir, String(u.user_id), b);
+        fs.renameSync(part, dest);
+        try { q.addFile.run(u.user_id, b, size); } catch (e) { fs.rmSync(dest, { force: true }); throw e; }
+        return json(200, { id: b, size });
+      });
     }
 
     if (a === 'files') {
@@ -562,15 +687,16 @@ export function createServer(opts = {}) {
       if (!f) throw new HttpError(404, 'Not found');
       if (req.method === 'GET') { // supports one Range: the browser asks for pieces of media, and encrypted chunks are fetched one by one
         const file = path.join(filesDir, String(u.user_id), b), rg = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+        if (!fs.existsSync(file)) throw new HttpError(404, 'Not found');
         if (rg && (rg[1] || rg[2])) {
           const start = rg[1] === '' ? Math.max(0, f.size - Number(rg[2])) : Number(rg[1]);
           const end = rg[1] === '' || rg[2] === '' ? f.size - 1 : Math.min(Number(rg[2]), f.size - 1);
-          if (!(start <= end && start < f.size)) { res.writeHead(416, { 'Content-Range': 'bytes */' + f.size }); return res.end(); }
+          if (!(start <= end && start < f.size)) { res.writeHead(416, { 'Content-Type': 'application/json', 'Content-Range': 'bytes */' + f.size }); return res.end(); }
           res.writeHead(206, { 'Content-Type': 'application/octet-stream', 'Content-Length': end - start + 1, 'Content-Range': `bytes ${start}-${end}/${f.size}`, 'Accept-Ranges': 'bytes' });
-          return void fs.createReadStream(file, { start, end }).pipe(res);
+          return void pipeFile(file, res, { start, end });
         }
         res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': f.size, 'Accept-Ranges': 'bytes' });
-        return void fs.createReadStream(file).pipe(res);
+        return void pipeFile(file, res);
       }
       if (req.method === 'PUT') return json(200, await saveUpload(u, req, b));
       if (req.method === 'DELETE') {
@@ -584,9 +710,12 @@ export function createServer(opts = {}) {
   // /blog/<name>/feed.xml: RSS 2.0 of the public posts (newest 50). Links point at this server (ORTO_PUBLIC_URL, or the Host the request came with).
   function blogFeed(req, res, name) {
     const user = q.userByName.get(name.toLowerCase());
-    if (!user) throw new HttpError(404, 'Unknown user');
-    const base = (publicUrl || `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers['x-forwarded-host'] || req.headers.host || 'localhost'}`).replace(/\/+$/, '');
-    const posts = q.list.all(user.id, 'posts').map(toRecord).filter((p) => !p.deleted && p.title).sort((a, b) => b.createdAt - a.createdAt).slice(0, 50);
+    if (!user || user.name.startsWith('~')) throw new HttpError(404, 'Unknown user');
+    const rawHost = String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost').replace(/[^\w.:[\]-]/g, '');
+    const rawProto = /^https$/i.test(String(req.headers['x-forwarded-proto'] || '')) ? 'https' : 'http';
+    const base = (publicUrl || `${rawProto}://${rawHost || 'localhost'}`).replace(/\/+$/, '');
+    const safeUtc = (t) => { const d = new Date(t); return Number.isFinite(d.getTime()) ? d.toUTCString() : new Date(0).toUTCString(); };
+    const posts = q.list.all(user.id, 'posts').map(toRecord).filter((p) => !p.deleted && p.title).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 50);
     const home = `${base}/blog/${encodeURIComponent(user.name)}`;
     const para = (t) => String(t || '').split(/\n{2,}/).map((x) => '<p>' + xmlEsc(x.trim()).replace(/\n/g, '<br>') + '</p>').join('');
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -596,20 +725,20 @@ export function createServer(opts = {}) {
 <link>${xmlEsc(home)}</link>
 <description>${xmlEsc('Posts by ' + user.name)}</description>
 <atom:link href="${xmlEsc(home + '/feed.xml')}" rel="self" type="application/rss+xml"/>
-${posts.length ? `<lastBuildDate>${new Date(posts[0].createdAt).toUTCString()}</lastBuildDate>` : ''}
+${posts.length ? `<lastBuildDate>${safeUtc(posts[0].createdAt)}</lastBuildDate>` : ''}
 ${posts.map((p) => {
       const link = `${home}?post=${encodeURIComponent(p.id || p.soul)}`;
-      return `<item><title>${xmlEsc(p.title)}</title><link>${xmlEsc(link)}</link><guid isPermaLink="true">${xmlEsc(link)}</guid><pubDate>${new Date(p.createdAt).toUTCString()}</pubDate><description>${xmlEsc(String(p.content || '').replace(/\s+/g, ' ').slice(0, 300))}</description><content:encoded>${cdata(para(p.content))}</content:encoded></item>`;
+      return `<item><title>${xmlEsc(p.title)}</title><link>${xmlEsc(link)}</link><guid isPermaLink="true">${xmlEsc(link)}</guid><pubDate>${safeUtc(p.createdAt)}</pubDate><description>${xmlEsc(String(p.content || '').replace(/\s+/g, ' ').slice(0, 300))}</description><content:encoded>${cdata(para(p.content))}</content:encoded></item>`;
     }).join('\n')}
 </channel>
 </rss>
 `;
-    res.writeHead(200, { 'Content-Type': 'application/rss+xml; charset=utf-8', 'Cache-Control': 'public, max-age=300' });
+    res.writeHead(200, { 'Content-Type': 'application/rss+xml; charset=utf-8', 'Cache-Control': 'private, max-age=60' });
     res.end(xml);
   }
 
   function serveStatic(req, res, url) {
-    let rel = decodeURIComponent(url.pathname);
+    let rel = safeDecode(url.pathname);
     if (rel.startsWith('/blog/')) rel = '/blog.html';
     else if (rel.startsWith('/s/')) rel = '/share.html';
     else if (rel === '/admin') rel = '/admin.html';
@@ -630,7 +759,7 @@ ${posts.map((p) => {
     // the app embeds /models/gist/host.html in a sandboxed iframe (opaque origin, no keys), so only the app's own pages refuse framing
     if (root === webDir) Object.assign(headers, { 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "frame-ancestors 'none'" });
     res.writeHead(200, headers);
-    fs.createReadStream(file).pipe(res);
+    pipeFile(file, res);
   }
 
   const server = http.createServer(async (req, res) => {
@@ -640,10 +769,11 @@ ${posts.map((p) => {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
     try {
-      const url = new URL(req.url, 'http://x');
+      let url;
+      try { url = new URL(req.url, 'http://x'); } catch (_) { throw new HttpError(400, 'Bad URL'); }
       const feed = /^\/blog\/([^/]+)\/feed\.xml$/.exec(url.pathname);
       if (url.pathname.startsWith('/api/')) await api(req, res, url);
-      else if (feed && req.method === 'GET') blogFeed(req, res, decodeURIComponent(feed[1]));
+      else if (feed && req.method === 'GET') blogFeed(req, res, safeDecode(feed[1]));
       else serveStatic(req, res, url);
     } catch (e) {
       if (!(e instanceof HttpError)) console.error(e);
@@ -658,13 +788,16 @@ ${posts.map((p) => {
   if (demoOn) {
     let busy = null;
     const reset = () => busy ||= (async () => {
+      const addr = server.address();
+      if (!addr) throw new Error('Server is closed');
       const { name, auth } = await deriveKeys(DEMO.user, DEMO.pass);
       let user = q.userByName.get(name);
       if (user && user.auth_hash !== sha(auth)) throw new Error(`a user named "${name}" already exists with another password: not touching it, demo is off`);
       if (!user) { q.addUser.run(name, sha(auth), Date.now()); user = q.userByName.get(name); }
       for (const t of ['records', 'shares', 'files', 'sessions']) db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(user.id);
       fs.rmSync(path.join(filesDir, String(user.id)), { recursive: true, force: true });
-      const os = new Orto({ server: 'http://127.0.0.1:' + server.address().port });
+      const loopHost = net.isIPv6(addr.address) ? (addr.address === '::' ? '127.0.0.1' : `[${addr.address}]`) : (addr.address === '0.0.0.0' ? '127.0.0.1' : addr.address);
+      const os = new Orto({ server: `http://${loopHost}:${addr.port}` });
       try { await os.login(DEMO.user, DEMO.pass); return await seedDemo(os, { hours: demoHours }); } finally { os.close(); }
     })().finally(() => { busy = null; });
     server.resetDemo = reset;
@@ -683,7 +816,7 @@ ${posts.map((p) => {
     const copy = path.join(out, 'orto.db');
     if (fs.existsSync(copy)) throw new Error(copy + ' already exists');
     db.prepare('VACUUM INTO ?').run(copy);
-    fs.cpSync(filesDir, path.join(out, 'files'), { recursive: true, filter: (f) => !f.endsWith('.part') });
+    fs.cpSync(filesDir, path.join(out, 'files'), { recursive: true, filter: (f) => !f.endsWith('.part') && !f.includes('.tmp.') });
     return out;
   };
   // Optional Freenet replication (see freenet-sync.js): SQLite stays the primary store, this only merges rows in and out.

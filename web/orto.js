@@ -28,13 +28,16 @@ const fromB64 = (b) => { const s = atob(b), u = new Uint8Array(s.length); for (l
 /** Compatibility no-op (the old build kept a graph cache on disk). */
 export function flushStorage() {}
 
+const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+const unEnt = (t) => t.replace(/&(?:#(\d+)|#x([0-9a-f]+)|(\w+));/gi, (m, d, h, n) => d ? String.fromCodePoint(+d) : h ? String.fromCodePoint(parseInt(h, 16)) : (ENT[n.toLowerCase()] ?? m));
+
 /**
  * Parse a Netscape bookmarks export (Brave / Chrome / Firefox "Export bookmarks" HTML).
  * Returns [{ url, title, folder, addedAt, tags }]; folder is a "A/B" path, addedAt is ms.
  * Only http(s) URLs are kept (drops javascript:, chrome:, file: ...).
  */
 export function parseBookmarksHtml(html) {
-  const decode = (t) => t.replace(/<[^>]*>/g, '').replace(/&(amp|lt|gt|quot|#39);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" })[e]).trim();
+  const decode = (t) => unEnt(String(t || '').replace(/<[^>]*>/g, '')).trim();
   const out = [];
   const stack = [];
   let pending = null;
@@ -45,12 +48,13 @@ export function parseBookmarksHtml(html) {
       if (m[4]) stack.pop();
       else { stack.push(pending); pending = null; }
     } else {
-      const href = /\bHREF="([^"]*)"/i.exec(m[1]);
-      const url = href && decode(href[1]);
+      const href = /\bHREF\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(m[1]);
+      const url = href && decode(href[1] ?? href[2]);
       if (!url || !/^https?:\/\//i.test(url)) continue;
-      const added = /\bADD_DATE="(\d+)"/i.exec(m[1]);
-      const tags = /\bTAGS="([^"]*)"/i.exec(m[1]);
-      out.push({ url, title: decode(m[2]) || url, folder: stack.filter(Boolean).join('/'), addedAt: added ? Number(added[1]) * 1000 : Date.now(), tags: tags ? decode(tags[1]).split(',').map(t => t.trim()).filter(Boolean) : [] });
+      const added = /\bADD_DATE\s*=\s*(?:"(\d+)"|'(\d+)'|(\d+))/i.exec(m[1]);
+      const tags = /\bTAGS\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(m[1]);
+      const addedSec = added && Number(added[1] ?? added[2] ?? added[3]);
+      out.push({ url, title: decode(m[2]) || url, folder: stack.filter(Boolean).join('/'), addedAt: addedSec ? addedSec * 1000 : Date.now(), tags: tags ? decode(tags[1] ?? tags[2]).split(',').map(t => t.trim()).filter(Boolean) : [] });
     }
   }
   return out;
@@ -83,7 +87,7 @@ export function bookmarksToHtml(bookmarks) {
 /** vCard 3.0 parsing/export for contacts (Google/Apple/Outlook "export contacts"). Returns [{ name, emails, phones, org, notes, tags }]. */
 export function parseVcf(text) {
   const unfold = text.replace(/\r?\n[ \t]/g, '');
-  const un = (v) => v.replace(/\\n/gi, '\n').replace(/\\([,;\\])/g, '$1').trim();
+  const un = (v) => v.replace(/\\n/gi, '\n').replace(/\\([,;\\:])/g, '$1').trim();
   const out = [];
   for (const m of unfold.matchAll(/BEGIN:VCARD([\s\S]*?)END:VCARD/gi)) {
     const c = { name: '', emails: [], phones: [], org: '', notes: '', tags: [] };
@@ -97,7 +101,7 @@ export function parseVcf(text) {
       else if (key === 'NOTE') c.notes = val;
       else if (key === 'CATEGORIES') c.tags = val.split(',').map(t => t.trim()).filter(Boolean);
     }
-    if (c.name || c.emails.length) out.push({ ...c, name: c.name || c.emails[0] });
+    if (c.name || c.emails.length || c.phones.length) out.push({ ...c, name: c.name || c.emails[0] || c.phones[0] });
   }
   return out;
 }
@@ -124,8 +128,6 @@ const LINK_KINDS = ['note', 'bookmark', 'event', 'task'];
 
 // ─── Feeds (RSS 2.0, RSS 1.0 and Atom) ─────────────────────────────────────────────────────────
 // A small tolerant reader, no XML library: fine for the regular shape of feeds. Text fields can hold HTML: sanitize before showing.
-const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
-const unEnt = (t) => t.replace(/&(?:#(\d+)|#x([0-9a-f]+)|(\w+));/gi, (m, d, h, n) => d ? String.fromCodePoint(+d) : h ? String.fromCodePoint(parseInt(h, 16)) : (ENT[n.toLowerCase()] ?? m));
 const xmlText = (t) => /<!\[CDATA\[/.test(t) ? t.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (_, x) => x) : unEnt(t);
 const tagText = (b, tag) => { const m = new RegExp('<' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)</' + tag + '>', 'i').exec(b); return m ? xmlText(m[1]).trim() : ''; };
 const attrs = (tag) => Object.fromEntries([...tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)].map((m) => [m[1].toLowerCase(), unEnt(m[2] ?? m[3])]));
@@ -197,7 +199,8 @@ const checkLinks = (links) => {
 };
 
 /** What contracts/vault accepts (is_valid_key, MAX_RECORD_DATA_BYTES): anything else would make it refuse the whole update. */
-const vaultable = (key, rec) => /^[^\s|]{1,160}$/.test(key) && key.includes(':') && (rec.deleted || (typeof rec.data === 'string' && rec.data.length <= 2 * 1024 * 1024));
+const utf8Len = (s) => new TextEncoder().encode(s).length;
+const vaultable = (key, rec) => /^[^\s|\x00-\x1f\x7f]{1,160}$/.test(key) && key.includes(':') && (rec.deleted || (typeof rec.data === 'string' && utf8Len(rec.data) <= 2 * 1024 * 1024));
 const COLLECTIONS = ['vault', 'calendar', 'tasks', 'bookmarks', 'contacts', 'secrets', 'feeds', 'files', 'shares']; // encrypted ones; `posts` is public
 // Freenet keeps no browser storage between visits, so the vault carries posts too: they are public, stored as plain JSON in `data`
 const VAULT_COLLS = [...COLLECTIONS, 'posts', 'spaces']; // `spaces`: one encrypted record, the list of your Freenet spaces
@@ -310,6 +313,10 @@ export class Orto {
    * Throws an Error with `.status` 404 when the user does not exist yet.
    */
   async login(username, password, { create = false, delegation = null } = {}) {
+    this._closed = false;
+    this._kpc = null;
+    this._vaults = null;
+    this._memFiles?.clear();
     const { name, key, auth, vaultSecret } = await deriveKeys(username, password);
     if (this.mode === 'freenet') {
       const token = 'fn-' + name;
@@ -324,7 +331,17 @@ export class Orto {
   }
 
   /** Stop the live-update stream (call before exiting a long-lived script). */
-  close() { this._closed = true; this._abort?.abort(); }
+  close() {
+    this._closed = true;
+    this._abort?.abort();
+    if (!this._base && this._vaults) {
+      for (const v of this._vaults.values()) {
+        clearTimeout(v.timer);
+        try { v.unsub?.(); } catch (_) {}
+      }
+      this._vaults.clear();
+    }
+  }
 
   // ─── transport ──────────────────────────────────────────────────────
 
@@ -350,7 +367,10 @@ export class Orto {
     if (typeof globalThis.window === 'undefined') return;
     try {
       if (!this._memStore) return;
-      const data = Object.fromEntries(this._memStore);
+      const data = {};
+      for (const [k, v] of this._memStore) {
+        if (!k.startsWith('orto_blob:') && !k.startsWith('orto_freenet_links_')) data[k] = v;
+      }
       globalThis.window.name = JSON.stringify({ __orto__: true, data });
     } catch (_) {}
   }
@@ -402,29 +422,36 @@ export class Orto {
     return Array.from(set).filter(k => k.startsWith(prefix));
   }
 
+  async _withFileDb(mode, fn) {
+    if (typeof globalThis.indexedDB === 'undefined') return null;
+    const db = await new Promise((res) => {
+      const req = indexedDB.open('orto_files_db', 1);
+      req.onupgradeneeded = () => { try { req.result.createObjectStore('files'); } catch (_) {} };
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => res(null);
+      req.onblocked = () => res(null);
+    });
+    if (!db) return null;
+    try {
+      return await new Promise((res) => {
+        const tx = db.transaction('files', mode);
+        let val = null;
+        tx.oncomplete = () => { try { db.close(); } catch (_) {} res(val); };
+        tx.onerror = () => { try { db.close(); } catch (_) {} res(null); };
+        tx.onabort = () => { try { db.close(); } catch (_) {} res(null); };
+        fn(tx.objectStore('files'), (v) => { val = v; });
+      });
+    } catch (_) {
+      try { db.close(); } catch (_) {}
+      return null;
+    }
+  }
+
   async _localStorePutFile(id, bytes) {
     const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     if (!this._memFiles) this._memFiles = new Map();
     this._memFiles.set(id, u8);
-    try {
-      if (typeof globalThis.indexedDB !== 'undefined') {
-        const db = await new Promise((res) => {
-          const req = indexedDB.open('orto_files_db', 1);
-          req.onupgradeneeded = () => { try { req.result.createObjectStore('files'); } catch (_) {} };
-          req.onsuccess = () => res(req.result);
-          req.onerror = () => res(null);
-          req.onblocked = () => res(null);
-        });
-        if (db) {
-          await new Promise((res) => {
-            const tx = db.transaction('files', 'readwrite');
-            tx.objectStore('files').put(u8, id);
-            tx.oncomplete = () => { try { db.close(); } catch (_) {} res(); };
-            tx.onerror = () => { try { db.close(); } catch (_) {} res(); };
-          });
-        }
-      }
-    } catch (_) {}
+    await this._withFileDb('readwrite', (store) => store.put(u8, id));
     if (u8.length <= 4 * 1024 * 1024) {
       try { this._safeStorageSet('orto_blob:' + id, toB64(u8)); } catch (_) {}
     }
@@ -433,30 +460,15 @@ export class Orto {
   async _localStoreGetFile(id) {
     if (!this._memFiles) this._memFiles = new Map();
     if (this._memFiles.has(id)) return this._memFiles.get(id);
-    try {
-      if (typeof globalThis.indexedDB !== 'undefined') {
-        const db = await new Promise((res) => {
-          const req = indexedDB.open('orto_files_db', 1);
-          req.onupgradeneeded = () => { try { req.result.createObjectStore('files'); } catch (_) {} };
-          req.onsuccess = () => res(req.result);
-          req.onerror = () => res(null);
-          req.onblocked = () => res(null);
-        });
-        if (db) {
-          const raw = await new Promise((res) => {
-            const tx = db.transaction('files', 'readonly');
-            const req = tx.objectStore('files').get(id);
-            req.onsuccess = () => { const r = req.result; try { db.close(); } catch (_) {} res(r || null); };
-            req.onerror = () => { try { db.close(); } catch (_) {} res(null); };
-          });
-          if (raw) {
-            const u8 = raw instanceof Uint8Array ? raw : new Uint8Array(raw);
-            this._memFiles.set(id, u8);
-            return u8;
-          }
-        }
-      }
-    } catch (_) {}
+    const raw = await this._withFileDb('readonly', (store, set) => {
+      const req = store.get(id);
+      req.onsuccess = () => set(req.result || null);
+    });
+    if (raw) {
+      const u8 = raw instanceof Uint8Array ? raw : new Uint8Array(raw);
+      this._memFiles.set(id, u8);
+      return u8;
+    }
     try {
       const b64 = this._safeStorageGet('orto_blob:' + id);
       if (b64) {
@@ -471,24 +483,7 @@ export class Orto {
   async _localStoreDeleteFile(id) {
     if (this._memFiles) this._memFiles.delete(id);
     try { this._safeStorageRemove('orto_blob:' + id); } catch (_) {}
-    try {
-      if (typeof globalThis.indexedDB !== 'undefined') {
-        const db = await new Promise((res) => {
-          const req = indexedDB.open('orto_files_db', 1);
-          req.onupgradeneeded = () => req.result.createObjectStore('files');
-          req.onsuccess = () => res(req.result);
-          req.onerror = () => res(null);
-        });
-        if (db) {
-          await new Promise((res) => {
-            const tx = db.transaction('files', 'readwrite');
-            tx.objectStore('files').delete(id);
-            tx.oncomplete = () => res();
-            tx.onerror = () => res();
-          });
-        }
-      }
-    } catch (_) {}
+    await this._withFileDb('readwrite', (store) => store.delete(id));
   }
 
   // ─── Freenet vault: encrypted records replicated through contracts/vault ───
@@ -509,34 +504,44 @@ export class Orto {
     const pub = hex(fromB64u((await crypto.subtle.exportKey('jwk', priv)).x));
     const salt = hex(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(deleg ? 'orto-vault-v1|viso|' + deleg.persona : 'orto-vault-v1|' + secretHex))).slice(0, 16));
     const params = deleg ? deleg.persona + salt + hex(new TextEncoder().encode(deleg.appPath)) : pub + salt; // contracts/vault: persona || salt || app path
-    const v = { FV, params, cert: deleg?.cert ?? null, priv, exists: false, pending: new Map(), timer: null, prefix };
+    const v = { FV, params, cert: deleg?.cert ?? null, priv, exists: false, pending: new Map(), timer: null, prefix, owner: this, syncing: Promise.resolve(), flushing: Promise.resolve(), unsub: null };
     base._vaults.set(prefix, v);
-    await FV.onVaultUpdate(v.params, () => this._vaultSync(v).catch(() => {}));
+    v.unsub = await FV.onVaultUpdate(v.params, () => this._vaultSync(v).catch(() => {}));
     this._vaultSync(v).catch((e) => console.warn('[Freenet] vault sync failed:', e));
   }
 
   /** Pull what other devices wrote (newer wins), then push local records the network lacks or holds older. */
-  async _vaultSync(v) {
-    const net = await v.FV.getVault(v.params);
-    v.exists = net !== null;
-    const remote = net?.records || {};
-    for (const [k, r] of Object.entries(remote)) {
-      const i = k.indexOf(':'), coll = k.slice(0, i), soul = k.slice(i + 1);
-      if (!VAULT_COLLS.includes(coll)) continue;
-      const raw = this._safeStorageGet(v.prefix + k), cur = raw && JSON.parse(raw);
-      if (cur && cur.updatedAt >= r.updated_at) continue;
-      let rec = r.deleted ? { soul, deleted: true, updatedAt: r.updated_at } : { soul, data: r.data, encrypted: true, updatedAt: r.updated_at };
-      if (coll === 'posts' && !r.deleted) try { rec = { ...JSON.parse(r.data), soul, updatedAt: r.updated_at }; } catch (_) { continue; }
-      this._safeStorageSet(v.prefix + k, JSON.stringify(rec));
-      for (const s of this._subs || []) if (s.coll === coll || (coll === 'spaces' && s.coll === '_spaces')) try { s.handle(r.deleted ? { coll, soul, deleted: true } : { coll, record: rec, soul }); } catch (_) {}
-    }
-    for (const k of this._safeStorageKeys(v.prefix)) {
-      const key = k.slice(v.prefix.length), coll = key.slice(0, key.indexOf(':'));
-      if (!VAULT_COLLS.includes(coll)) continue; // keys of shared spaces start with "sp:"
-      const rec = toVault(coll, JSON.parse(this._safeStorageGet(k) || 'null'));
-      if (rec && vaultable(key, rec) && (!remote[key] || rec.updatedAt > remote[key].updated_at)) v.pending.set(key, rec);
-    }
-    await this._vaultFlush(v);
+  _vaultSync(v) {
+    const run = async () => {
+      const net = await v.FV.getVault(v.params);
+      v.exists = net !== null;
+      const remote = net?.records || {};
+      const subs = v.owner?._subs || this._subs || [];
+      for (const [k, r] of Object.entries(remote)) {
+        const i = k.indexOf(':');
+        if (i <= 0) continue;
+        const coll = k.slice(0, i), soul = k.slice(i + 1);
+        if (!VAULT_COLLS.includes(coll)) continue;
+        const raw = this._safeStorageGet(v.prefix + k);
+        let cur = null;
+        if (raw) { try { cur = JSON.parse(raw); } catch (_) {} }
+        if (cur && cur.updatedAt >= r.updated_at) continue;
+        let rec = r.deleted ? { soul, deleted: true, updatedAt: r.updated_at } : { soul, data: r.data, encrypted: true, updatedAt: r.updated_at };
+        if (coll === 'posts' && !r.deleted) try { rec = { ...JSON.parse(r.data), soul, updatedAt: r.updated_at }; } catch (_) { continue; }
+        this._safeStorageSet(v.prefix + k, JSON.stringify(rec));
+        for (const s of subs) if (s.coll === coll || (coll === 'spaces' && s.coll === '_spaces')) try { s.handle(r.deleted ? { coll, soul, deleted: true } : { coll, record: rec, soul }); } catch (_) {}
+      }
+      for (const k of this._safeStorageKeys(v.prefix)) {
+        const key = k.slice(v.prefix.length), i = key.indexOf(':'), coll = i > 0 ? key.slice(0, i) : '';
+        if (!VAULT_COLLS.includes(coll)) continue; // keys of shared spaces start with "sp:"
+        let parsed = null;
+        try { parsed = JSON.parse(this._safeStorageGet(k) || 'null'); } catch (_) {}
+        const rec = toVault(coll, parsed);
+        if (rec && vaultable(key, rec) && (!remote[key] || rec.updatedAt > remote[key].updated_at)) v.pending.set(key, rec);
+      }
+      await this._vaultFlush(v);
+    };
+    return (v.syncing = v.syncing.then(run, run));
   }
 
   _vaultQueue(coll, soul, rec) {
@@ -548,23 +553,26 @@ export class Orto {
     v.timer = setTimeout(() => this._vaultFlush(v).catch(() => {}), 300); // one update for a burst of edits
   }
 
-  async _vaultFlush(v) {
-    if (!v.pending.size) return;
-    const batch = new Map(v.pending), records = {};
-    for (const [key, rec] of batch) {
-      const r = { data: rec.deleted ? '' : rec.data, updated_at: Math.floor(rec.updatedAt), deleted: !!rec.deleted };
-      const msg = `orto1|${v.params}|${key}|${r.updated_at}|${r.deleted}|${r.data}`; // must match contracts/vault record_msg
-      records[key] = { ...r, sig: hex(new Uint8Array(await crypto.subtle.sign('Ed25519', v.priv, new TextEncoder().encode(msg)))), cert: v.cert };
-    }
-    try {
-      await v.FV.pushVault(v.params, { records, updated_at: Math.max(...Object.values(records).map((r) => r.updated_at)) }, v.exists);
-      v.exists = true;
-      for (const [key, rec] of batch) if (v.pending.get(key) === rec) v.pending.delete(key);
-    } catch (e) {
-      console.warn('[Freenet] vault push failed, retrying:', e);
-      clearTimeout(v.timer);
-      v.timer = setTimeout(() => this._vaultFlush(v).catch(() => {}), 10000);
-    }
+  _vaultFlush(v) {
+    const run = async () => {
+      if (!v.pending.size || this._closed) return;
+      const batch = new Map(v.pending), records = {};
+      for (const [key, rec] of batch) {
+        const r = { data: rec.deleted ? '' : rec.data, updated_at: Math.floor(rec.updatedAt), deleted: !!rec.deleted };
+        const msg = `orto1|${v.params}|${key}|${r.updated_at}|${r.deleted}|${r.data}`; // must match contracts/vault record_msg
+        records[key] = { ...r, sig: hex(new Uint8Array(await crypto.subtle.sign('Ed25519', v.priv, new TextEncoder().encode(msg)))), cert: v.cert };
+      }
+      try {
+        await v.FV.pushVault(v.params, { records, updated_at: Math.max(...Object.values(records).map((r) => r.updated_at)) }, v.exists);
+        v.exists = true;
+        for (const [key, rec] of batch) if (v.pending.get(key) === rec) v.pending.delete(key);
+      } catch (e) {
+        console.warn('[Freenet] vault push failed, retrying:', e);
+        clearTimeout(v.timer);
+        if (!this._closed) v.timer = setTimeout(() => this._vaultFlush(v).catch(() => {}), 10000);
+      }
+    };
+    return (v.flushing = v.flushing.then(run, run));
   }
 
   async _localStore(method, path, body, headers) {
@@ -696,10 +704,14 @@ export class Orto {
         }
         const rangeHeader = headers?.['Range'] || headers?.['range'] || (typeof headers?.get === 'function' ? headers.get('range') : null);
         if (rangeHeader) {
-          const rm = rangeHeader.match(/bytes=(\d+)-(\d*)/);
-          if (rm) {
-            const start = parseInt(rm[1], 10);
-            const end = rm[2] ? parseInt(rm[2], 10) : bytes.length - 1;
+          const rm = rangeHeader.match(/bytes=(\d*)-(\d*)/);
+          if (rm && (rm[1] || rm[2])) {
+            let start = rm[1] ? parseInt(rm[1], 10) : Math.max(0, bytes.length - parseInt(rm[2], 10));
+            let end = rm[1] ? (rm[2] ? parseInt(rm[2], 10) : bytes.length - 1) : bytes.length - 1;
+            if (bytes.length === 0 || start >= bytes.length || start > end) {
+              const err = new Error('Range not satisfiable'); err.status = 416; throw err;
+            }
+            end = Math.min(end, bytes.length - 1);
             const slice = bytes.subarray(start, end + 1);
             return {
               ok: true,
@@ -880,13 +892,13 @@ export class Orto {
 
   /** Decrypted notes (trashed ones skipped by default), pinned first then newest. `timeoutMs` kept for API compatibility. */
   async readVaultNotes({ includeTrash = false } = {}) {
-    const notes = (await this._readAll('vault')).filter(n => (includeTrash || !n.trash) && n.title);
+    const notes = (await this._readAll('vault')).filter(n => (includeTrash || !n.trash) && n.title !== undefined);
     return notes.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.timestamp - a.timestamp);
   }
 
   async getVaultNote(soul, { includeTrash = false } = {}) {
     const n = await this._get('vault', soul);
-    return n && (includeTrash || !n.trash) && n.title ? n : null;
+    return n && (includeTrash || !n.trash) && n.title !== undefined ? n : null;
   }
 
   deleteVaultNote(soul) { return this._del('vault', soul); }
@@ -1168,30 +1180,29 @@ export class Orto {
       const allShardsList = fec?.enabled ? [...freenetChunks, ...(parityChunks ?? [])] : freenetChunks;
 
       const out = new Uint8Array(end - start);
-      for (let i = first; i <= last; i++) {
+      const indices = Array.from({ length: last - first + 1 }, (_, k) => first + k);
+      const plains = new Array(indices.length);
+      await chunked(indices, async (i) => {
         let plain = null;
         try {
-          const addr = freenetChunks[i];
-          const encryptedChunk = await fnChunks.getChunk(addr);
+          const encryptedChunk = await fnChunks.getChunk(freenetChunks[i]);
           plain = await openChunk(this.key, encryptedChunk, nonceBytes, i, totalShards);
         } catch (fetchErr) {
           if (fec?.enabled && fecEngine?.regenerateShard) {
             const available = [];
-            for (let sIdx = 0; sIdx < allShardsList.length; sIdx++) {
-              if (sIdx === i) continue;
+            const candidates = allShardsList.map((_, sIdx) => sIdx).filter((sIdx) => sIdx !== i);
+            await chunked(candidates, async (sIdx) => {
+              if (available.length >= fec.k) return;
               try {
                 const sEnc = await fnChunks.getChunk(allShardsList[sIdx]);
                 const sPlain = await openChunk(this.key, sEnc, nonceBytes, sIdx, totalShards);
-                available.push({ index: sIdx, data: sPlain });
-                if (available.length >= fec.k) break;
+                if (available.length < fec.k) available.push({ index: sIdx, data: sPlain });
               } catch (_) {}
-            }
+            }, 4);
             if (available.length < fec.k) {
               throw new Error(`Orto FEC: unable to reconstruct missing chunk ${i} (${available.length}/${fec.k} available)`);
             }
-            const recovered = fecEngine.regenerateShard(available, i, fec);
-            plain = recovered;
-
+            plain = fecEngine.regenerateShard(available.slice(0, fec.k), i, fec);
             try {
               const healedBody = await sealChunk(this.key, plain, nonceBytes, i, totalShards);
               fnChunks.putChunk(healedBody).catch(() => {});
@@ -1200,7 +1211,10 @@ export class Orto {
             throw fetchErr;
           }
         }
-
+        plains[i - first] = plain;
+      }, 4);
+      for (let i = first; i <= last; i++) {
+        const plain = plains[i - first];
         const a = Math.max(start, i * effectiveChunkSize), b = Math.min(end, i * effectiveChunkSize + plain.length);
         out.set(plain.subarray(a - i * effectiveChunkSize, b - i * effectiveChunkSize), a - start);
       }
@@ -1270,7 +1284,7 @@ export class Orto {
 
   async deleteFile(id) {
     this._needKey();
-    await this._json('DELETE', '/files/' + encodeURIComponent(id));
+    await this._json('DELETE', '/files/' + encodeURIComponent(id)).catch((e) => { if (e.status !== 404) throw e; });
     return this._del('files', id);
   }
 
@@ -1299,7 +1313,7 @@ export class Orto {
 
   /** Public read-only link to one note. */
   async shareNote(soul) {
-    const n = await this._get('vault', soul);
+    const n = await this.getVaultNote(soul);
     if (!n) throw new Error('Note not found: ' + soul);
     return this._share('note', soul, n.title, { kind: 'note', title: n.title, body: n.body, cat: n.cat });
   }
@@ -1702,7 +1716,8 @@ export class Orto {
     // 3. Fallback: legacy server link
     const [token, payload] = hash.split('.');
     let p; try { p = JSON.parse(new TextDecoder().decode(fromB64u(payload))); } catch (_) {}
-    if (base.mode === 'freenet' && p?.k) {
+    if (!token || !p?.k) throw new Error('Invalid invite link');
+    if (base.mode === 'freenet') {
       const spaceId = 'sp_' + Date.now().toString(36);
       let list = [];
       list = await base._fnSpaces();
@@ -1710,7 +1725,7 @@ export class Orto {
       await base._fnSaveSpaces(list);
       return base.openSpace(spaceId);
     }
-    const { id } = await base._json('POST', '/sp/join/' + token, { wrapped: await wrapFor(kp.pub, { name: String(p?.n || 'Shared space'), key: p.k }) });
+    const { id } = await base._json('POST', '/sp/join/' + encodeURIComponent(token), { wrapped: await wrapFor(kp.pub, { name: String(p?.n || 'Shared space'), key: p.k }) });
     return base.openSpace(id);
   }
 
@@ -1761,6 +1776,7 @@ export class Orto {
    */
   async changePassword(newPassword) {
     this._needKey();
+    if (this.mode === 'freenet') throw new Error('Password change is not supported in Freenet mode (password derives vault identity)');
     if (this._space) throw new Error('Change the password on your own account, not on a space');
     const next = await deriveKeys(this.username, newPassword);
     await this._json('POST', '/password', { auth: this._auth, newAuth: next.auth, check: true }); // fail now (wrong session, demo account...) rather than after re-encrypting
@@ -1792,12 +1808,17 @@ export class Orto {
     for (const coll of COLLECTIONS.filter(c => c !== 'files' && c !== 'shares')) {
       await chunked(data.collections?.[coll] || [], async ({ soul, updatedAt, ...rest }) => { await this.put(coll, soul, rest); done.records++; });
     }
-    await chunked(data.posts || [], async ({ soul, updatedAt, ...rest }) => { await this._json('PUT', `/c/posts/${encodeURIComponent(soul)}`, rest); done.posts++; });
+    if (!this._space) {
+      await chunked(data.posts || [], async ({ soul, updatedAt, ...rest }) => { await this._json('PUT', `/c/posts/${encodeURIComponent(soul)}`, rest); done.posts++; });
+    }
     const sig = (f) => `${f.name}|${f.size}|${f.addedAt}`; // new ids are assigned on upload, so match files by content metadata
     const have = new Set((await this.listFiles()).map(sig));
     for (const f of data.collections?.files || []) {
       if (!f.id || have.has(sig(f)) || !data.files?.[f.id]) continue;
-      await this.uploadFile(fromB64(data.files[f.id]), f.name, { encrypt: f.encrypted !== false, type: f.type, thumb: f.thumb, addedAt: f.addedAt, folder: f.folder, album: f.album, playlist: f.playlist });
+      const bytes = fromB64(data.files[f.id]);
+      const opts = { encrypt: f.encrypted !== false, type: f.type, thumb: f.thumb, addedAt: f.addedAt, folder: f.folder, album: f.album, playlist: f.playlist };
+      if (f.chunked) await this.uploadFileChunked(bytes, f.name, opts);
+      else await this.uploadFile(bytes, f.name, opts);
       done.files++;
     }
     const groups = (data.collections?.files || []).find((r) => r.soul === '_groups'); // empty folders and albums
@@ -1950,7 +1971,7 @@ export class Orto {
   }
   async readFeeds() { return (await this._readAll('feeds')).filter((f) => f.url).sort((a, b) => (a.folder || '').localeCompare(b.folder || '') || (a.title || a.url).localeCompare(b.title || b.url)); }
   /** Everything up to `readAt` (default now) counts as read in the unread badge. */
-  async markFeedRead(soul, readAt = Date.now()) { const f = await this._get('feeds', soul); if (!f) throw new Error('Unknown feed.'); return this.put('feeds', soul, { ...f, readAt }); }
+  async markFeedRead(soul, readAt = Date.now()) { const f = await this._get('feeds', soul); if (!f) throw new Error('Unknown feed.'); const { soul: _s, updatedAt, ...rec } = f; return this.put('feeds', soul, { ...rec, readAt }); }
   /** Rename a feed or move it to another folder ('' = no folder). */
   async updateFeed(soul, { title, folder } = {}) {
     const f = await this._get('feeds', soul);
@@ -2012,7 +2033,9 @@ export class Orto {
   async updateTask(soul, patch) {
     const cur = await this.getTask(soul, { includeTrash: true });
     if (!cur) throw new Error('Task not found: ' + soul);
-    return this.writeTask({ ...cur, ...patch, soul });
+    const next = { ...cur, ...patch, soul };
+    if (patch?.status && patch.status !== 'done' && patch.completedAt === undefined) next.completedAt = null;
+    return this.writeTask(next);
   }
 
   async trashTask(soul) {

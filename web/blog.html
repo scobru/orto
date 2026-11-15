@@ -52,7 +52,8 @@
       const d = document.createElement('small'); d.textContent = p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '';
       const body = document.createElement('div');
       body.style.marginTop = '1rem';
-      body.innerHTML = window.DOMPurify && window.marked ? DOMPurify.sanitize(marked.parse(p.content || '')) : (p.content || '');
+      if (window.DOMPurify && window.marked) body.innerHTML = DOMPurify.sanitize(marked.parse(p.content || ''));
+      else body.textContent = p.content || '';
       el.append(h, d, body);
       root.append(el);
     } catch (e) {
@@ -61,7 +62,8 @@
   } else {
     // /blog/<username> or ?user=<name>: index of public posts; ?post=<id>: one post
     const params = new URLSearchParams(location.search);
-    const name = decodeURIComponent(params.get('user') || location.pathname.split('/')[2] || '');
+    let name = '';
+    try { name = decodeURIComponent(params.get('user') || location.pathname.split('/')[2] || ''); } catch (_) {}
     const only = params.get('post');
     if (name) {
       document.getElementById('who').textContent = name;
@@ -71,7 +73,8 @@
       document.getElementById('feed').title = name;
       document.getElementById('who').href = '/blog/' + encodeURIComponent(name);
     }
-    const link = (p) => '?post=' + encodeURIComponent(p.id || p.soul);
+    const userQ = params.get('user') ? 'user=' + encodeURIComponent(params.get('user')) + '&' : '';
+    const link = (p) => '?' + userQ + 'post=' + encodeURIComponent(p.id || p.soul);
     const a = (href, text) => { const el = document.createElement('a'); el.href = href; el.textContent = text; return el; };
     const date = (p) => { const d = document.createElement('small'); d.textContent = new Date(p.createdAt).toLocaleDateString(); return d; };
     fetch('/api/u/' + encodeURIComponent(name) + '/posts').then(r => r.ok ? r.json() : Promise.reject()).then(list => {
@@ -94,7 +97,9 @@
       document.title = (p.title || 'Untitled') + ' · ' + name;
       const el = document.createElement('article');
       const h = document.createElement('h2'); h.textContent = p.title || 'Untitled';
-      const body = document.createElement('div'); body.innerHTML = DOMPurify.sanitize(marked.parse(p.content || ''));
+      const body = document.createElement('div');
+      if (window.DOMPurify && window.marked) body.innerHTML = DOMPurify.sanitize(marked.parse(p.content || ''));
+      else body.textContent = p.content || '';
       el.append(h, date(p), body);
       const nav = document.createElement('nav');
       nav.append(posts[i - 1] ? a(link(posts[i - 1]), '← ' + (posts[i - 1].title || 'Newer')) : document.createElement('span'),

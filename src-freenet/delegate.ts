@@ -18,6 +18,7 @@ let key: Promise<DelegateKeyT> | undefined;
 function api(): Promise<FreenetWsApi> {
   return (apiP ??= new Promise((resolve, reject) => {
     const loc = globalThis.location;
+    if (!loc) return reject(new Error("Freenet delegate requires a browser location"));
     const onNode = loc.port === "7509" || loc.pathname.includes("/v1/contract/");
     const url = new URL(`${loc.protocol === "https:" ? "wss" : "ws"}://${onNode ? loc.host : "127.0.0.1:7509"}/v1/contract/command`);
     const a: FreenetWsApi = new FreenetWsApi(url, {
@@ -36,15 +37,17 @@ function api(): Promise<FreenetWsApi> {
 
 function send(req: DelegateRequest): Promise<DelegateResponse> {
   const run = async () => {
+    const client = await api() as unknown as { sendRequest(r: ClientRequestT): void };
+    let t: ReturnType<typeof setTimeout>;
     const reply = new Promise<DelegateResponse>((resolve, reject) => {
       const w = { resolve, reject };
       waiters.push(w);
-      setTimeout(() => {
+      t = setTimeout(() => {
         const i = waiters.indexOf(w);
         if (i >= 0) { waiters.splice(i, 1); reject(new Error("delegate timeout")); }
       }, TIMEOUT_MS);
-    });
-    (await api() as unknown as { sendRequest(r: ClientRequestT): void }).sendRequest(new ClientRequestT(ClientRequestType.DelegateRequest, req));
+    }).finally(() => clearTimeout(t));
+    client.sendRequest(new ClientRequestT(ClientRequestType.DelegateRequest, req));
     return reply;
   };
   const p = chain.then(run);

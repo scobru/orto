@@ -245,9 +245,10 @@ await os.writeVaultNote({ title: 'Hi', body: 'Encrypted.' });</pre>
 <script>
 // copy button on every code block
 document.querySelectorAll('pre').forEach((pre) => {
+  const code = pre.innerText.trim();
   const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Copy';
   b.onclick = async () => {
-    try { await navigator.clipboard.writeText(pre.innerText.replace(/Copy$/, '').trim()); b.textContent = 'Copied'; } catch (_) { b.textContent = 'Press Ctrl+C'; }
+    try { await navigator.clipboard.writeText(code); b.textContent = 'Copied'; } catch (_) { b.textContent = 'Press Ctrl+C'; }
     setTimeout(() => (b.textContent = 'Copy'), 1500);
   };
   pre.appendChild(b);

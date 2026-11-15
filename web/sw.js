@@ -44,19 +44,25 @@ async function serveMedia(e) {
   }
   if (size === 0) return new Response(new Uint8Array(0), { status: 200, headers: { 'Content-Type': meta.type || 'application/octet-stream', 'Content-Length': '0' } });
   let i = Math.floor(start / P); const last = Math.floor(end / P);
+  const ac = new AbortController();
+  e.request.signal?.addEventListener('abort', () => ac.abort(), { once: true });
   const body = new ReadableStream({
     async pull(ctrl) {
       if (i > last) return ctrl.close();
       try {
         const from = i * (P + GCM);
-        const r = await fetch(m.base + '/api' + (m.pre || '') + '/files/' + encodeURIComponent(id), { headers: { Authorization: 'Bearer ' + m.token, Range: `bytes=${from}-${from + chunkLen(meta, i) - 1}` } });
+        const r = await fetch(m.base + '/api' + (m.pre || '') + '/files/' + encodeURIComponent(id), {
+          signal: ac.signal,
+          headers: { Authorization: 'Bearer ' + m.token, Range: `bytes=${from}-${from + chunkLen(meta, i) - 1}` }
+        });
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const enc = new Uint8Array(await r.arrayBuffer());
         const plain = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: enc.subarray(0, 12), additionalData: aad(nonce, i, n) }, m.key, enc.subarray(12)));
         ctrl.enqueue(plain.subarray(Math.max(start, i * P) - i * P, Math.min(end + 1, i * P + plain.length) - i * P));
         i++;
       } catch (err) { ctrl.error(err); }
-    }
+    },
+    cancel() { ac.abort(); }
   });
   return new Response(body, { status, headers: { 'Content-Type': meta.type || 'application/octet-stream', 'Content-Length': String(end - start + 1), 'Accept-Ranges': 'bytes', ...(status === 206 && { 'Content-Range': `bytes ${start}-${end}/${size}` }) } });
 }
@@ -65,8 +71,10 @@ self.addEventListener('fetch', (e) => {
   const u = new URL(e.request.url);
   if (e.request.method === 'GET' && u.origin === location.origin && u.pathname.includes('/__media/')) return e.respondWith(serveMedia(e));
   if (e.request.method !== 'GET' || u.origin !== location.origin || u.pathname.includes('/api/')) return;
-  e.respondWith(fetch(e.request).then((r) => {
-    if (r.ok) { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); }
+  const cacheable = !/^\/(?:admin|s\/|blog\/)/.test(u.pathname);
+  e.respondWith(fetch(e.request).then(async (r) => {
+    if (r.status === 200 && cacheable) { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); }
+    if (r.status >= 500) { const hit = await caches.match(e.request); if (hit) return hit; }
     return r;
   }).catch(() => caches.match(e.request)));
 });

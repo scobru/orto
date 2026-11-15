@@ -73,24 +73,27 @@ export function loadClassifier({ base = '', onProgress } = {}) {
     frame.src = resolveUrl(base, '/models/gist/host.html');
     const pending = new Map(); let seq = 0, ready;
     const isReady = new Promise((res) => { ready = res; });
-    addEventListener('message', (e) => {
+    const onMsg = (e) => {
       if (e.source !== frame.contentWindow) return;
       const m = e.data || {};
       if (m.event === 'ready') ready();
-      else if (m.event === 'progress') {
-        onProgress?.(m.p);
-        activeOnProgress?.(m.p);
-      }
+      else if (m.event === 'progress') activeOnProgress?.(m.p);
       else if (m.event === 'error') { for (const p of pending.values()) p.rej(new Error(m.error)); pending.clear(); }
       else if (pending.has(m.id)) { const p = pending.get(m.id); pending.delete(m.id); m.ok ? p.res(m) : p.rej(new Error(m.error || 'failed')); }
-    });
+    };
+    addEventListener('message', onMsg);
     document.body.appendChild(frame);
     const call = async (op, extra) => {
       await isReady;
-      return new Promise((res, rej) => { const id = ++seq; pending.set(id, { res, rej }); frame.contentWindow.postMessage({ id, op, ...extra }, '*'); });
+      return new Promise((res, rej) => {
+        const id = ++seq;
+        const t = setTimeout(() => { if (pending.delete(id)) rej(new Error('Model call timed out')); }, 60000);
+        pending.set(id, { res: (v) => { clearTimeout(t); res(v); }, rej: (e) => { clearTimeout(t); rej(e); } });
+        frame.contentWindow.postMessage({ id, op, ...extra }, '*');
+      });
     };
     try { await Promise.race([isReady, new Promise((_, rej) => setTimeout(() => rej(new Error('The tagging page did not start')), 15000))]); }
-    catch (err) { frame.remove(); throw err; }
+    catch (err) { removeEventListener('message', onMsg); frame.remove(); throw err; }
     const loaded = {};
     const use = async (op, extra) => {
       try { await (loaded[op] ||= call(op)); return await call(op === 'load' ? 'classify' : 'emoji', extra); }
@@ -99,7 +102,7 @@ export function loadClassifier({ base = '', onProgress } = {}) {
         throw new Error(/download|fetch/i.test(err.message) ? 'Could not download the model from huggingface.co. Check the connection and try again.' : String(err.message).split('\n')[0].slice(0, 160));
       }
     };
-    return (current = {
+    return (current ??= {
       classify: async (text, topK = 4) => (await use('load', { text, topK })).topics,
       emoji: async (text, limit = 5) => (await use('loadEmo', { text, topK: limit })).emoji,
       preload: async () => {

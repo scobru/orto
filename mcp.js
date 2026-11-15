@@ -20,7 +20,12 @@ const orto = () => session ||= (async () => {
   return env('SPACE') ? os.openSpace(env('SPACE')) : os;
 })().catch((e) => { session = null; throw e; });
 
-const cut = (s, n) => (String(s || '').length > n ? String(s).slice(0, n) + '…' : String(s || ''));
+const cut = (s, n) => {
+  const v = String(s || '');
+  if (v.length <= n) return v;
+  const end = (v.charCodeAt(n - 1) & 0xFC00) === 0xD800 ? n - 1 : n;
+  return v.slice(0, end) + '…';
+};
 const text = (h) => String(h || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 const lim = (a, n = 50) => (a.limit > 0 ? Math.min(a.limit, 500) : n);
 const str = (d) => ({ type: 'string', description: d });
@@ -42,7 +47,7 @@ const TOOLS = [
   ['task_list', 'List Kanban tasks, open ones first.', { status: str('todo | doing | done (or a custom column)'), priority: str('low | medium | high | urgent'), tag: str('tag'), query: str('text in title, description or assignee') }, [], 'read', (os, a) => os.readTasks(a)],
   ['task_write', 'Create a task.', { title: str('title'), status: str('todo (default) | doing | done'), priority: str('low | medium (default) | high | urgent'), desc: str('description'), dueDate: when('due date'), tags: arr('tags'), assignee: str('who') }, ['title'], 'write', (os, a) => os.writeTask(a)],
   ['task_update', 'Change fields of an existing task (only the fields you send).', { soul: str('task id from task_list'), title: str('title'), status: str('todo | doing | done'), priority: str('priority'), desc: str('description'), dueDate: when('due date'), tags: arr('tags'), assignee: str('who') }, ['soul'], 'write',
-    (os, { soul, ...patch }) => os.updateTask(soul, patch)],
+    (os, { soul, ...patch }) => os.updateTask(soul, pick(patch, ['title', 'status', 'priority', 'desc', 'dueDate', 'tags', 'assignee']))],
   ['bookmark_list', 'List bookmarks (newest first).', { folder: str('folder path, includes subfolders'), query: str('text in title, url, folder or tags'), limit: num('default 50') }, [], 'read',
     async (os, a) => (await os.readBookmarks({ folder: a.folder, query: a.query })).slice(0, lim(a))],
   ['bookmark_add', 'Save a bookmark (the same URL is never stored twice).', { url: str('http(s) URL'), title: str('title'), folder: str('folder path like Dev/Tools'), tags: arr('tags') }, ['url'], 'write', (os, a) => os.writeBookmark(a)],
@@ -151,15 +156,26 @@ const list = tools.map(([name, description, properties, required, kind]) => ({
 async function call(name, args) {
   const t = tools.find((x) => x[0] === name);
   if (!t) throw new Error('Unknown tool: ' + name);
-  const out = await t[5](await orto(), args || {});
+  let out;
+  try {
+    out = await t[5](await orto(), args || {});
+  } catch (e) {
+    if (e?.status === 401) session = null;
+    throw e;
+  }
   const s = typeof out === 'string' ? out : JSON.stringify(out === undefined ? { ok: true } : out, null, 1);
-  return s.length > 100000 ? s.slice(0, 100000) + '\n… (cut: ask for fewer items with limit or query)' : s;
+  if (s.length <= 100000) return s;
+  const end = (s.charCodeAt(100000 - 1) & 0xFC00) === 0xD800 ? 99999 : 100000;
+  return s.slice(0, end) + '\n… (cut: ask for fewer items with limit or query)';
 }
 
 const VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\n');
 
 async function handle(msg) {
+  if (!msg || typeof msg !== 'object' || Array.isArray(msg)) {
+    return send({ id: null, error: { code: -32600, message: 'Invalid Request' } });
+  }
   const { id, method, params } = msg;
   if (id === undefined) return; // notifications (initialized, cancelled): nothing to answer
   try {
@@ -174,8 +190,14 @@ async function handle(msg) {
   } catch (e) { send({ id, error: { code: -32603, message: String(e.message || e) } }); }
 }
 
+const pending = new Set();
 readline.createInterface({ input: process.stdin }).on('line', (line) => {
   if (!line.trim()) return;
   let msg; try { msg = JSON.parse(line); } catch (_) { return send({ id: null, error: { code: -32700, message: 'Parse error' } }); }
-  handle(msg);
-}).on('close', () => { session?.then((os) => os.close(), () => { }); setTimeout(() => process.exit(0), 50); });
+  const p = handle(msg).finally(() => pending.delete(p));
+  pending.add(p);
+}).on('close', async () => {
+  await Promise.allSettled([...pending]);
+  await session?.then((os) => os.close(), () => { });
+  process.exit(0);
+});

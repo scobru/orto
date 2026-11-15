@@ -23,19 +23,24 @@ const hexBytes = (h: string) => Uint8Array.from(h.match(/../g) ?? [], (b) => par
 /** Contract key of a persona's feed: the same parameters Radica uses (owner key || its app path). */
 export function feedKey(ownerHex: string): ContractKey {
   const hash = hexBytes(FEED_CODE_HASH);
-  const params = new Uint8Array([...hexBytes(ownerHex), ...new TextEncoder().encode(RADICA_PATH)]);
-  return new ContractKey(blake3(new Uint8Array([...hash, ...params])), hash);
+  const owner = hexBytes(ownerHex), app = new TextEncoder().encode(RADICA_PATH);
+  const pre = new Uint8Array(hash.length + owner.length + app.length);
+  pre.set(hash, 0);
+  pre.set(owner, hash.length);
+  pre.set(app, hash.length + owner.length);
+  return new ContractKey(blake3(pre), hash);
 }
 
 /** A persona's feed, or null when it was never published. */
 export async function getFeed(ownerHex: string): Promise<RadicaFeed | null> {
   if (!/^[0-9a-f]{64}$/.test(ownerHex)) throw new Error("not a Radica key");
   const client = await api();
+  let t: ReturnType<typeof setTimeout>;
   try {
     const r = await Promise.race([
       client.get(new GetRequest(feedKey(ownerHex), false, false)),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("Freenet request timeout")), TIMEOUT_MS)),
-    ]);
+      new Promise<never>((_, rej) => { t = setTimeout(() => rej(new Error("Freenet request timeout")), TIMEOUT_MS); }),
+    ]).finally(() => clearTimeout(t));
     return r.state.length ? JSON.parse(new TextDecoder().decode(Uint8Array.from(r.state))) : null;
   } catch (e) {
     if (/not found/i.test(String(e))) return null;

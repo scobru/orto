@@ -53,7 +53,9 @@ export function api(): Promise<FreenetWsApi> {
         reject(new Error("Freenet WebSocket closed"));
       },
     };
-    const a = new FreenetWsApi(url, h, "");
+    const loc = typeof globalThis.location !== "undefined" ? globalThis.location : null;
+    const token = loc ? (new URLSearchParams(loc.search).get("authToken") ?? "") : "";
+    const a = new FreenetWsApi(url, h, token);
   }));
 }
 
@@ -86,16 +88,19 @@ const serial = <T>(f: () => Promise<T>): Promise<T> => {
   return p;
 };
 
-const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
-  Promise.race([
+const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> => {
+  let t: ReturnType<typeof setTimeout>;
+  return Promise.race([
     p,
-    new Promise<never>((_, rej) => setTimeout(() => rej(new Error("Freenet request timeout")), ms)),
-  ]);
+    new Promise<never>((_, rej) => { t = setTimeout(() => rej(new Error("Freenet request timeout")), ms); }),
+  ]).finally(() => clearTimeout(t));
+};
 
 // ---------------------------------------------------------------- WASM Code & Keys
-let wasmCache: Promise<{ code: Uint8Array; codeHash: Uint8Array }> | undefined;
+type WasmCode = { code: Uint8Array; codeHash: Uint8Array; codeArr: number[]; hashArr: number[] };
+let wasmCache: Promise<WasmCode> | undefined;
 
-export function getWasmCode(): Promise<{ code: Uint8Array; codeHash: Uint8Array }> {
+export function getWasmCode(): Promise<WasmCode> {
   if (wasmCache) return wasmCache;
   wasmCache = (async () => {
     let u = "./chunk.wasm";
@@ -110,8 +115,8 @@ export function getWasmCode(): Promise<{ code: Uint8Array; codeHash: Uint8Array 
     if (!r.ok) throw new Error(`Cannot load chunk.wasm from ${u}: HTTP ${r.status}`);
     const code = new Uint8Array(await r.arrayBuffer());
     const codeHash = blake3(code);
-    return { code, codeHash };
-  })();
+    return { code, codeHash, codeArr: Array.from(code), hashArr: Array.from(codeHash) };
+  })().catch((e) => { wasmCache = undefined; throw e; });
   return wasmCache;
 }
 
@@ -129,9 +134,12 @@ const seen = new Set<string>();
  * @returns Contract address string
  */
 export async function putChunk(content: Uint8Array): Promise<string> {
-  const { code, codeHash } = await getWasmCode();
+  const { codeHash, codeArr, hashArr } = await getWasmCode();
   const params = blake3(content);
-  const instanceId = blake3(new Uint8Array([...codeHash, ...params]));
+  const pre = new Uint8Array(codeHash.length + params.length);
+  pre.set(codeHash, 0);
+  pre.set(params, codeHash.length);
+  const instanceId = blake3(pre);
   const key = new ContractKey(instanceId, codeHash);
   const addr = key.encode();
   keys.set(addr, key);
@@ -139,7 +147,7 @@ export async function putChunk(content: Uint8Array): Promise<string> {
   if (seen.has(addr)) return addr;
 
   const contract = new WasmContractV1(
-    new ContractCodeT(Array.from(code), Array.from(codeHash)),
+    new ContractCodeT(codeArr, hashArr),
     Array.from(params),
     key
   );

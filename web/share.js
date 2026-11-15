@@ -13,7 +13,7 @@ try {
     body.innerHTML = DOMPurify.sanitize(marked.parse(r.body || ''));
     out.append(el('h1', r.title || ''), body);
   } else {
-    const img = /^image\/(png|jpe?g|gif|webp|avif|bmp)$/.test(r.type);
+    const img = /^image\/(png|jpe?g|gif|webp|avif|bmp)$/i.test(r.type);
     const url = URL.createObjectURL(new Blob([r.data], { type: img ? r.type : 'application/octet-stream' }));
     out.append(el('h1', r.name));
     if (img) { const i = document.createElement('img'); i.src = url; i.alt = r.name; out.append(i, document.createElement('br')); }
