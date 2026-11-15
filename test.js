@@ -137,6 +137,76 @@ assert.equal(await os.getSecret(sc.soul), null);
 const pw = generatePassword(24); assert.equal(pw.length, 24); assert.notEqual(pw, generatePassword(24));
 assert.match(generatePassword(40, { symbols: false }), /^[A-Za-z0-9]+$/);
 
+console.log('7b. Trash and restore');
+// 1. Vault note
+const tn = await os.writeVaultNote({ title: 'Trash Note Test', body: 'some sensitive body' });
+assert((await os.readVaultNotes()).some(x => x.soul === tn.soul));
+await os.trashVaultNote(tn.soul);
+assert(!(await os.readVaultNotes()).some(x => x.soul === tn.soul));
+assert.equal(await os.getVaultNote(tn.soul), null);
+const tnTrash = await os.getVaultNote(tn.soul, { includeTrash: true });
+assert.ok(tnTrash && tnTrash.trash === true);
+assert((await os.readVaultNotes({ includeTrash: true })).some(x => x.soul === tn.soul));
+await os.restoreVaultNote(tn.soul);
+assert((await os.readVaultNotes()).some(x => x.soul === tn.soul));
+assert.equal((await os.getVaultNote(tn.soul)).trash, false);
+await os.deleteVaultNote(tn.soul);
+
+// 2. Calendar Event
+const te = await os.writeCalendarEvent({ title: 'Trash Cal Test', start: Date.now() + 10000 });
+assert((await os.readCalendarEvents()).some(x => x.soul === te.soul));
+await os.trashCalendarEvent(te.soul);
+assert(!(await os.readCalendarEvents()).some(x => x.soul === te.soul));
+assert.equal(await os.getCalendarEvent(te.soul), null);
+assert((await os.readCalendarEvents({ includeTrash: true })).some(x => x.soul === te.soul));
+await os.restoreCalendarEvent(te.soul);
+assert((await os.readCalendarEvents()).some(x => x.soul === te.soul));
+await os.deleteCalendarEvent(te.soul);
+
+// 3. Task
+const tt = await os.writeTask({ title: 'Trash Task Test' });
+assert((await os.readTasks()).some(x => x.soul === tt.soul));
+await os.trashTask(tt.soul);
+assert(!(await os.readTasks()).some(x => x.soul === tt.soul));
+assert.equal(await os.getTask(tt.soul), null);
+assert((await os.readTasks({ includeTrash: true })).some(x => x.soul === tt.soul));
+await os.restoreTask(tt.soul);
+assert((await os.readTasks()).some(x => x.soul === tt.soul));
+await os.deleteTask(tt.soul);
+
+// 4. Bookmark
+const tb = await os.writeBookmark({ title: 'Trash BM Test', url: 'https://trash.test' });
+assert((await os.readBookmarks()).some(x => x.soul === tb.soul));
+await os.trashBookmark(tb.soul);
+assert(!(await os.readBookmarks()).some(x => x.soul === tb.soul));
+assert.equal(await os.getBookmark(tb.soul), null);
+assert((await os.readBookmarks({ includeTrash: true })).some(x => x.soul === tb.soul));
+await os.restoreBookmark(tb.soul);
+assert((await os.readBookmarks()).some(x => x.soul === tb.soul));
+await os.deleteBookmark(tb.soul);
+
+// 5. Contact
+const tc = await os.writeContact({ name: 'Trash Contact Test', emails: ['tc@test.org'] });
+assert((await os.readContacts()).some(x => x.soul === tc.soul));
+await os.trashContact(tc.soul);
+assert(!(await os.readContacts()).some(x => x.soul === tc.soul));
+assert.equal(await os.getContact(tc.soul), null);
+assert((await os.readContacts({ includeTrash: true })).some(x => x.soul === tc.soul));
+await os.restoreContact(tc.soul);
+assert((await os.readContacts()).some(x => x.soul === tc.soul));
+await os.deleteContact(tc.soul);
+
+// 6. Secret
+const ts = await os.writeSecret({ name: 'Trash Secret Test', secret: 'xyz' });
+assert((await os.readSecrets()).some(x => x.soul === ts.soul));
+await os.trashSecret(ts.soul);
+assert(!(await os.readSecrets()).some(x => x.soul === ts.soul));
+assert.equal(await os.getSecret(ts.soul), null);
+assert((await os.readSecrets({ includeTrash: true })).some(x => x.soul === ts.soul));
+await os.restoreSecret(ts.soul);
+assert((await os.readSecrets()).some(x => x.soul === ts.soul));
+await os.deleteSecret(ts.soul);
+
 console.log('8. Files');
 const bytes = Uint8Array.from({ length: 5000 }, (_, i) => i % 251);
 const up = await os.uploadFile(bytes, 'photo.bin');
@@ -181,6 +251,19 @@ await os.deleteTask(lt.soul);
 for (let i = 0; i < 50 && seen.length < 2; i++) await new Promise(r => setTimeout(r, 50));
 assert.deepEqual(seen, [['live one', false], [undefined, true]]);
 stop();
+
+const liveSoul = 'vault-live-' + Date.now();
+const seenNotes = [];
+const stopNote = sameLogin.onVaultNote((n, soul, deleted) => {
+  if (soul === liveSoul) seenNotes.push([n?.title, !!n?.trash, deleted]);
+});
+await new Promise(r => setTimeout(r, 200));
+const ln = await os.writeVaultNote({ soul: liveSoul, title: 'live note' });
+await os.trashVaultNote(ln.soul);
+await os.deleteVaultNote(ln.soul);
+for (let i = 0; i < 50 && seenNotes.length < 3; i++) await new Promise(r => setTimeout(r, 50));
+assert.deepEqual(seenNotes, [['live note', false, false], ['live note', true, false], [undefined, false, true]]);
+stopNote();
 // a cached bookmark that is still the server's version is skipped on the initial download; a changed or unknown one is delivered
 const bmA = await os.writeBookmark({ url: 'https://cache.example/a', title: 'A' }), bmB = await os.writeBookmark({ url: 'https://cache.example/b', title: 'B' });
 const bmRecs = await os._json('GET', '/c/bookmarks'), atA = bmRecs.find((r) => r.soul === bmA.soul).updatedAt;

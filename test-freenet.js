@@ -429,6 +429,80 @@ try {
   assert.equal(('#/fblog=' + payload).match(hashRegex)[1], payload);
   assert.equal(('#sk=123&fblog=' + payload).match(hashRegex)[1], payload);
 
+  console.log('15. Freenet mode: trash and restore across notes, events, tasks, bookmarks, contacts, secrets');
+  const orto15 = createClient();
+  await orto15.login('fn_user_trash_test', 'secret-pass-for-trash');
+  const os15 = orto15.personal();
+
+  // 1. Vault note
+  const liveNoteEvents = [];
+  const unsubNote = os15.onVaultNote((n, soul, isDeleted) => liveNoteEvents.push({ n, soul, isDeleted }));
+  const n1 = await os15.writeVaultNote({ title: 'To Trash Note', body: 'secret data' });
+  assert.equal((await os15.readVaultNotes()).length, 1);
+  await os15.trashVaultNote(n1.soul);
+  assert.equal((await os15.readVaultNotes()).length, 0);
+  assert.equal(await os15.getVaultNote(n1.soul), null);
+  const trashedNote = await os15.getVaultNote(n1.soul, { includeTrash: true });
+  assert.ok(trashedNote && trashedNote.trash === true);
+  assert.equal((await os15.readVaultNotes({ includeTrash: true })).length, 1);
+  await new Promise(r => setTimeout(r, 20));
+  const trashEv = liveNoteEvents.find(e => e.soul === n1.soul && e.n && e.n.trash === true);
+  assert.ok(trashEv && !trashEv.isDeleted, 'Live onVaultNote received trashed note without isDeleted flag');
+  await os15.restoreVaultNote(n1.soul);
+  assert.equal((await os15.readVaultNotes()).length, 1);
+  assert.equal((await os15.getVaultNote(n1.soul)).trash, false);
+  unsubNote();
+
+  // 2. Calendar Event
+  const ev1 = await os15.writeCalendarEvent({ title: 'Trash Event', start: Date.now() });
+  assert.equal((await os15.readCalendarEvents()).length, 1);
+  await os15.trashCalendarEvent(ev1.soul);
+  assert.equal((await os15.readCalendarEvents()).length, 0);
+  assert.equal(await os15.getCalendarEvent(ev1.soul), null);
+  assert.equal((await os15.readCalendarEvents({ includeTrash: true })).length, 1);
+  await os15.restoreCalendarEvent(ev1.soul);
+  assert.equal((await os15.readCalendarEvents()).length, 1);
+
+  // 3. Task
+  const tk1 = await os15.writeTask({ title: 'Trash Task' });
+  assert.equal((await os15.readTasks()).length, 1);
+  await os15.trashTask(tk1.soul);
+  assert.equal((await os15.readTasks()).length, 0);
+  assert.equal(await os15.getTask(tk1.soul), null);
+  assert.equal((await os15.readTasks({ includeTrash: true })).length, 1);
+  await os15.restoreTask(tk1.soul);
+  assert.equal((await os15.readTasks()).length, 1);
+
+  // 4. Bookmark
+  const bm1 = await os15.writeBookmark({ title: 'Trash BM', url: 'https://trash.example' });
+  assert.equal((await os15.readBookmarks()).length, 1);
+  await os15.trashBookmark(bm1.soul);
+  assert.equal((await os15.readBookmarks()).length, 0);
+  assert.equal(await os15.getBookmark(bm1.soul), null);
+  assert.equal((await os15.readBookmarks({ includeTrash: true })).length, 1);
+  await os15.restoreBookmark(bm1.soul);
+  assert.equal((await os15.readBookmarks()).length, 1);
+
+  // 5. Contact
+  const ct1 = await os15.writeContact({ name: 'Trash Contact', emails: ['trash@example.com'] });
+  assert.equal((await os15.readContacts()).length, 1);
+  await os15.trashContact(ct1.soul);
+  assert.equal((await os15.readContacts()).length, 0);
+  assert.equal(await os15.getContact(ct1.soul), null);
+  assert.equal((await os15.readContacts({ includeTrash: true })).length, 1);
+  await os15.restoreContact(ct1.soul);
+  assert.equal((await os15.readContacts()).length, 1);
+
+  // 6. Secret
+  const sc1 = await os15.writeSecret({ name: 'Trash Secret', secret: '12345' });
+  assert.equal((await os15.readSecrets()).length, 1);
+  await os15.trashSecret(sc1.soul);
+  assert.equal((await os15.readSecrets()).length, 0);
+  assert.equal(await os15.getSecret(sc1.soul), null);
+  assert.equal((await os15.readSecrets({ includeTrash: true })).length, 1);
+  await os15.restoreSecret(sc1.soul);
+  assert.equal((await os15.readSecrets()).length, 1);
+
   console.log('ok - all freenet tests passed');
 } catch (e) {
   console.error(e);

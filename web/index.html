@@ -3168,6 +3168,7 @@
         </div>
 
         <div class="list-header-actions">
+          <button class="cal-btn hidden" id="empty-trash-btn" onclick="emptyAllTrash()" style="font-size:12px;padding:3px 8px;margin-right:6px;" title="Empty Trash"><i class="ti ti-trash-x"></i> Empty Trash</button>
           <button class="header-icon-btn" onclick="createNewNote()" title="Compose New Note (Ctrl+N)">
             <i class="ti ti-edit"></i>
           </button>
@@ -3194,13 +3195,13 @@
 
       <!-- Empty State -->
       <div id="list-empty-state" class="list-empty-state hidden">
-        <i class="ti ti-notebook list-empty-icon"></i>
-        <h4>No Notes Found</h4>
-        <p>No notes in this view. Write a new note or load Bear sample notes.</p>
-        <button class="empty-action-btn" onclick="createNewNote()">
+        <i class="ti ti-notebook list-empty-icon" id="empty-state-icon"></i>
+        <h4 id="empty-state-title">No Notes Found</h4>
+        <p id="empty-state-desc">No notes in this view. Write a new note or load Bear sample notes.</p>
+        <button class="empty-action-btn" id="empty-state-action" onclick="createNewNote()">
           <i class="ti ti-plus"></i> New Note
         </button>
-        <button class="empty-demo-btn" onclick="loadBearDemoNotes()">
+        <button class="empty-demo-btn" id="empty-state-demo" onclick="loadBearDemoNotes()">
           <i class="ti ti-sparkles"></i> Load Bear Demo Notes
         </button>
       </div>
@@ -3481,9 +3482,12 @@
               <button class="popover-item" onclick="copyToSpace('vault', selectedNoteId)">
                 <span><i class="ti ti-users-group"></i> Copy to a shared space…</span>
               </button>
-              <div class="popover-divider"></div>
-              <button class="popover-item" onclick="deleteActiveNote()" style="color:var(--bear-red);">
-                <span><i class="ti ti-trash"></i> Delete Note</span>
+              <div class="popover-divider" id="menu-del-divider"></div>
+              <button class="popover-item hidden" id="menu-restore-btn" onclick="restoreActiveNote()">
+                <span><i class="ti ti-rotate-clockwise"></i> <span>Restore Note</span></span>
+              </button>
+              <button class="popover-item" id="menu-del-btn" onclick="deleteActiveNote()" style="color:var(--bear-red);">
+                <span><i class="ti ti-trash"></i> <span id="menu-del-label">Delete Note</span></span>
               </button>
             </div>
           </div>
@@ -3492,6 +3496,15 @@
         <!-- Document Canvas -->
         <div class="editor-scroll-container">
           <div class="editor-canvas">
+            <div id="trash-editor-banner" class="hidden" style="background:var(--bear-red-light);border:1px solid var(--bear-red);padding:10px 14px;border-radius:8px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+              <div style="display:flex;align-items:center;gap:8px;color:var(--bear-red);font-weight:600;font-size:13px;">
+                <i class="ti ti-trash"></i> This note is in the Trash.
+              </div>
+              <div style="display:flex;gap:8px;">
+                <button class="cal-btn" onclick="restoreActiveNote()"><i class="ti ti-rotate-clockwise"></i> Restore Note</button>
+                <button class="cal-btn" style="color:var(--bear-red);border-color:var(--bear-red);" onclick="deleteActiveNoteForever()"><i class="ti ti-trash-x"></i> Delete Forever</button>
+              </div>
+            </div>
             <!-- Large Editable Title -->
             <input type="text" id="editor-title" class="note-title-input" placeholder="Untitled Note"
               oninput="handleTitleInput(this.value)">
@@ -4577,9 +4590,23 @@
 
     // ── Master Render Function ──
     function renderApp() {
-      const allNotes = Object.values(localNotes);
+      const allNotes = Object.values(localNotes).filter(n => n && n.id !== 'new');
       const activeNotes = allNotes.filter(n => !n.trash);
       const trashNotes = allNotes.filter(n => n.trash);
+      const trashedEvents = Object.entries(calEvents).filter(([, e]) => e && e.trash).map(([id, e]) => ({ ...e, id, kind: 'event' }));
+      const trashedTasks = Object.entries(tasks).filter(([, t]) => t && t.trash).map(([id, t]) => ({ ...t, id, kind: 'task' }));
+      const trashedBookmarks = Object.entries(bookmarks).filter(([, b]) => b && b.trash).map(([id, b]) => ({ ...b, id, kind: 'bookmark' }));
+      const trashedContacts = Object.entries(contacts).filter(([, c]) => c && c.trash).map(([id, c]) => ({ ...c, id, kind: 'contact' }));
+      const trashedSecrets = Object.entries(secrets).filter(([, s]) => s && s.trash).map(([id, s]) => ({ ...s, id, kind: 'secret' }));
+      const allTrashed = [
+        ...trashNotes.map(n => ({ ...n, kind: 'note' })),
+        ...trashedEvents,
+        ...trashedTasks,
+        ...trashedBookmarks,
+        ...trashedContacts,
+        ...trashedSecrets
+      ];
+      const totalTrash = allTrashed.length;
 
       // Collect counts
       const counts = {
@@ -4588,7 +4615,7 @@
         todo: 0,
         today: 0,
         pinned: 0,
-        trash: trashNotes.length
+        trash: totalTrash
       };
 
       const now = new Date();
@@ -4614,6 +4641,9 @@
       document.getElementById('count-today').textContent = counts.today;
       document.getElementById('count-pinned').textContent = counts.pinned;
       document.getElementById('count-trash').textContent = counts.trash;
+
+      const emptyTrashBtn = document.getElementById('empty-trash-btn');
+      if (emptyTrashBtn) emptyTrashBtn.classList.toggle('hidden', currentFilter !== 'trash' || totalTrash === 0);
 
       // Update active nav item highlight
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -4650,8 +4680,8 @@
         tagsContainer.appendChild(item);
       });
 
-      // Filter notes for list
-      let filtered = currentFilter === 'trash' ? trashNotes : activeNotes;
+      // Filter items for list
+      let filtered = currentFilter === 'trash' ? allTrashed : activeNotes;
 
       if (currentFilter === 'untagged') {
         filtered = filtered.filter(n => extractTagsFromNote(n).length === 0);
@@ -4669,18 +4699,29 @@
       // Search filter
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
-        filtered = filtered.filter(n =>
-          n.title.toLowerCase().includes(q) ||
-          n.body.toLowerCase().includes(q) ||
-          extractTagsFromNote(n).some(t => t.includes(q))
-        );
+        if (currentFilter === 'trash') {
+          filtered = filtered.filter(item =>
+            (item.title || item.name || item.url || '').toLowerCase().includes(q) ||
+            (item.body || item.desc || item.notes || '').toLowerCase().includes(q)
+          );
+        } else {
+          filtered = filtered.filter(n =>
+            n.title.toLowerCase().includes(q) ||
+            n.body.toLowerCase().includes(q) ||
+            extractTagsFromNote(n).some(t => t.includes(q))
+          );
+        }
       }
 
-      // Sort: Pinned first, then newest first
-      filtered.sort((a, b) => {
-        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-        return b.timestamp - a.timestamp;
-      });
+      // Sort
+      if (currentFilter === 'trash') {
+        filtered.sort((a, b) => (b.timestamp || b.updatedAt || b.addedAt || b.createdAt || b.start || 0) - (a.timestamp || a.updatedAt || a.addedAt || a.createdAt || a.start || 0));
+      } else {
+        filtered.sort((a, b) => {
+          if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+          return b.timestamp - a.timestamp;
+        });
+      }
 
       // Update Header Title
       const titleDisplay = document.getElementById('active-filter-title');
@@ -4695,43 +4736,209 @@
       // Render Notes List Cards
       const container = document.getElementById('notes-container');
       const emptyState = document.getElementById('list-empty-state');
+      const emptyIcon = document.getElementById('empty-state-icon');
+      const emptyTitle = document.getElementById('empty-state-title');
+      const emptyDesc = document.getElementById('empty-state-desc');
+      const emptyAction = document.getElementById('empty-state-action');
+      const emptyDemo = document.getElementById('empty-state-demo');
+
       container.innerHTML = '';
 
       if (filtered.length === 0) {
         container.classList.add('hidden');
         emptyState.classList.remove('hidden');
+        if (currentFilter === 'trash') {
+          if (emptyIcon) emptyIcon.className = 'ti ti-trash list-empty-icon';
+          if (emptyTitle) emptyTitle.textContent = 'Trash is empty';
+          if (emptyDesc) emptyDesc.textContent = 'Deleted notes, events, tasks, bookmarks, contacts and secrets will appear here.';
+          if (emptyAction) emptyAction.classList.add('hidden');
+          if (emptyDemo) emptyDemo.classList.add('hidden');
+        } else {
+          if (emptyIcon) emptyIcon.className = 'ti ti-notebook list-empty-icon';
+          if (emptyTitle) emptyTitle.textContent = 'No Notes Found';
+          if (emptyDesc) emptyDesc.textContent = 'No notes in this view. Write a new note or load Bear sample notes.';
+          if (emptyAction) emptyAction.classList.remove('hidden');
+          if (emptyDemo) emptyDemo.classList.remove('hidden');
+        }
       } else {
         container.classList.remove('hidden');
         emptyState.classList.add('hidden');
 
-        filtered.forEach(note => {
-          const card = document.createElement('div');
-          const isSelected = selectedNoteId === note.id;
-          card.className = `note-card ${isSelected ? 'selected' : ''}`;
-          card.onclick = () => selectNote(note.id);
+        if (currentFilter === 'trash') {
+          filtered.forEach(item => {
+            const card = document.createElement('div');
+            const isNote = item.kind === 'note';
+            const isSelected = isNote && selectedNoteId === item.id;
+            card.className = `note-card ${isSelected ? 'selected' : ''}`;
 
-          const thumbUrl = extractThumbnail(note.body);
-          const dateStr = formatRelativeDate(note.timestamp);
+            if (isNote) {
+              card.onclick = () => selectNote(item.id);
+              const thumbUrl = extractThumbnail(item.body);
+              const dateStr = formatRelativeDate(item.timestamp);
+              card.innerHTML = `
+                <div class="note-card-main">
+                  <div class="note-card-title-row" style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+                    <div style="display:flex;align-items:center;gap:5px;min-width:0;flex:1;">
+                      <i class="ti ti-notes" style="color:var(--text-muted);font-size:14px;flex-shrink:0;"></i>
+                      <h4 class="note-card-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(item.title || 'Untitled Note')}</h4>
+                    </div>
+                    <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:var(--bear-red-light);color:var(--bear-red);font-weight:600;flex-shrink:0;">Note</span>
+                  </div>
+                  <p class="note-card-preview">${renderSnippetWithTags(item.body || '')}</p>
+                  <div class="note-card-footer" style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
+                    <span class="note-card-date">${dateStr}</span>
+                    <div style="display:flex;gap:4px;" onclick="event.stopPropagation()">
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" onclick="restoreTrashItem('note', '${item.id}')" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" onclick="deleteTrashItemForever('note', '${item.id}')" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
+                    </div>
+                  </div>
+                </div>
+                ${thumbUrl ? `
+                  <div class="note-card-thumb">
+                    <img src="${thumbUrl}" alt="Thumbnail" loading="lazy" onerror="this.parentElement.style.display='none'">
+                  </div>
+                ` : ''}
+              `;
+            } else if (item.kind === 'event') {
+              card.onclick = () => openEventModal({ soul: item.id, ...item });
+              const dateStr = fmtDate(item.start) + (item.allDay ? ' (All day)' : ' ' + fmtTime(item.start));
+              card.innerHTML = `
+                <div class="note-card-main">
+                  <div class="note-card-title-row" style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+                    <div style="display:flex;align-items:center;gap:5px;min-width:0;flex:1;">
+                      <i class="ti ti-calendar" style="color:var(--bear-red);font-size:14px;flex-shrink:0;"></i>
+                      <h4 class="note-card-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(item.title)}</h4>
+                    </div>
+                    <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(0,180,216,0.12);color:#0096c7;font-weight:600;flex-shrink:0;">Event</span>
+                  </div>
+                  <p class="note-card-preview">${escapeHtml(dateStr + (item.notes ? ' · ' + item.notes : ''))}</p>
+                  <div class="note-card-footer" style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
+                    <span class="note-card-date">${formatRelativeDate(item.updatedAt || item.start)}</span>
+                    <div style="display:flex;gap:4px;" onclick="event.stopPropagation()">
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" onclick="restoreTrashItem('event', '${item.id}')" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" onclick="deleteTrashItemForever('event', '${item.id}')" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
+                    </div>
+                  </div>
+                </div>
+              `;
+            } else if (item.kind === 'task') {
+              card.onclick = () => taskEdit(item.id);
+              card.innerHTML = `
+                <div class="note-card-main">
+                  <div class="note-card-title-row" style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+                    <div style="display:flex;align-items:center;gap:5px;min-width:0;flex:1;">
+                      <i class="ti ti-checkbox" style="color:var(--text-muted);font-size:14px;flex-shrink:0;"></i>
+                      <h4 class="note-card-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(item.title)}</h4>
+                    </div>
+                    <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(40,167,69,0.12);color:#28a745;font-weight:600;flex-shrink:0;">Task</span>
+                  </div>
+                  <p class="note-card-preview">${escapeHtml(item.desc || ('Priority: ' + (item.priority || 'normal')))}</p>
+                  <div class="note-card-footer" style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
+                    <span class="note-card-date">${formatRelativeDate(item.updatedAt || item.createdAt)}</span>
+                    <div style="display:flex;gap:4px;" onclick="event.stopPropagation()">
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" onclick="restoreTrashItem('task', '${item.id}')" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" onclick="deleteTrashItemForever('task', '${item.id}')" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
+                    </div>
+                  </div>
+                </div>
+              `;
+            } else if (item.kind === 'bookmark') {
+              card.onclick = () => bmEdit(item.id);
+              card.innerHTML = `
+                <div class="note-card-main">
+                  <div class="note-card-title-row" style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+                    <div style="display:flex;align-items:center;gap:5px;min-width:0;flex:1;">
+                      <i class="ti ti-bookmark" style="color:var(--text-muted);font-size:14px;flex-shrink:0;"></i>
+                      <h4 class="note-card-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(item.title || item.url)}</h4>
+                    </div>
+                    <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(255,193,7,0.15);color:#d39e00;font-weight:600;flex-shrink:0;">Bookmark</span>
+                  </div>
+                  <p class="note-card-preview">${escapeHtml(item.url)}</p>
+                  <div class="note-card-footer" style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
+                    <span class="note-card-date">${formatRelativeDate(item.addedAt)}</span>
+                    <div style="display:flex;gap:4px;" onclick="event.stopPropagation()">
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" onclick="restoreTrashItem('bookmark', '${item.id}')" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" onclick="deleteTrashItemForever('bookmark', '${item.id}')" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
+                    </div>
+                  </div>
+                </div>
+              `;
+            } else if (item.kind === 'contact') {
+              card.onclick = () => ctEdit(item.id);
+              const sub = [(item.emails || []).join(', '), (item.phones || []).join(', '), item.org].filter(Boolean).join(' · ');
+              card.innerHTML = `
+                <div class="note-card-main">
+                  <div class="note-card-title-row" style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+                    <div style="display:flex;align-items:center;gap:5px;min-width:0;flex:1;">
+                      <i class="ti ti-address-book" style="color:var(--text-muted);font-size:14px;flex-shrink:0;"></i>
+                      <h4 class="note-card-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(item.name)}</h4>
+                    </div>
+                    <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(111,66,193,0.12);color:#6f42c1;font-weight:600;flex-shrink:0;">Contact</span>
+                  </div>
+                  <p class="note-card-preview">${escapeHtml(sub || item.notes || '')}</p>
+                  <div class="note-card-footer" style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
+                    <span class="note-card-date">${formatRelativeDate(item.addedAt)}</span>
+                    <div style="display:flex;gap:4px;" onclick="event.stopPropagation()">
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" onclick="restoreTrashItem('contact', '${item.id}')" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" onclick="deleteTrashItemForever('contact', '${item.id}')" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
+                    </div>
+                  </div>
+                </div>
+              `;
+            } else if (item.kind === 'secret') {
+              card.onclick = () => secEdit(item.id);
+              card.innerHTML = `
+                <div class="note-card-main">
+                  <div class="note-card-title-row" style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+                    <div style="display:flex;align-items:center;gap:5px;min-width:0;flex:1;">
+                      <i class="ti ti-shield-lock" style="color:var(--text-muted);font-size:14px;flex-shrink:0;"></i>
+                      <h4 class="note-card-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(item.name)}</h4>
+                    </div>
+                    <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(108,117,125,0.15);color:#6c757d;font-weight:600;flex-shrink:0;">Secret</span>
+                  </div>
+                  <p class="note-card-preview">${escapeHtml([item.username, item.url, item.kind].filter(Boolean).join(' · '))}</p>
+                  <div class="note-card-footer" style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
+                    <span class="note-card-date">${formatRelativeDate(item.createdAt)}</span>
+                    <div style="display:flex;gap:4px;" onclick="event.stopPropagation()">
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" onclick="restoreTrashItem('secret', '${item.id}')" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" onclick="deleteTrashItemForever('secret', '${item.id}')" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }
+            container.appendChild(card);
+          });
+        } else {
+          filtered.forEach(note => {
+            const card = document.createElement('div');
+            const isSelected = selectedNoteId === note.id;
+            card.className = `note-card ${isSelected ? 'selected' : ''}`;
+            card.onclick = () => selectNote(note.id);
 
-          card.innerHTML = `
-            <div class="note-card-main">
-              <div class="note-card-title-row">
-                ${note.pinned ? '<i class="ti ti-pin-filled note-card-pin"></i>' : ''}
-                <h4 class="note-card-title">${escapeHtml(note.title || 'Untitled Note')}</h4>
+            const thumbUrl = extractThumbnail(note.body);
+            const dateStr = formatRelativeDate(note.timestamp);
+
+            card.innerHTML = `
+              <div class="note-card-main">
+                <div class="note-card-title-row">
+                  ${note.pinned ? '<i class="ti ti-pin-filled note-card-pin"></i>' : ''}
+                  <h4 class="note-card-title">${escapeHtml(note.title || 'Untitled Note')}</h4>
+                </div>
+                <p class="note-card-preview">${renderSnippetWithTags(note.body)}</p>
+                <div class="note-card-footer">
+                  <span class="note-card-date">${dateStr}</span>
+                </div>
               </div>
-              <p class="note-card-preview">${renderSnippetWithTags(note.body)}</p>
-              <div class="note-card-footer">
-                <span class="note-card-date">${dateStr}</span>
-              </div>
-            </div>
-            ${thumbUrl ? `
-              <div class="note-card-thumb">
-                <img src="${thumbUrl}" alt="Thumbnail" loading="lazy" onerror="this.parentElement.style.display='none'">
-              </div>
-            ` : ''}
-          `;
-          container.appendChild(card);
-        });
+              ${thumbUrl ? `
+                <div class="note-card-thumb">
+                  <img src="${thumbUrl}" alt="Thumbnail" loading="lazy" onerror="this.parentElement.style.display='none'">
+                </div>
+              ` : ''}
+            `;
+            container.appendChild(card);
+          });
+        }
       }
 
       // If active note is selected, render editor
@@ -4757,6 +4964,7 @@
       const renderedView = document.getElementById('markdown-rendered-view');
       const modeBadge = document.getElementById('mode-badge');
       const previewBtn = document.getElementById('preview-mode-toggle');
+      const trashBanner = document.getElementById('trash-editor-banner');
 
       let note = localNotes[selectedNoteId];
       if (selectedNoteId === 'new') {
@@ -4767,6 +4975,18 @@
       }
 
       if (note) {
+        if (note.trash) {
+          if (trashBanner) trashBanner.classList.remove('hidden');
+          titleInput.readOnly = true;
+          textarea.readOnly = true;
+          modeBadge.textContent = 'Trash (Read-only)';
+          modeBadge.style.color = 'var(--bear-red)';
+        } else {
+          if (trashBanner) trashBanner.classList.add('hidden');
+          titleInput.readOnly = false;
+          textarea.readOnly = false;
+        }
+
         if (document.activeElement !== titleInput && !titleInput.dataset.focused) {
           titleInput.value = note.title || '';
         }
@@ -4782,6 +5002,7 @@
         renderedView.querySelectorAll('.bear-checkbox').forEach(box => {
           box.addEventListener('change', (e) => {
             e.stopPropagation();
+            if (note.trash) return;
             const index = parseInt(e.target.dataset.todoIndex, 10);
             toggleCheckboxAtIndex(index, e.target.checked);
           });
@@ -4800,6 +5021,15 @@
         if (pinLabel) {
           pinLabel.textContent = note.pinned ? 'Unpin Note' : 'Pin Note';
         }
+
+        const delLabel = document.getElementById('menu-del-label');
+        if (delLabel) {
+          delLabel.textContent = note.trash ? 'Delete Permanently' : 'Delete Note';
+        }
+        const resBtn = document.getElementById('menu-restore-btn');
+        if (resBtn) {
+          resBtn.classList.toggle('hidden', !note.trash);
+        }
       }
       renderNoteEvents();
 
@@ -4807,14 +5037,18 @@
       if (isEditMode) {
         textarea.classList.remove('hidden');
         renderedView.classList.add('hidden');
-        modeBadge.textContent = 'Edit Mode';
-        modeBadge.style.color = 'var(--bear-red)';
+        if (!note || !note.trash) {
+          modeBadge.textContent = 'Edit Mode';
+          modeBadge.style.color = 'var(--bear-red)';
+        }
         previewBtn.classList.add('active');
       } else {
         textarea.classList.add('hidden');
         renderedView.classList.remove('hidden');
-        modeBadge.textContent = 'Preview Mode';
-        modeBadge.style.color = 'var(--text-secondary)';
+        if (!note || !note.trash) {
+          modeBadge.textContent = 'Preview Mode';
+          modeBadge.style.color = 'var(--text-secondary)';
+        }
         previewBtn.classList.remove('active');
       }
     }
@@ -5250,6 +5484,7 @@ print("Welcome to Orto!")
     }
 
     function createNewNote() {
+      if (currentFilter === 'trash') setFilter('all');
       selectedNoteId = 'new';
       isEditMode = true;
       localNotes['new'] = { id: 'new', title: '', body: '', timestamp: Date.now(), pinned: false, cat: '' };
@@ -5337,28 +5572,128 @@ print("Welcome to Orto!")
 
     async function deleteActiveNote() {
       if (!selectedNoteId || selectedNoteId === 'new') return;
-      if (!confirm("Are you sure you want to delete this note?")) return;
-
       const soul = selectedNoteId;
+      const note = localNotes[soul];
+      if (!note) return;
+
+      if (note.trash) {
+        if (!confirm("Permanently delete this note? This cannot be undone.")) return;
+        return deleteActiveNoteForever(soul);
+      }
+
+      try {
+        await os.writeVaultNote({
+          title: note.title,
+          body: note.body,
+          cat: note.cat || '',
+          pinned: !!note.pinned,
+          trash: true,
+          soul
+        });
+        note.trash = true;
+        const sig = JSON.stringify([note.title, note.body, note.cat || '', !!note.pinned, true, note.timestamp]);
+        notesCache.set(soul, sig, note);
+        if (typeof notesCache.flush === 'function') await notesCache.flush();
+        if (typeof window.syncHashState === 'function') await window.syncHashState(true);
+        selectedNoteId = null;
+        showToast("Note moved to Trash");
+        closePopovers();
+        if (window.innerWidth <= 768) mobileBackToList();
+        triggerRender();
+      } catch (err) {
+        alert("Moving to trash failed: " + err.message);
+      }
+    }
+
+    async function restoreActiveNote(targetSoul) {
+      const soul = targetSoul || selectedNoteId;
+      if (!soul) return;
+      const note = localNotes[soul];
+      if (!note) return;
+      try {
+        await os.writeVaultNote({
+          title: note.title,
+          body: note.body,
+          cat: note.cat || '',
+          pinned: !!note.pinned,
+          trash: false,
+          soul
+        });
+        note.trash = false;
+        const sig = JSON.stringify([note.title, note.body, note.cat || '', !!note.pinned, false, note.timestamp]);
+        notesCache.set(soul, sig, note);
+        if (typeof notesCache.flush === 'function') await notesCache.flush();
+        if (typeof window.syncHashState === 'function') await window.syncHashState(true);
+        showToast("Note restored");
+        closePopovers();
+        triggerRender();
+      } catch (err) {
+        alert("Restore failed: " + err.message);
+      }
+    }
+
+    async function deleteActiveNoteForever(targetSoul) {
+      const soul = targetSoul || selectedNoteId;
+      if (!soul) return;
       try {
         await os.deleteVaultNote(soul);
         delete localNotes[soul];
         notesCache.del(soul);
-        if (typeof notesCache.flush === 'function') {
-          await notesCache.flush();
-        }
-        if (typeof window.syncHashState === 'function') {
-          await window.syncHashState(true);
-        }
-        selectedNoteId = null;
-        showToast("Note erased from network");
+        if (typeof notesCache.flush === 'function') await notesCache.flush();
+        if (typeof window.syncHashState === 'function') await window.syncHashState(true);
+        if (selectedNoteId === soul) selectedNoteId = null;
+        showToast("Note permanently deleted");
         closePopovers();
-        if (window.innerWidth <= 768) {
-          mobileBackToList();
-        }
+        if (window.innerWidth <= 768) mobileBackToList();
         triggerRender();
       } catch (err) {
         alert("Deletion failed: " + err.message);
+      }
+    }
+
+    async function restoreTrashItem(kind, soul) {
+      if (kind === 'note') return restoreActiveNote(soul);
+      if (kind === 'event') return restoreCalEvent(soul);
+      if (kind === 'task') return taskRestore(soul);
+      if (kind === 'bookmark') return bmRestore(soul);
+      if (kind === 'contact') return ctRestore(soul);
+      if (kind === 'secret') return secRestore(soul);
+    }
+
+    async function deleteTrashItemForever(kind, soul) {
+      if (!confirm("Permanently delete this item? This cannot be undone.")) return;
+      if (kind === 'note') return deleteActiveNoteForever(soul);
+      if (kind === 'event') return deleteCalEventForever(soul);
+      if (kind === 'task') return taskDeleteForever(soul);
+      if (kind === 'bookmark') return bmDeleteForever(soul);
+      if (kind === 'contact') return ctDeleteForever(soul);
+      if (kind === 'secret') return secDeleteForever(soul);
+    }
+
+    async function emptyAllTrash() {
+      const tNotes = Object.entries(localNotes).filter(([id, n]) => id !== 'new' && n.trash);
+      const tEvents = Object.entries(calEvents).filter(([, e]) => e && e.trash);
+      const tTasks = Object.entries(tasks).filter(([, t]) => t && t.trash);
+      const tBookmarks = Object.entries(bookmarks).filter(([, b]) => b && b.trash);
+      const tContacts = Object.entries(contacts).filter(([, c]) => c && c.trash);
+      const tSecrets = Object.entries(secrets).filter(([, s]) => s && s.trash);
+      const total = tNotes.length + tEvents.length + tTasks.length + tBookmarks.length + tContacts.length + tSecrets.length;
+      if (total === 0) return showToast('Trash is already empty');
+      if (!confirm(`Permanently delete all ${total} items in Trash? This cannot be undone.`)) return;
+
+      try {
+        for (const [id] of tNotes) { await os.deleteVaultNote(id).catch(() => {}); delete localNotes[id]; notesCache.del(id); }
+        for (const [id] of tEvents) { await os.deleteCalendarEvent(id).catch(() => {}); delete calEvents[id]; calCache.del(id); }
+        for (const [id] of tTasks) { await os.deleteTask(id).catch(() => {}); delete tasks[id]; tasksCache.del(id); }
+        for (const [id] of tBookmarks) { await os.deleteBookmark(id).catch(() => {}); delete bookmarks[id]; bmCache.del(id); }
+        for (const [id] of tContacts) { await os.deleteContact(id).catch(() => {}); delete contacts[id]; }
+        for (const [id] of tSecrets) { await os.deleteSecret(id).catch(() => {}); delete secrets[id]; }
+        if (typeof notesCache.flush === 'function') await notesCache.flush();
+        selectedNoteId = null;
+        showToast('Trash emptied');
+        triggerRender();
+      } catch (err) {
+        showToast('Error emptying trash: ' + err.message);
       }
     }
 
@@ -5680,10 +6015,11 @@ print("Welcome to Orto!")
       const cached = await calCache.load();
       if (Object.keys(cached).length) {
         Object.assign(calEvents, cached);
-        document.getElementById('count-calendar').textContent = Object.keys(calEvents).length;
+        document.getElementById('count-calendar').textContent = Object.values(calEvents).filter(e => !e.trash).length;
         syncBump();
         if (calMode) renderCalendar();
         renderNoteEvents();
+        triggerRender();
       }
       os.onCalendarEvent((ev, soul, isDeleted) => {
         syncBump();
@@ -5694,10 +6030,11 @@ print("Welcome to Orto!")
           calEvents[soul] = ev;
           calCache.set(soul, ev.data || JSON.stringify(ev), ev);
         }
-        document.getElementById('count-calendar').textContent = Object.keys(calEvents).length;
+        document.getElementById('count-calendar').textContent = Object.values(calEvents).filter(e => !e.trash).length;
         if (calMode) renderCalendar();
         if (gardenOpen()) renderGarden();
         renderNoteEvents();
+        triggerRender();
       });
     }
 
@@ -5728,7 +6065,7 @@ print("Welcome to Orto!")
       const lo = sod(day).getTime(), hi = lo + DAY_MS;
       return Object.entries(calEvents)
         .map(([soul, ev]) => ({ soul, ...ev }))
-        .filter(ev => ev.start < hi && Math.max(ev.end ?? ev.start, ev.start + 1) > lo)
+        .filter(ev => !ev.trash && ev.start < hi && Math.max(ev.end ?? ev.start, ev.start + 1) > lo)
         .sort((a, b) => (b.allDay - a.allDay) || a.start - b.start);
     }
 
@@ -5798,7 +6135,7 @@ print("Welcome to Orto!")
     // ── Note <-> event links: stored inside the encrypted event as links: [{ kind: 'note', soul }] ──
     let evLinks = [];
     const noteTitle = (soul) => localNotes[soul] ? (localNotes[soul].title || 'Untitled Note') : null;
-    const eventsForNote = (soul) => Object.entries(calEvents).filter(([, e]) => (e.links || []).some(l => l.kind === 'note' && l.soul === soul)).map(([id, e]) => ({ soul: id, ...e })).sort((a, b) => a.start - b.start);
+    const eventsForNote = (soul) => Object.entries(calEvents).filter(([, e]) => !e.trash && (e.links || []).some(l => l.kind === 'note' && l.soul === soul)).map(([id, e]) => ({ soul: id, ...e })).sort((a, b) => a.start - b.start);
 
     function renderEvLinks() {
       const box = document.getElementById('ev-links'); if (!box) return;
@@ -5852,7 +6189,7 @@ print("Welcome to Orto!")
         <textarea id="ev-notes" rows="3" placeholder="Notes">${escapeHtml(ev.notes || '')}</textarea>
         <div class="ev-links" id="ev-links"></div>
         <div class="cal-colors" id="ev-colors">${CAL_COLORS.map(c => `<span style="--c:${c}" data-c="${c}" class="${c === (ev.color || CAL_COLORS[0]) ? 'sel' : ''}"></span>`).join('')}</div>
-        <div class="cal-actions">${ev.soul ? '<button class="cal-btn" id="ev-del" style="margin-right:auto">Delete</button>' : ''}
+        <div class="cal-actions">${ev.soul ? (ev.trash ? '<button class="cal-btn" id="ev-res" style="margin-right:8px;"><i class="ti ti-rotate-clockwise"></i> Restore</button><button class="cal-btn" id="ev-del" style="margin-right:auto;color:var(--bear-red);border-color:var(--bear-red)">Delete Forever</button>' : '<button class="cal-btn" id="ev-del" style="margin-right:auto;color:var(--bear-red);">Delete</button>') : ''}
           <button class="cal-btn" id="ev-cancel">Cancel</button><button class="cal-btn primary" id="ev-save">Save</button></div></div>`;
       document.body.appendChild(bg);
       const $ = (id) => document.getElementById(id);
@@ -5862,6 +6199,7 @@ print("Welcome to Orto!")
         ['ev-start', 'ev-end'].forEach(id => { const el = $(id), ms = new Date(el.value).getTime(); el.type = all ? 'date' : 'datetime-local'; el.value = toInput(Number.isNaN(ms) ? ev.start : ms, all); });
       };
       $('ev-cancel').onclick = closeEventModal;
+      if ($('ev-res')) $('ev-res').onclick = () => { restoreCalEvent(ev.soul); closeEventModal(); };
       if ($('ev-del')) $('ev-del').onclick = () => deleteCalEvent(ev.soul);
       $('ev-save').onclick = () => saveCalEvent(ev.soul);
       renderEvLinks();
@@ -5882,32 +6220,65 @@ print("Welcome to Orto!")
       if (pickSoul && !evLinks.some(l => l.kind === 'note' && l.soul === pickSoul)) {
         evLinks.push({ kind: 'note', soul: pickSoul });
       }
-      const ev = { title, start, end, allDay, location: $('ev-loc').value.trim(), notes: $('ev-notes').value.trim(), color: $('ev-colors').querySelector('.sel')?.dataset.c || CAL_COLORS[0], links: evLinks };
+      const existing = soul ? calEvents[soul] : null;
+      const ev = { title, start, end, allDay, location: $('ev-loc').value.trim(), notes: $('ev-notes').value.trim(), color: $('ev-colors').querySelector('.sel')?.dataset.c || CAL_COLORS[0], links: evLinks, trash: !!existing?.trash };
       try {
         const res = await os.writeCalendarEvent({ ...ev, soul });
         const id = res.soul;
         calEvents[id] = { soul: id, ...ev };
         calCache.set(id, JSON.stringify(ev), calEvents[id]);
-        document.getElementById('count-calendar').textContent = Object.keys(calEvents).length;
-        closeEventModal(); renderCalendar(); renderNoteEvents(); showToast('Event encrypted & saved');
+        document.getElementById('count-calendar').textContent = Object.values(calEvents).filter(e => !e.trash).length;
+        closeEventModal(); renderCalendar(); renderNoteEvents(); triggerRender(); showToast('Event encrypted & saved');
       } catch (err) {
         showToast('Save failed: ' + err.message);
       }
     }
 
     async function deleteCalEvent(soul) {
+      const ev = calEvents[soul];
+      if (!ev) return;
+      if (ev.trash) {
+        if (!confirm('Permanently delete this event? This cannot be undone.')) return;
+        return deleteCalEventForever(soul);
+      }
+      try {
+        await os.writeCalendarEvent({ ...ev, soul, trash: true });
+        ev.trash = true;
+        calCache.set(soul, JSON.stringify(ev), ev);
+        document.getElementById('count-calendar').textContent = Object.values(calEvents).filter(e => !e.trash).length;
+        closeEventModal(); renderCalendar(); renderNoteEvents(); triggerRender(); showToast('Event moved to Trash');
+      } catch (err) {
+        showToast('Delete failed: ' + err.message);
+      }
+    }
+
+    async function restoreCalEvent(soul) {
+      const ev = calEvents[soul];
+      if (!ev) return;
+      try {
+        await os.writeCalendarEvent({ ...ev, soul, trash: false });
+        ev.trash = false;
+        calCache.set(soul, JSON.stringify(ev), ev);
+        document.getElementById('count-calendar').textContent = Object.values(calEvents).filter(e => !e.trash).length;
+        renderCalendar(); renderNoteEvents(); triggerRender(); showToast('Event restored');
+      } catch (err) {
+        showToast('Restore failed: ' + err.message);
+      }
+    }
+
+    async function deleteCalEventForever(soul) {
       try {
         await os.deleteCalendarEvent(soul);
         delete calEvents[soul];
         calCache.del(soul);
-        document.getElementById('count-calendar').textContent = Object.keys(calEvents).length;
-        closeEventModal(); renderCalendar(); renderNoteEvents(); showToast('Event deleted');
+        document.getElementById('count-calendar').textContent = Object.values(calEvents).filter(e => !e.trash).length;
+        closeEventModal(); renderCalendar(); renderNoteEvents(); triggerRender(); showToast('Event permanently deleted');
       } catch (err) {
         showToast('Delete failed: ' + err.message);
       }
     }
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeEventModal(); if (typeof closeTaskModal === 'function') closeTaskModal(); } });
-    Object.assign(window, { openCalendar, calToday, calNav, calSetView, calNewEvent, calEditEvent, calColClick, calNewEventForNote, linkNoteFromModal, unlinkNoteFromModal, openLinkedNote });
+    Object.assign(window, { openCalendar, calToday, calNav, calSetView, calNewEvent, calEditEvent, calColClick, calNewEventForNote, linkNoteFromModal, unlinkNoteFromModal, openLinkedNote, deleteCalEvent, restoreCalEvent, deleteCalEventForever });
 
 
     // ═══════════════════════════════════════════════════════════════
@@ -6163,7 +6534,7 @@ print("Welcome to Orto!")
     const bmPickFolder = (f) => { bmFolder = f; renderBookmarks(); };
 
     function renderBookmarks() {
-      const all = Object.entries(bookmarks).map(([soul, b]) => ({ soul, ...b }));
+      const all = Object.entries(bookmarks).map(([soul, b]) => ({ soul, ...b })).filter(b => !b.trash);
       const folders = {};
       // every ancestor path is a folder too, counting everything below it
       all.forEach(b => { const parts = (b.folder || '').split('/').filter(Boolean); if (!parts.length) folders[''] = (folders[''] || 0) + 1; parts.forEach((_, i) => { const f = parts.slice(0, i + 1).join('/'); folders[f] = (folders[f] || 0) + 1; }); });
@@ -6172,6 +6543,7 @@ print("Welcome to Orto!")
       document.getElementById('bm-folders').innerHTML = fb(null, 'All', all.length) + Object.keys(folders).sort().map(f => fb(f, f ? f.split('/').pop() : 'Unfiled', folders[f], f ? f.split('/').length - 1 : 0)).join('');
       document.getElementById('bm-rename').classList.toggle('hidden', !bmFolder);
       document.getElementById('bm-del-folder').classList.toggle('hidden', !bmFolder);
+      document.getElementById('count-bookmarks').textContent = all.length;
       const shown = all
         .filter(b => bmFolder === null || (b.folder || '') === bmFolder || (b.folder || '').startsWith(bmFolder + '/'))
         .filter(b => { const hay = [b.title, b.url, b.folder, ...(b.tags || [])].join(' ').toLowerCase(); return bmQuery.every(w => hay.includes(w)); })
@@ -6187,7 +6559,7 @@ print("Welcome to Orto!")
     // resolves null on success, { err } on failure
     async function bmSave(b) {
       const soul = await bmSoul(b.url);
-      const rec = { url: b.url, title: b.title || b.url, folder: b.folder || '', tags: b.tags || [], addedAt: b.addedAt || Date.now() };
+      const rec = { url: b.url, title: b.title || b.url, folder: b.folder || '', tags: b.tags || [], addedAt: b.addedAt || Date.now(), trash: !!b.trash };
       bookmarks[soul] = rec;
       return os.put('bookmarks', soul, rec).then(() => null, (e) => ({ err: e.message }));
     }
@@ -6207,8 +6579,9 @@ print("Welcome to Orto!")
       if (!items.length) return showToast('No bookmarks found in file');
       showToast('Encrypting ' + items.length + ' bookmarks…');
       const failed = await bmSaveMany(items, 'Encrypting');
-      document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
+      document.getElementById('count-bookmarks').textContent = Object.values(bookmarks).filter(b => !b.trash).length;
       renderBookmarks();
+      triggerRender();
       showToast('Imported ' + (items.length - failed) + ' bookmarks' + (failed ? ' (' + failed + ' failed)' : ''));
     }
     async function bmAdd() {
@@ -6216,7 +6589,7 @@ print("Welcome to Orto!")
       if (!/^https?:\/\//i.test(url)) return url && showToast('URL must start with http(s)://');
       const title = (prompt('Title (optional)') || '').trim();
       await bmSave({ url, title, folder: bmFolder || '' });
-      renderBookmarks(); showToast('Bookmark encrypted & saved');
+      renderBookmarks(); triggerRender(); showToast('Bookmark encrypted & saved');
     }
     function bmEdit(soul) {
       const b = bookmarks[soul]; if (!b) return;
@@ -6232,15 +6605,16 @@ print("Welcome to Orto!")
         <datalist id="bm-folder-list">${folders.map(f => `<option value="${escapeHtml(f)}">`).join('')}</datalist>
         <label>Tags (comma separated)<input type="text" id="bm-e-tags" value="${escapeHtml((b.tags || []).join(', '))}"></label>
         <button class="cal-btn hidden" id="bm-e-suggest" type="button" style="align-self:flex-start"><i class="ti ti-tags"></i> Suggest tags</button>
-        <div class="cal-actions"><button class="cal-btn" id="bm-e-cancel">Cancel</button><button class="cal-btn primary" id="bm-e-save">Save</button></div></div>`;
+        <div class="cal-actions">${b.trash ? '<button class="cal-btn" id="bm-e-res" type="button" style="margin-right:auto"><i class="ti ti-rotate-clockwise"></i> Restore</button>' : ''}<button class="cal-btn" id="bm-e-cancel">Cancel</button><button class="cal-btn primary" id="bm-e-save">Save</button></div></div>`;
       document.body.appendChild(bg);
       document.getElementById('bm-e-cancel').onclick = () => bg.remove();
+      if (document.getElementById('bm-e-res')) document.getElementById('bm-e-res').onclick = async () => { await bmRestore(soul); bg.remove(); };
       aiMod().then(ai => { if (ai.aiEnabled()) document.getElementById('bm-e-suggest')?.classList.remove('hidden'); });
       document.getElementById('bm-e-suggest').onclick = () => suggestTagsForBookmark(document.getElementById('bm-e-tags'), document.getElementById('bm-e-title').value, b.url);
       document.getElementById('bm-e-save').onclick = async () => {
         const v = (id) => document.getElementById(id).value.trim();
         await bmSave({ ...b, title: v('bm-e-title') || b.url, folder: v('bm-e-folder').replace(/^\/+|\/+$/g, ''), tags: v('bm-e-tags').split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean) });
-        bg.remove(); renderBookmarks(); showToast('Bookmark updated');
+        bg.remove(); renderBookmarks(); triggerRender(); showToast('Bookmark updated');
       };
       document.getElementById('bm-e-title').focus();
     }
@@ -6254,28 +6628,71 @@ print("Welcome to Orto!")
       bmFolder = to || null; renderBookmarks();
       showToast('Moved ' + (hit.length - failed) + ' bookmarks' + (failed ? ' (' + failed + ' failed)' : ''));
     }
-    // delete a folder with every bookmark in it and below it (no trash for bookmarks: asks first)
+    // move folder and bookmarks to trash
     async function bmDeleteFolder() {
       const from = bmFolder; if (!from) return;
-      const hit = Object.keys(bookmarks).filter(s => bookmarks[s].folder === from || (bookmarks[s].folder || '').startsWith(from + '/'));
-      if (!hit.length || !confirm('Delete the folder "' + from + '" and its ' + hit.length + ' bookmark' + (hit.length === 1 ? '' : 's') + '?\n\nThere is no undo.')) return;
+      const hit = Object.keys(bookmarks).filter(s => !bookmarks[s].trash && (bookmarks[s].folder === from || (bookmarks[s].folder || '').startsWith(from + '/')));
+      if (!hit.length || !confirm('Move folder "' + from + '" and its ' + hit.length + ' bookmark' + (hit.length === 1 ? '' : 's') + ' to Trash?')) return;
       let failed = 0;
       for (let i = 0; i < hit.length; i += 100) {
         await Promise.all(hit.slice(i, i + 100).map(async (soul) => {
-          try { await os.deleteBookmark(soul); delete bookmarks[soul]; bmCache.del(soul); } catch (_) { failed++; }
+          try {
+            const b = bookmarks[soul];
+            b.trash = true;
+            await bmSave(b);
+            bmCache.set(soul, b.title || b.url, b);
+          } catch (_) { failed++; }
         }));
-        if (hit.length > 100) showToast('Deleting ' + Math.min(i + 100, hit.length) + '/' + hit.length + '…');
+        if (hit.length > 100) showToast('Moving ' + Math.min(i + 100, hit.length) + '/' + hit.length + '…');
       }
-      document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
+      document.getElementById('count-bookmarks').textContent = Object.values(bookmarks).filter(b => !b.trash).length;
       renderBookmarks();
-      showToast('Deleted ' + (hit.length - failed) + ' bookmarks' + (failed ? ' (' + failed + ' failed)' : ''));
+      triggerRender();
+      showToast('Moved ' + (hit.length - failed) + ' bookmarks to Trash' + (failed ? ' (' + failed + ' failed)' : ''));
     }
     async function bmDelete(soul) {
+      if (!soul) return;
+      const b = bookmarks[soul];
+      if (!b) return;
+      if (b.trash) {
+        if (!confirm('Permanently delete this bookmark? This cannot be undone.')) return;
+        return bmDeleteForever(soul);
+      }
+      try {
+        await bmSave({ ...b, trash: true });
+        b.trash = true;
+        bmCache.set(soul, b.title || b.url, b);
+        document.getElementById('count-bookmarks').textContent = Object.values(bookmarks).filter(x => !x.trash).length;
+        renderBookmarks();
+        triggerRender();
+        showToast('Bookmark moved to Trash');
+      } catch (err) {
+        showToast('Delete failed: ' + err.message);
+      }
+    }
+    async function bmRestore(soul) {
+      const b = bookmarks[soul];
+      if (!b) return;
+      try {
+        await bmSave({ ...b, trash: false });
+        b.trash = false;
+        bmCache.set(soul, b.title || b.url, b);
+        document.getElementById('count-bookmarks').textContent = Object.values(bookmarks).filter(x => !x.trash).length;
+        renderBookmarks();
+        triggerRender();
+        showToast('Bookmark restored');
+      } catch (err) {
+        showToast('Restore failed: ' + err.message);
+      }
+    }
+    async function bmDeleteForever(soul) {
       try {
         await os.deleteBookmark(soul);
         delete bookmarks[soul]; bmCache.del(soul);
-        document.getElementById('count-bookmarks').textContent = Object.keys(bookmarks).length;
+        document.getElementById('count-bookmarks').textContent = Object.values(bookmarks).filter(x => !x.trash).length;
         renderBookmarks();
+        triggerRender();
+        showToast('Bookmark permanently deleted');
       } catch (err) {
         showToast('Delete failed: ' + err.message);
       }
@@ -6315,8 +6732,9 @@ print("Welcome to Orto!")
       os.onContact((c, soul, deleted) => {
         syncBump();
         if (deleted) delete contacts[soul]; else contacts[soul] = c;
-        document.getElementById('count-contacts').textContent = Object.keys(contacts).length;
+        document.getElementById('count-contacts').textContent = Object.values(contacts).filter(x => !x.trash).length;
         if (contactsMode) renderContacts();
+        renderApp();
       });
     }
     function openContacts() { openPane('contacts-mode', 'nav-contacts', renderContacts); contactsMode = true; }
@@ -6328,6 +6746,7 @@ print("Welcome to Orto!")
     const ctSearch = (v) => { ctQuery = v.toLowerCase().split(/\s+/).filter(Boolean); renderContacts(); };
     function renderContacts() {
       const shown = Object.values(contacts)
+        .filter(c => !c.trash)
         .filter(c => { const hay = [c.name, c.org, c.notes, c.pub, ...(c.emails || []), ...(c.phones || []), ...(c.tags || [])].join(' ').toLowerCase(); return ctQuery.every(w => hay.includes(w)); })
         .sort((a, b) => a.name.localeCompare(b.name));
       document.getElementById('ct-items').innerHTML = shown.length ? shown.map(c => `<div class="bm-item"><div style="flex:1;min-width:0"><b>${escapeHtml(c.name)}</b>
@@ -6350,7 +6769,7 @@ print("Welcome to Orto!")
       document.getElementById('ct-e-save').onclick = async () => {
         if (!field('ct-e-name')) return showToast('Name is required');
         try {
-          await os.writeContact({ soul: soul || null, addedAt: c ? c.addedAt : Date.now(), name: field('ct-e-name'), emails: lines(field('ct-e-emails')), phones: lines(field('ct-e-phones')), org: field('ct-e-org'), tags: lines(field('ct-e-tags')), pub: field('ct-e-pub'), notes: field('ct-e-notes') });
+          await os.writeContact({ soul: soul || null, addedAt: c ? c.addedAt : Date.now(), name: field('ct-e-name'), emails: lines(field('ct-e-emails')), phones: lines(field('ct-e-phones')), org: field('ct-e-org'), tags: lines(field('ct-e-tags')), pub: field('ct-e-pub'), notes: field('ct-e-notes'), trash: c ? !!c.trash : false });
           bg.remove(); showToast('Contact encrypted & saved');
         } catch (e) { showToast(e.message); }
       };
@@ -6364,23 +6783,65 @@ print("Welcome to Orto!")
       showToast('Imported ' + r.imported + ' contacts' + (r.failed ? ' (' + r.failed + ' failed)' : ''));
     }
     function ctExport() {
-      const list = Object.values(contacts).sort((a, b) => a.name.localeCompare(b.name));
+      const list = Object.values(contacts).filter(c => !c.trash).sort((a, b) => a.name.localeCompare(b.name));
       if (!list.length) return showToast('No contacts to export');
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([contactsToVcf(list)], { type: 'text/vcard' }));
       a.download = 'contacts.vcf'; a.click(); URL.revokeObjectURL(a.href);
     }
+    async function ctDelete(soul) {
+      const c = contacts[soul];
+      if (!c) return;
+      if (c.trash) {
+        if (!confirm(`Delete contact "${c.name || 'Untitled'}" forever? This cannot be undone.`)) return;
+        return ctDeleteForever(soul);
+      }
+      try {
+        if (os.trashContact) {
+          await os.trashContact(soul);
+        } else {
+          await os.writeContact({ ...c, trash: true });
+        }
+        showToast('Contact moved to Trash');
+        renderContacts();
+        renderApp();
+      } catch (e) { showToast(e.message); }
+    }
+    async function ctRestore(soul) {
+      const c = contacts[soul];
+      if (!c) return;
+      try {
+        if (os.restoreContact) {
+          await os.restoreContact(soul);
+        } else {
+          await os.writeContact({ ...c, trash: false });
+        }
+        showToast('Contact restored');
+        renderContacts();
+        renderApp();
+      } catch (e) { showToast(e.message); }
+    }
+    async function ctDeleteForever(soul) {
+      try {
+        await os.deleteContact(soul);
+        delete contacts[soul];
+        showToast('Contact deleted forever');
+        renderContacts();
+        renderApp();
+      } catch (e) { showToast(e.message); }
+    }
     wire('ct-items', {
       edit: ctEdit,
-      del: async (soul) => { if (confirm('Delete this contact?')) { try { await os.deleteContact(soul); delete contacts[soul]; renderContacts(); } catch (e) { showToast(e.message); } } }
+      del: ctDelete
     });
 
     function loadSecrets() {
       os.onSecret((x, soul, deleted) => {
         syncBump();
         if (deleted) delete secrets[soul]; else secrets[soul] = x;
-        document.getElementById('count-secrets').textContent = Object.keys(secrets).length;
+        document.getElementById('count-secrets').textContent = Object.values(secrets).filter(s => !s.trash).length;
         if (secretsMode) renderSecrets();
+        renderApp();
       });
     }
     function openSecrets() { openPane('secrets-mode', 'nav-secrets', renderSecrets); secretsMode = true; }
@@ -6393,6 +6854,7 @@ print("Welcome to Orto!")
     const secKind = (k) => { secKindFilter = k; renderSecrets(); };
     function renderSecrets() {
       const shown = Object.values(secrets)
+        .filter(x => !x.trash)
         .filter(x => !secKindFilter || x.kind === secKindFilter)
         .filter(x => { const hay = [x.name, x.username, x.url, x.notes, ...(x.tags || [])].join(' ').toLowerCase(); return secQuery.every(w => hay.includes(w)); })
         .sort((a, b) => a.name.localeCompare(b.name));
@@ -6441,19 +6903,62 @@ print("Welcome to Orto!")
       document.getElementById('sec-e-save').onclick = async () => {
         if (!field('sec-e-name') || !sv.value) return showToast('Name and secret value are required');
         try {
-          await os.writeSecret({ soul: soul || null, createdAt: x ? x.createdAt : Date.now(), name: field('sec-e-name'), kind: field('sec-e-kind'), username: field('sec-e-user'), secret: sv.value, url: field('sec-e-url'), tags: lines(field('sec-e-tags')), notes: field('sec-e-notes') });
+          await os.writeSecret({ soul: soul || null, createdAt: x ? x.createdAt : Date.now(), name: field('sec-e-name'), kind: field('sec-e-kind'), username: field('sec-e-user'), secret: sv.value, url: field('sec-e-url'), tags: lines(field('sec-e-tags')), notes: field('sec-e-notes'), trash: x ? !!x.trash : false });
           bg.remove(); showToast('Secret encrypted & saved');
         } catch (e) { showToast(e.message); }
       };
       document.getElementById('sec-e-name').focus();
     }
+    async function secDelete(soul) {
+      const x = secrets[soul];
+      if (!x) return;
+      if (x.trash) {
+        if (!confirm(`Delete secret "${x.name || 'Untitled'}" forever? This cannot be undone.`)) return;
+        return secDeleteForever(soul);
+      }
+      try {
+        if (os.trashSecret) {
+          await os.trashSecret(soul);
+        } else {
+          await os.writeSecret({ ...x, trash: true });
+        }
+        secShown.delete(soul);
+        showToast('Secret moved to Trash');
+        renderSecrets();
+        renderApp();
+      } catch (e) { showToast(e.message); }
+    }
+    async function secRestore(soul) {
+      const x = secrets[soul];
+      if (!x) return;
+      try {
+        if (os.restoreSecret) {
+          await os.restoreSecret(soul);
+        } else {
+          await os.writeSecret({ ...x, trash: false });
+        }
+        showToast('Secret restored');
+        renderSecrets();
+        renderApp();
+      } catch (e) { showToast(e.message); }
+    }
+    async function secDeleteForever(soul) {
+      try {
+        await os.deleteSecret(soul);
+        delete secrets[soul];
+        secShown.delete(soul);
+        showToast('Secret deleted forever');
+        renderSecrets();
+        renderApp();
+      } catch (e) { showToast(e.message); }
+    }
     wire('sec-items', {
       edit: secEdit,
       show: (soul) => { secShown.has(soul) ? secShown.delete(soul) : secShown.add(soul); renderSecrets(); },
       copy: async (soul) => { try { await navigator.clipboard.writeText(secrets[soul].secret); showToast('Copied. Clear your clipboard when done'); } catch (_) { showToast('Copy not allowed here: use Show'); } },
-      del: async (soul) => { if (confirm('Delete this secret?')) { try { await os.deleteSecret(soul); delete secrets[soul]; secShown.delete(soul); renderSecrets(); } catch (e) { showToast(e.message); } } }
+      del: secDelete
     });
-    Object.assign(window, { openContacts, ctSearch, ctEdit, ctImport, ctExport, openSecrets, secSearch, secKind, secEdit });
+    Object.assign(window, { openContacts, ctSearch, ctEdit, ctImport, ctExport, ctDelete, ctRestore, ctDeleteForever, openSecrets, secSearch, secKind, secEdit, secDelete, secRestore, secDeleteForever });
 
 
     // Feeds — RSS/Atom you follow. The list (feeds collection) is encrypted like everything else; articles are fetched live through the
@@ -7456,7 +7961,7 @@ print("Welcome to Orto!")
       const cached = await tasksCache.load();
       if (Object.keys(cached).length) {
         Object.assign(tasks, cached);
-        document.getElementById('count-tasks').textContent = Object.keys(tasks).length;
+        document.getElementById('count-tasks').textContent = Object.values(tasks).filter(x => !x.trash).length;
         if (tasksMode) renderTasks();
         renderNoteEvents();
         syncBump();
@@ -7470,10 +7975,11 @@ print("Welcome to Orto!")
           tasks[soul] = tsk;
           tasksCache.set(soul, tsk.title, tsk);
         }
-        document.getElementById('count-tasks').textContent = Object.keys(tasks).length;
+        document.getElementById('count-tasks').textContent = Object.values(tasks).filter(x => !x.trash).length;
         if (tasksMode) renderTasks();
         if (gardenOpen()) renderGarden();
         renderNoteEvents();
+        renderApp();
       });
     }
 
@@ -7558,7 +8064,7 @@ print("Welcome to Orto!")
       const fmtDay = (ms) => new Date(ms).toLocaleDateString(navigator.language || 'en-US', { month: 'short', day: 'numeric' });
       const col = (t) => t.column || t.status || 'todo', isDone = (t) => t.status === 'done' || t.column === 'done';
       const kind = (t) => isDone(t) ? 'harvest' : t.dueDate && Number(t.dueDate) < now ? 'wilted' : col(t) === 'blocked' ? 'blocked' : col(t) === 'in_progress' ? 'young' : 'sprout';
-      const plants = Object.entries(tasks).map(([soul, t]) => ({ soul, ...t })).filter(t => !isDone(t) || now - (t.updatedAt || 0) < 14 * GD_DAY)
+      const plants = Object.entries(tasks).map(([soul, t]) => ({ soul, ...t })).filter(t => !t.trash && (!isDone(t) || now - (t.updatedAt || 0) < 14 * GD_DAY))
         .sort((a, b) => (a.createdAt || a.updatedAt || 0) - (b.createdAt || b.updatedAt || 0) || (a.soul < b.soul ? -1 : 1));
       const count = { sprout: 0, young: 0, blocked: 0, wilted: 0, harvest: 0, weeds: 0 };
       plants.forEach(t => { count[kind(t)]++; if (!isDone(t) && now - (t.updatedAt || t.createdAt || now) > 14 * GD_DAY) count.weeds++; });
@@ -7566,9 +8072,9 @@ print("Welcome to Orto!")
       const notes = Object.values(localNotes).filter(n => !n.trash);
       const lastNote = Math.max(0, ...notes.map(n => n.timestamp || 0)), notesWeek = notes.filter(n => now - (n.timestamp || 0) < 7 * GD_DAY).length;
       const raining = now - lastNote < GD_DAY, dry = now - lastNote > 7 * GD_DAY;
-      const events = Object.entries(calEvents).map(([soul, e]) => ({ soul, ...e })).filter(e => (e.end ?? e.start) >= now && e.start - now < 7 * GD_DAY).sort((a, b) => a.start - b.start).slice(0, 10);
+      const events = Object.entries(calEvents).map(([soul, e]) => ({ soul, ...e })).filter(e => !e.trash && (e.end ?? e.start) >= now && e.start - now < 7 * GD_DAY).sort((a, b) => a.start - b.start).slice(0, 10);
       const unread = Object.values(feeds).reduce((n, f) => n + feedUnread(f), 0);
-      const oldSecrets = Object.values(secrets).filter(s => now - (s.updatedAt || s.createdAt || now) > 365 * GD_DAY).length;
+      const oldSecrets = Object.values(secrets).filter(s => !s.trash && now - (s.updatedAt || s.createdAt || now) > 365 * GD_DAY).length;
       const stormy = count.wilted >= 3;
 
       // sky and light follow the real clock; three or more overdue tasks bring a storm
@@ -7672,7 +8178,7 @@ print("Welcome to Orto!")
     const taskFilterPriority = (p) => { taskPriorityFilter = p || ''; renderTasks(); };
 
     const tasksForNote = (soul) => Object.entries(tasks)
-      .filter(([, t]) => (t.links || []).some(l => l.kind === 'note' && l.soul === soul))
+      .filter(([, t]) => !t.trash && (t.links || []).some(l => l.kind === 'note' && l.soul === soul))
       .map(([id, t]) => ({ soul: id, ...t }))
       .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
@@ -7680,7 +8186,7 @@ print("Welcome to Orto!")
       const board = document.getElementById('tasks-board');
       if (!board) return;
 
-      const all = Object.entries(tasks).map(([soul, t]) => ({ soul, ...t }));
+      const all = Object.entries(tasks).map(([soul, t]) => ({ soul, ...t })).filter(t => !t.trash);
       const filtered = all.filter(t => {
         if (taskPriorityFilter && (t.priority || 'medium') !== taskPriorityFilter) return false;
         if (taskQuery) {
@@ -7792,15 +8298,17 @@ print("Welcome to Orto!")
         assignee: t.assignee || '',
         links: Array.isArray(t.links) ? t.links : [],
         createdAt: t.createdAt || Date.now(),
-        completedAt: t.completedAt || null
+        completedAt: t.completedAt || null,
+        trash: !!t.trash
       };
       tasks[soul] = { soul, ...payload, updatedAt: Date.now() };
       tasksCache.set(soul, payload.title, tasks[soul]);
       os.put('tasks', soul, payload).catch((e) => showToast('Task save error: ' + e.message));
 
-      document.getElementById('count-tasks').textContent = Object.keys(tasks).length;
+      document.getElementById('count-tasks').textContent = Object.values(tasks).filter(x => !x.trash).length;
       if (tasksMode) renderTasks();
       renderNoteEvents();
+      renderApp();
     }
 
     async function taskToggleDone(soul, event) {
@@ -7900,7 +8408,7 @@ print("Welcome to Orto!")
         <label>Description<textarea id="tsk-desc" rows="3" placeholder="Task details...">${escapeHtml(t.desc || '')}</textarea></label>
         <div class="ev-links" id="tsk-links"></div>
         <div class="cal-actions">
-          ${t.soul ? '<button class="cal-btn" id="tsk-del" style="margin-right:auto;color:var(--bear-red);">Delete</button>' : ''}
+          ${t.soul ? (t.trash ? `<button class="cal-btn" id="tsk-restore" style="margin-right:8px;"><i class="ti ti-rotate-clockwise"></i> Restore</button><button class="cal-btn" id="tsk-del" style="margin-right:auto;color:var(--bear-red);">Delete Forever</button>` : `<button class="cal-btn" id="tsk-del" style="margin-right:auto;color:var(--bear-red);">Delete</button>`) : ''}
           <button class="cal-btn" id="tsk-cancel">Cancel</button>
           <button class="cal-btn primary" id="tsk-save">Save</button>
         </div>
@@ -7909,6 +8417,9 @@ print("Welcome to Orto!")
       document.body.appendChild(bg);
 
       document.getElementById('tsk-cancel').onclick = closeTaskModal;
+      if (document.getElementById('tsk-restore')) {
+        document.getElementById('tsk-restore').onclick = () => { taskRestore(t.soul); closeTaskModal(); };
+      }
       if (document.getElementById('tsk-del')) {
         document.getElementById('tsk-del').onclick = () => taskDelete(t.soul);
       }
@@ -7978,6 +8489,7 @@ print("Welcome to Orto!")
         currentTaskLinks.push({ kind: 'note', soul: pickTaskSoul });
       }
 
+      const isTrash = !!(tasks[soul]?.trash);
       const taskObj = {
         soul: soul || null,
         title,
@@ -7989,7 +8501,8 @@ print("Welcome to Orto!")
         desc,
         links: currentTaskLinks,
         createdAt: originalCreatedAt || Date.now(),
-        completedAt: col === 'done' ? Date.now() : null
+        completedAt: col === 'done' ? Date.now() : null,
+        trash: isTrash
       };
 
       await taskSaveDirect(taskObj);
@@ -8000,15 +8513,60 @@ print("Welcome to Orto!")
     async function taskDelete(soul, event) {
       if (event) event.stopPropagation();
       if (!soul) return;
+      const t = tasks[soul];
+      if (!t) return;
+      if (t.trash) {
+        if (!confirm(`Delete task "${t.title || 'Untitled'}" forever? This cannot be undone.`)) return;
+        return taskDeleteForever(soul);
+      }
+      try {
+        if (os.trashTask) {
+          await os.trashTask(soul);
+        } else {
+          await taskSaveDirect({ ...t, soul, trash: true });
+        }
+        closeTaskModal();
+        showToast('Task moved to Trash');
+        document.getElementById('count-tasks').textContent = Object.values(tasks).filter(x => !x.trash).length;
+        if (tasksMode) renderTasks();
+        renderNoteEvents();
+        renderApp();
+      } catch (err) {
+        showToast('Delete failed: ' + err.message);
+      }
+    }
+
+    async function taskRestore(soul) {
+      const t = tasks[soul];
+      if (!t) return;
+      try {
+        if (os.restoreTask) {
+          await os.restoreTask(soul);
+        } else {
+          await taskSaveDirect({ ...t, soul, trash: false });
+        }
+        closeTaskModal();
+        showToast('Task restored');
+        document.getElementById('count-tasks').textContent = Object.values(tasks).filter(x => !x.trash).length;
+        if (tasksMode) renderTasks();
+        renderNoteEvents();
+        renderApp();
+      } catch (err) {
+        showToast('Restore failed: ' + err.message);
+      }
+    }
+
+    async function taskDeleteForever(soul) {
       try {
         await os.deleteTask(soul);
         delete tasks[soul];
         tasksCache.del(soul);
         closeTaskModal();
-        document.getElementById('count-tasks').textContent = Object.keys(tasks).length;
+        document.getElementById('count-tasks').textContent = Object.values(tasks).filter(x => !x.trash).length;
         if (tasksMode) renderTasks();
         renderNoteEvents();
-        showToast('Task deleted');
+        renderApp();
+        showToast('Task deleted forever');
       } catch (err) {
         showToast('Delete failed: ' + err.message);
       }
@@ -8017,7 +8575,8 @@ print("Welcome to Orto!")
     Object.assign(window, {
       openTasks, closeTasks, taskNew, taskNewForNote, taskEdit, closeTaskModal,
       taskSearch, taskFilterPriority, taskDragStart, taskDragOver, taskDragLeave, taskDrop,
-      taskToggleDone, taskDelete, linkTaskNoteFromSelect, unlinkTaskNote
+      taskToggleDone, taskDelete, taskRestore, taskDeleteForever, linkTaskNoteFromSelect, unlinkTaskNote,
+      emptyAllTrash, restoreTrashItem, deleteTrashItemForever
     });
 
     if (demoCfg && new URLSearchParams(location.search).has('demo')) demoLogin(); // e.g. https://my-server/?demo

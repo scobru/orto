@@ -870,34 +870,46 @@ export class Orto {
 
   // ─── Vault (encrypted notes) ─────────────────────────────────────
 
-  async writeVaultNote({ title, body, cat = 'general', pinned = false, soul = null }) {
+  async writeVaultNote({ title, body, cat = 'general', pinned = false, soul = null, trash = false }) {
     this._needKey();
     const noteSoul = soul || this._newSoul('vault-');
     const timestamp = Date.now();
-    await this.put('vault', noteSoul, { title, body, cat, pinned: !!pinned, trash: false, timestamp });
-    return { soul: noteSoul, status: 'saved', timestamp };
+    await this.put('vault', noteSoul, { title, body, cat, pinned: !!pinned, trash: !!trash, timestamp });
+    return { soul: noteSoul, status: 'saved', timestamp, trash: !!trash };
   }
 
-  /** Decrypted notes (trashed ones skipped), pinned first then newest. `timeoutMs` kept for API compatibility. */
-  async readVaultNotes() {
-    const notes = (await this._readAll('vault')).filter(n => !n.trash && n.title);
+  /** Decrypted notes (trashed ones skipped by default), pinned first then newest. `timeoutMs` kept for API compatibility. */
+  async readVaultNotes({ includeTrash = false } = {}) {
+    const notes = (await this._readAll('vault')).filter(n => (includeTrash || !n.trash) && n.title);
     return notes.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.timestamp - a.timestamp);
   }
 
-  async getVaultNote(soul) {
+  async getVaultNote(soul, { includeTrash = false } = {}) {
     const n = await this._get('vault', soul);
-    return n && !n.trash && n.title ? n : null;
+    return n && (includeTrash || !n.trash) && n.title ? n : null;
   }
 
   deleteVaultNote(soul) { return this._del('vault', soul); }
 
+  async trashVaultNote(soul) {
+    const n = await this.getVaultNote(soul, { includeTrash: true });
+    if (!n) throw new Error('Note not found: ' + soul);
+    return this.writeVaultNote({ ...n, soul, trash: true });
+  }
+
+  async restoreVaultNote(soul) {
+    const n = await this.getVaultNote(soul, { includeTrash: true });
+    if (!n) throw new Error('Note not found: ' + soul);
+    return this.writeVaultNote({ ...n, soul, trash: false });
+  }
+
   onVaultNote(callback, listed) {
-    return this._on('vault', (n, soul, deleted) => (n && n.trash ? callback(null, soul, true) : callback(n && { ...n, id: soul }, soul, deleted)), (n) => n.title !== undefined || n.trash, false, null, listed);
+    return this._on('vault', (n, soul, deleted) => callback(n && { ...n, id: soul }, soul, deleted), (n) => n.title !== undefined || n.trash, false, null, listed);
   }
 
   // ─── Calendar ───────────────────────────────────────────────────────
 
-  /** @param {{title:string, start:number|string, end?:number|string, allDay?:boolean, notes?:string, location?:string, links?:{kind:string, soul:string}[], soul?:string}} event */
+  /** @param {{title:string, start:number|string, end?:number|string, allDay?:boolean, notes?:string, location?:string, links?:{kind:string, soul:string}[], soul?:string, trash?:boolean}} event */
   async writeCalendarEvent({ soul = null, ...event }) {
     this._needKey();
     if (!event.title || event.start == null) throw new Error('title and start are required');
@@ -907,11 +919,27 @@ export class Orto {
     checkLinks(event.links);
     const eventSoul = soul || this._newSoul('cal-');
     delete event.updatedAt;
-    const r = await this.put('calendar', eventSoul, { ...event, start, end });
+    const trash = !!event.trash;
+    const r = await this.put('calendar', eventSoul, { ...event, start, end, trash });
     return { ...r, updatedAt: Date.now() };
   }
 
-  getCalendarEvent(soul) { return this._get('calendar', soul); }
+  async getCalendarEvent(soul, { includeTrash = false } = {}) {
+    const ev = await this._get('calendar', soul);
+    return ev && (includeTrash || !ev.trash) ? ev : null;
+  }
+
+  async trashCalendarEvent(soul) {
+    const ev = await this.getCalendarEvent(soul, { includeTrash: true });
+    if (!ev) throw new Error('Event not found: ' + soul);
+    return this.writeCalendarEvent({ ...ev, soul, trash: true });
+  }
+
+  async restoreCalendarEvent(soul) {
+    const ev = await this.getCalendarEvent(soul, { includeTrash: true });
+    if (!ev) throw new Error('Event not found: ' + soul);
+    return this.writeCalendarEvent({ ...ev, soul, trash: false });
+  }
 
   async linkToEvent(eventSoul, { kind = 'note', soul }) {
     const ev = await this.getCalendarEvent(eventSoul);
@@ -939,10 +967,10 @@ export class Orto {
   }
 
   /** Events overlapping [from, to] (ms or date string), by start time. Filtering is client-side: times are encrypted. */
-  async readCalendarEvents({ from = null, to = null } = {}) {
+  async readCalendarEvents({ from = null, to = null, includeTrash = false } = {}) {
     const lo = from != null ? new Date(from).getTime() : -Infinity;
     const hi = to != null ? new Date(to).getTime() : Infinity;
-    return (await this._readAll('calendar')).filter(ev => ev.end >= lo && ev.start <= hi).sort((a, b) => a.start - b.start);
+    return (await this._readAll('calendar')).filter(ev => (includeTrash || !ev.trash) && ev.end >= lo && ev.start <= hi).sort((a, b) => a.start - b.start);
   }
 
   deleteCalendarEvent(soul) { return this._del('calendar', soul); }
@@ -1783,10 +1811,10 @@ export class Orto {
   // ─── Bookmarks ──────────────────────────────────────────────────────
 
   /** Soul is derived from the URL, so saving or importing the same URL twice updates one record. */
-  async writeBookmark({ url, title = '', folder = '', tags = [], addedAt = Date.now() }) {
+  async writeBookmark({ url, title = '', folder = '', tags = [], addedAt = Date.now(), trash = false }) {
     this._needKey();
     if (!/^https?:\/\//i.test(url || '')) throw new Error('url must be http(s)');
-    return this.put('bookmarks', await bookmarkSoul(url), { url, title: title || url, folder, tags, addedAt });
+    return this.put('bookmarks', await bookmarkSoul(url), { url, title: title || url, folder, tags, addedAt, trash: !!trash });
   }
 
   async importBookmarksHtml(html) {
@@ -1797,22 +1825,22 @@ export class Orto {
   }
 
   /** Bookmarks, newest first; `folder` = path prefix, `query` = space-separated keywords that must all match. */
-  async readBookmarks({ folder = null, query = null } = {}) {
+  async readBookmarks({ folder = null, query = null, includeTrash = false } = {}) {
     const w = words(query);
     return (await this._readAll('bookmarks'))
-      .filter(bm => bm.url && (!folder || bm.folder === folder || bm.folder.startsWith(folder + '/')) && matches(w, bm.title, bm.url, bm.folder, bm.tags || []))
+      .filter(bm => (includeTrash || !bm.trash) && bm.url && (!folder || bm.folder === folder || bm.folder.startsWith(folder + '/')) && matches(w, bm.title, bm.url, bm.folder, bm.tags || []))
       .sort((a, b) => b.addedAt - a.addedAt);
   }
 
   /** Apply many edits at once: each `{ soul, title?, folder?, tags? }`; omitted fields, `url` and `addedAt` are kept. */
   async updateBookmarks(changes) {
-    const bySoul = new Map((await this.readBookmarks()).map(b => [b.soul, b]));
+    const bySoul = new Map((await this.readBookmarks({ includeTrash: true })).map(b => [b.soul, b]));
     const missing = [], jobs = [];
     for (const { soul, ...patch } of changes) {
       const cur = bySoul.get(soul);
       if (!cur) { missing.push(soul); continue; }
-      const { title = cur.title, folder = cur.folder, tags = cur.tags } = patch;
-      jobs.push({ ...cur, title, folder, tags });
+      const { title = cur.title, folder = cur.folder, tags = cur.tags, trash = cur.trash } = patch;
+      jobs.push({ ...cur, title, folder, tags, trash });
     }
     let updated = 0, failed = 0;
     for (let i = 0; i < jobs.length; i += 50) {
@@ -1831,25 +1859,44 @@ export class Orto {
   }
 
   async exportBookmarksHtml({ folder = null } = {}) { return bookmarksToHtml(await this.readBookmarks({ folder })); }
-  async getBookmark(soul) { const b = await this._get('bookmarks', soul); return b && b.url ? b : null; }
+  async getBookmark(soul, { includeTrash = false } = {}) { const b = await this._get('bookmarks', soul); return b && (includeTrash || !b.trash) && b.url ? b : null; }
+  async trashBookmark(soul) {
+    const b = await this.getBookmark(soul, { includeTrash: true });
+    if (!b) throw new Error('Bookmark not found: ' + soul);
+    return this.writeBookmark({ ...b, soul, trash: true });
+  }
+  async restoreBookmark(soul) {
+    const b = await this.getBookmark(soul, { includeTrash: true });
+    if (!b) throw new Error('Bookmark not found: ' + soul);
+    return this.writeBookmark({ ...b, soul, trash: false });
+  }
   deleteBookmark(soul) { return this._del('bookmarks', soul); }
   onBookmark(callback, known) { return this._on('bookmarks', callback, (b) => /^https?:\/\//i.test(b.url), false, known); }
 
   // ─── Contacts ───────────────────────────────────────────────────────
 
   /** `pub` is an optional Orto username, so a contact can be an Orto user too. */
-  async writeContact({ soul = null, name, emails = [], phones = [], org = '', notes = '', tags = [], pub = '', addedAt = Date.now() }) {
+  async writeContact({ soul = null, name, emails = [], phones = [], org = '', notes = '', tags = [], pub = '', addedAt = Date.now(), trash = false }) {
     if (!name || !String(name).trim()) throw new Error('name is required.');
-    return this.put('contacts', soul || this._newSoul('ct-'), { name: String(name).trim(), emails: asList(emails), phones: asList(phones), org, notes, tags: asList(tags).map(t => t.replace(/^#/, '')), pub, addedAt });
+    return this.put('contacts', soul || this._newSoul('ct-'), { name: String(name).trim(), emails: asList(emails), phones: asList(phones), org, notes, tags: asList(tags).map(t => t.replace(/^#/, '')), pub, addedAt, trash: !!trash });
   }
 
-  getContact(soul) { return this._get('contacts', soul); }
+  async getContact(soul, { includeTrash = false } = {}) { const c = await this._get('contacts', soul); return c && (includeTrash || !c.trash) ? c : null; }
+  async trashContact(soul) {
+    const c = await this.getContact(soul, { includeTrash: true });
+    if (!c) throw new Error('Contact not found: ' + soul);
+    return this.writeContact({ ...c, soul, trash: true });
+  }
+  async restoreContact(soul) {
+    const c = await this.getContact(soul, { includeTrash: true });
+    if (!c) throw new Error('Contact not found: ' + soul);
+    return this.writeContact({ ...c, soul, trash: false });
+  }
 
-  async readContacts({ query = null, tag = null } = {}) {
+  async readContacts({ query = null, tag = null, includeTrash = false } = {}) {
     const w = words(query);
     return (await this._readAll('contacts'))
-      .filter(c => !tag || (c.tags || []).includes(tag.replace(/^#/, '')))
-      .filter(c => matches(w, c.name, c.org, c.notes, c.pub, c.emails || [], c.phones || [], c.tags || []))
+      .filter(c => (includeTrash || !c.trash) && (!tag || (c.tags || []).includes(tag.replace(/^#/, ''))) && matches(w, c.name, c.org, c.notes, c.pub, c.emails || [], c.phones || [], c.tags || []))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -1865,21 +1912,29 @@ export class Orto {
 
   // ─── Secrets: passwords, API keys, notes ────────────────────────────
 
-  async writeSecret({ soul = null, name, kind = 'password', username = '', secret, url = '', notes = '', tags = [], createdAt = Date.now() }) {
+  async writeSecret({ soul = null, name, kind = 'password', username = '', secret, url = '', notes = '', tags = [], createdAt = Date.now(), trash = false }) {
     if (!name || !String(name).trim()) throw new Error('name is required.');
     if (secret === undefined || secret === null || secret === '') throw new Error('secret is required.');
-    return this.put('secrets', soul || this._newSoul('sc-'), { name: String(name).trim(), kind, username, secret: String(secret), url, notes, tags: asList(tags).map(t => t.replace(/^#/, '')), createdAt });
+    return this.put('secrets', soul || this._newSoul('sc-'), { name: String(name).trim(), kind, username, secret: String(secret), url, notes, tags: asList(tags).map(t => t.replace(/^#/, '')), createdAt, trash: !!trash });
   }
 
-  getSecret(soul) { return this._get('secrets', soul); }
+  async getSecret(soul, { includeTrash = false } = {}) { const s = await this._get('secrets', soul); return s && (includeTrash || !s.trash) ? s : null; }
+  async trashSecret(soul) {
+    const s = await this.getSecret(soul, { includeTrash: true });
+    if (!s) throw new Error('Secret not found: ' + soul);
+    return this.writeSecret({ ...s, soul, trash: true });
+  }
+  async restoreSecret(soul) {
+    const s = await this.getSecret(soul, { includeTrash: true });
+    if (!s) throw new Error('Secret not found: ' + soul);
+    return this.writeSecret({ ...s, soul, trash: false });
+  }
 
   /** `query` matches name/username/url/notes/tags, never the secret value itself. */
-  async readSecrets({ query = null, kind = null, tag = null } = {}) {
+  async readSecrets({ query = null, kind = null, tag = null, includeTrash = false } = {}) {
     const w = words(query);
     return (await this._readAll('secrets'))
-      .filter(x => !kind || x.kind === kind)
-      .filter(x => !tag || (x.tags || []).includes(tag.replace(/^#/, '')))
-      .filter(x => matches(w, x.name, x.username, x.url, x.notes, x.tags || []))
+      .filter(x => (includeTrash || !x.trash) && (!kind || x.kind === kind) && (!tag || (x.tags || []).includes(tag.replace(/^#/, ''))) && matches(w, x.name, x.username, x.url, x.notes, x.tags || []))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -1927,7 +1982,7 @@ export class Orto {
 
   /**
    * @param {{soul?:string, title:string, status?:string, priority?:string, desc?:string, dueDate?:number|string|null,
-   *          tags?:string[]|string, assignee?:string, column?:string, links?:{kind:string, soul:string}[], createdAt?:number, completedAt?:number|null}} task
+   *          tags?:string[]|string, assignee?:string, column?:string, links?:{kind:string, soul:string}[], createdAt?:number, completedAt?:number|null, trash?:boolean}} task
    */
   async writeTask({ soul = null, ...task }) {
     this._needKey();
@@ -1943,28 +1998,41 @@ export class Orto {
     let completedAt = task.completedAt !== undefined ? task.completedAt : null;
     if (status === 'done' && !completedAt) completedAt = now;
     const taskSoul = soul || this._newSoul('task-');
+    const trash = !!task.trash;
     await this.put('tasks', taskSoul, {
       title: task.title.trim(), status, priority: task.priority || 'medium', desc: task.desc || task.description || '', dueDate,
       tags: asList(task.tags), assignee: task.assignee || '', column: task.column || status, links: task.links || [],
-      createdAt: task.createdAt != null ? Number(task.createdAt) : now, completedAt
+      createdAt: task.createdAt != null ? Number(task.createdAt) : now, completedAt, trash
     });
-    return { soul: taskSoul, status: 'saved', updatedAt: now };
+    return { soul: taskSoul, status: 'saved', updatedAt: now, trash };
   }
 
-  async getTask(soul) { const t = await this._get('tasks', soul); return t && t.title ? t : null; }
+  async getTask(soul, { includeTrash = false } = {}) { const t = await this._get('tasks', soul); return t && (includeTrash || !t.trash) && t.title ? t : null; }
 
   async updateTask(soul, patch) {
-    const cur = await this.getTask(soul);
+    const cur = await this.getTask(soul, { includeTrash: true });
     if (!cur) throw new Error('Task not found: ' + soul);
     return this.writeTask({ ...cur, ...patch, soul });
   }
 
+  async trashTask(soul) {
+    const t = await this.getTask(soul, { includeTrash: true });
+    if (!t) throw new Error('Task not found: ' + soul);
+    return this.writeTask({ ...t, soul, trash: true });
+  }
+
+  async restoreTask(soul) {
+    const t = await this.getTask(soul, { includeTrash: true });
+    if (!t) throw new Error('Task not found: ' + soul);
+    return this.writeTask({ ...t, soul, trash: false });
+  }
+
   /** Open tasks first, then by priority, due date, last update. */
-  async readTasks({ status = null, priority = null, tag = null, query = null } = {}) {
+  async readTasks({ status = null, priority = null, tag = null, query = null, includeTrash = false } = {}) {
     const q = query ? query.toLowerCase() : null, same = (a, b) => (a || '').toLowerCase() === b.toLowerCase();
     const ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
     return (await this._readAll('tasks'))
-      .filter(t => t.title && (!status || same(t.status, status)) && (!priority || same(t.priority, priority)) && (!tag || (t.tags || []).some(x => same(x, tag)))
+      .filter(t => (includeTrash || !t.trash) && t.title && (!status || same(t.status, status)) && (!priority || same(t.priority, priority)) && (!tag || (t.tags || []).some(x => same(x, tag)))
         && (!q || (t.title + ' ' + (t.desc || '') + ' ' + (t.assignee || '')).toLowerCase().includes(q)))
       .sort((a, b) =>
         (a.status === 'done') - (b.status === 'done')
