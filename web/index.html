@@ -4246,6 +4246,10 @@
     const toggleBtn = document.getElementById('toggle-mode-btn');
     const subtitle = document.getElementById('login-subtitle');
 
+    const VISO_KEY = "GzHy3jnEtj26EoGqMsBpoawcY378hK9kp91rTcNYiAac";
+    const ORTO_KEY = "9eBjDkH6ZXA6ehUyWBBjT6Xg4tQE4ALZjSsgXERds4yZ";
+    const FREENET_ORTO_URL = `http://127.0.0.1:7509/v1/contract/web/${ORTO_KEY}/`;
+
     let currentModeIsFreenet = isFreenet;
 
     function renderLoginMode() {
@@ -4255,7 +4259,10 @@
         if (subtitle) subtitle.innerHTML = 'Personal Workspace on Freenet<br>Sign in with your Sovereign Identity.';
         if (fnSection) fnSection.classList.remove('hidden');
         if (classicForm) classicForm.classList.add('hidden');
-        if (toggleBtn) toggleBtn.textContent = 'Switch to classic login (server)';
+        if (toggleBtn) {
+          toggleBtn.textContent = 'Switch to classic login (server)';
+          toggleBtn.href = '#';
+        }
 
         const storedSecret = safeStore.getItem('orto_freenet_secret');
         const storedPub = safeStore.getItem('orto_freenet_pub');
@@ -4280,7 +4287,10 @@
         if (fnSection) fnSection.classList.add('hidden');
         if (classicForm) classicForm.classList.remove('hidden');
         if (subtitle) subtitle.innerHTML = 'Self-hosted Workspace<br>Enter your master credentials to unlock.';
-        if (toggleBtn) toggleBtn.textContent = 'Switch to Freenet Sovereign Identity';
+        if (toggleBtn) {
+          toggleBtn.textContent = 'Switch to Freenet Sovereign Identity';
+          toggleBtn.href = isFreenet ? '#' : FREENET_ORTO_URL;
+        }
       }
     }
 
@@ -4288,6 +4298,12 @@
 
     if (toggleBtn) {
       toggleBtn.onclick = (e) => {
+        if (!isFreenet && !currentModeIsFreenet) {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+          e.preventDefault();
+          location.href = FREENET_ORTO_URL;
+          return;
+        }
         e.preventDefault();
         currentModeIsFreenet = !currentModeIsFreenet;
         renderLoginMode();
@@ -4362,8 +4378,6 @@
       };
     }
 
-    const VISO_KEY = "GzHy3jnEtj26EoGqMsBpoawcY378hK9kp91rTcNYiAac";
-    const ORTO_KEY = "9eBjDkH6ZXA6ehUyWBBjT6Xg4tQE4ALZjSsgXERds4yZ";
     const fnVisoBtn = document.getElementById('fn-viso-btn');
     const visoReturnUrl = () => `${(location.origin && location.origin !== 'null') ? location.origin : `${location.protocol}//${location.host}`}/v1/contract/web/${ORTO_KEY}/`;
     const randHex = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => b.toString(16).padStart(2, '0')).join('');
