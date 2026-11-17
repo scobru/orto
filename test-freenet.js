@@ -26,12 +26,19 @@ try {
     const ours = await crypto.subtle.importKey('raw', Buffer.from(ourEpk, 'hex'), 'X25519', false, []);
     const shared = await crypto.subtle.deriveBits({ name: 'X25519', public: ours }, eph.privateKey, 256);
     const ikm = await crypto.subtle.importKey('raw', shared, 'HKDF', false, ['deriveKey']);
+    const challenge = `wd1.${'ab'.repeat(32)}.${ourEpk}`;
     const key = await crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: Buffer.concat([vEpk, Buffer.from(ourEpk, 'hex')]), info: new TextEncoder().encode('viso connect v1 app secret') }, ikm, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
     const secret = Buffer.alloc(32, 0x42);
-    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: new Uint8Array(12) }, key, secret));
-    assert.equal(await visoOpenEsk(`${hexOf(vEpk)}.${hexOf(ct)}`), secret.toString('hex'));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: new Uint8Array(12), additionalData: new TextEncoder().encode(challenge) }, key, secret));
+    const esk = `${hexOf(vEpk)}.${hexOf(ct)}`, saved = store.get('orto_viso_epriv');
+    // a challenge that does not carry our epk, or another sign-in's challenge, must not open it
+    await assert.rejects(() => visoOpenEsk(esk, `wd1.${'ab'.repeat(32)}.${'00'.repeat(32)}`), /different request/);
+    store.set('orto_viso_epriv', saved);
+    await assert.rejects(() => visoOpenEsk(esk, `wd1.${'cd'.repeat(32)}.${ourEpk}`)); // right nonce, wrong signed challenge: AAD mismatch
+    store.set('orto_viso_epriv', saved);
+    assert.equal(await visoOpenEsk(esk, challenge), secret.toString('hex'));
     assert.equal(store.has('orto_viso_epriv'), false, 'private key is single use');
-    await assert.rejects(() => visoOpenEsk(`${hexOf(vEpk)}.${hexOf(ct)}`), /no pending/);
+    await assert.rejects(() => visoOpenEsk(esk, challenge), /no pending/);
     // the HKDF step matches the known-answer vector in viso's docs
     const kat = await crypto.subtle.importKey('raw', Buffer.alloc(32, 1), 'HKDF', false, ['deriveBits']);
     const katKey = await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: Buffer.concat([Buffer.alloc(32, 2), Buffer.alloc(32, 3)]), info: new TextEncoder().encode('viso connect v1 app secret') }, kat, 256);

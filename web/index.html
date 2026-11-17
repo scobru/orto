@@ -4395,10 +4395,13 @@
       safeStore.setItem('orto_viso_epriv', JSON.stringify(await crypto.subtle.exportKey('jwk', kp.privateKey)));
       return visoHex(await crypto.subtle.exportKey('raw', kp.publicKey));
     }
-    async function visoOpenEsk(esk) {
+    async function visoOpenEsk(esk, challenge) {
       const jwk = JSON.parse(safeStore.getItem('orto_viso_epriv') || 'null');
       safeStore.removeItem('orto_viso_epriv'); // single use
       if (!jwk) throw new Error('no pending Viso key, please start the sign-in again');
+      // the persona signed `wd1.<app key>.<nonce>`; our epk is that nonce, so the signature covers it, and the challenge is the AEAD AAD
+      const ourEpk = visoHex(visoB64uToBytes(jwk.x));
+      if (!String(challenge || '').endsWith('.' + ourEpk)) throw new Error('Viso answered a different request, please start the sign-in again');
       const [vEpk, ct] = String(esk).split('.');
       if (!/^[0-9a-fA-F]{64}$/.test(vEpk || '') || !/^[0-9a-fA-F]{96}$/.test(ct || '')) throw new Error('malformed key from Viso');
       const priv = await crypto.subtle.importKey('jwk', jwk, 'X25519', false, ['deriveBits']);
@@ -4407,7 +4410,7 @@
       const salt = new Uint8Array([...visoUnhex(vEpk), ...visoB64uToBytes(jwk.x)]);
       const ikm = await crypto.subtle.importKey('raw', shared, 'HKDF', false, ['deriveKey']);
       const key = await crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt, info: new TextEncoder().encode('viso connect v1 app secret') }, ikm, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
-      return visoHex(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: new Uint8Array(12) }, key, visoUnhex(ct)));
+      return visoHex(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: new Uint8Array(12), additionalData: new TextEncoder().encode(challenge) }, key, visoUnhex(ct)));
     }
     // viso-esk:end
 
@@ -4437,9 +4440,9 @@
         try {
           // Viso derives a deterministic secret for Orto from the persona seed (key=v1).
           // No alert, no manual key coping: the seed backup in Viso restores everything on any device.
-          const nonce = randHex(16);
-          safeStore.setItem('orto_viso_pending_nonce', nonce);
           const epk = await visoNewEpk();
+          const nonce = epk; // Viso requires the epk as the nonce, so its signature covers the key we sent
+          safeStore.setItem('orto_viso_pending_nonce', nonce);
           const target = `${location.origin && location.origin !== 'null' ? location.origin : `${location.protocol}//${location.host}`}/v1/contract/web/${VISO_KEY}/?connect=v1&key=v1&epk=${epk}&challenge=${nonce}&return=${encodeURIComponent(visoReturnUrl())}`;
           if (window.parent !== window) {
             try { parent.postMessage({ __freenet_shell__: true, type: 'navigate', href: target }, '*'); } catch (_) {}
@@ -8837,7 +8840,7 @@ print("Welcome to Orto!")
       if (urlParams.get('viso') === 'ok' && urlParams.has('pk')) {
         const esk = (hashStr.match(/(?:^|[#&])esk=([0-9a-fA-F.]+)/) || [])[1];
         let skMatch = null, skErr = null;
-        if (esk) { try { skMatch = await visoOpenEsk(esk); } catch (err) { skErr = err; } }
+        if (esk) { try { skMatch = await visoOpenEsk(esk, urlParams.get('challenge')); } catch (err) { skErr = err; } }
         const sk = skMatch || safeStore.getItem('orto_freenet_secret') || (await nodeRead(NODE_SECRET));
         const q = new URLSearchParams(location.search);
         history.replaceState(null, '', location.pathname);
