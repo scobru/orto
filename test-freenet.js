@@ -10,6 +10,34 @@ const createClient = (opts = {}) => {
 };
 
 try {
+  console.log('0. Viso key=v1: sealed #esk= decrypts with WebCrypto (vector from viso docs)');
+  {
+    const fs = await import('node:fs');
+    const src = fs.readFileSync(new URL('./web/index.html', import.meta.url), 'utf8');
+    const block = src.split('// viso-esk:begin')[1].split('// viso-esk:end')[0];
+    const store = new Map();
+    const safeStore = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) };
+    const { visoNewEpk, visoOpenEsk } = new Function('safeStore', 'crypto', block + '; return { visoNewEpk, visoOpenEsk };')(safeStore, globalThis.crypto);
+    const hexOf = (b) => Buffer.from(b).toString('hex');
+    // Viso side, as the Rust seal_app_secret does it
+    const ourEpk = await visoNewEpk();
+    const eph = await crypto.subtle.generateKey('X25519', true, ['deriveBits']);
+    const vEpk = new Uint8Array(await crypto.subtle.exportKey('raw', eph.publicKey));
+    const ours = await crypto.subtle.importKey('raw', Buffer.from(ourEpk, 'hex'), 'X25519', false, []);
+    const shared = await crypto.subtle.deriveBits({ name: 'X25519', public: ours }, eph.privateKey, 256);
+    const ikm = await crypto.subtle.importKey('raw', shared, 'HKDF', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: Buffer.concat([vEpk, Buffer.from(ourEpk, 'hex')]), info: new TextEncoder().encode('viso connect v1 app secret') }, ikm, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+    const secret = Buffer.alloc(32, 0x42);
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: new Uint8Array(12) }, key, secret));
+    assert.equal(await visoOpenEsk(`${hexOf(vEpk)}.${hexOf(ct)}`), secret.toString('hex'));
+    assert.equal(store.has('orto_viso_epriv'), false, 'private key is single use');
+    await assert.rejects(() => visoOpenEsk(`${hexOf(vEpk)}.${hexOf(ct)}`), /no pending/);
+    // the HKDF step matches the known-answer vector in viso's docs
+    const kat = await crypto.subtle.importKey('raw', Buffer.alloc(32, 1), 'HKDF', false, ['deriveBits']);
+    const katKey = await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: Buffer.concat([Buffer.alloc(32, 2), Buffer.alloc(32, 3)]), info: new TextEncoder().encode('viso connect v1 app secret') }, kat, 256);
+    assert.equal(hexOf(katKey), '19d4be8a0f28c60650e355bd8db0549ca0db302e5330c0c7353725981de879d2');
+  }
+
   console.log('1. Freenet mode: login and identity derivation');
   const orto1 = createClient();
   const pair1 = await orto1.login('fn_testidentity123', 'secret-key-64-hex-value-for-testing-freenet-identity-derivation');
