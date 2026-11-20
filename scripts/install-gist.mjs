@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import { spawnSync } from 'node:child_process';
 
 const PIN = { '@desert-ant-labs/gist': '3.6.0', '@desert-ant-labs/emo': '3.6.0', '@litertjs/core': '2.5.3' }; // pinned: this runs inside your pages
@@ -32,11 +33,34 @@ if (npm.status !== 0) { console.error('npm install failed'); process.exit(1); }
 
 const nm = path.join(tmp, 'node_modules');
 const pkgs = ['@desert-ant-labs/gist', '@desert-ant-labs/emo', '@desert-ant-labs/core', '@bjorn3/browser_wasi_shim', '@litertjs/core', '@litertjs/wasm-utils'];
-const skip = (src) => { const b = path.basename(src); return b === 'native' || b === 'typings' || b === 'node_modules' || /\.(d\.ts|d\.mts|map|md)$/.test(b) && b !== 'LICENSE.md'; };
+// Freenet 0.2.161+ caps a web container at 48 MiB unpacked and 32 MiB per file: drop the unused jspi/threaded LiteRT variants (~19 MB)
+// and store GistWeb.wasm / EmoWeb.wasm (~46 MB each) gzipped (~19 MB each), decompressed in the browser via DecompressionStream('gzip').
+const skip = (src) => {
+  const b = path.basename(src);
+  return b === 'native' || b === 'typings' || b === 'node_modules'
+    || /^litert_wasm_(jspi|threaded)_internal\.(js|wasm)$/.test(b)
+    || /\.(d\.ts|d\.mts|map|md)$/.test(b) && b !== 'LICENSE.md';
+};
 fs.rmSync(out, { recursive: true, force: true });
 for (const p of pkgs) {
   if (!fs.existsSync(path.join(nm, p))) { console.error('missing package after install:', p); process.exit(1); }
   fs.cpSync(path.join(nm, p), path.join(out, 'node_modules', p), { recursive: true, filter: (src) => !skip(src) });
+}
+for (const [pkg, wasmName] of [['@desert-ant-labs/gist', 'GistWeb'], ['@desert-ant-labs/emo', 'EmoWeb']]) {
+  const distDir = path.join(out, 'node_modules', pkg, 'dist');
+  const wasmPath = path.join(distDir, `${wasmName}.wasm`);
+  const gzPath = path.join(distDir, `${wasmName}.gz.bin`);
+  const idxPath = path.join(distDir, 'index.js');
+  if (fs.existsSync(wasmPath)) {
+    fs.writeFileSync(gzPath, zlib.gzipSync(fs.readFileSync(wasmPath), { level: 9 }));
+    fs.unlinkSync(wasmPath);
+  }
+  if (fs.existsSync(idxPath)) {
+    const code = fs.readFileSync(idxPath, 'utf8');
+    const target = `fetch(new URL("${wasmName}.wasm", import.meta.url))`;
+    if (!code.includes(target)) { console.error(`unexpected ${pkg}/dist/index.js format`); process.exit(1); }
+    fs.writeFileSync(idxPath, code.replace(target, `globalThis.__ortoWasm(new URL("${wasmName}.gz.bin", import.meta.url))`));
+  }
 }
 
 // bare specifiers the SDK uses -> files, from each package's own browser entry
@@ -76,9 +100,30 @@ ${importMap}
 fs.writeFileSync(path.join(out, 'host.js'), `// Runs inside a sandboxed iframe (opaque origin): it cannot read the app's storage, cookies or keys. It only gets the text to tag.
 // One page, two models (gist: topics, emo: emoji), each loaded the first time it is asked for.
 // The SDK reports usage to its vendor unless these are set before it loads; the CSP in host.html blocks it anyway.
-Object.assign(globalThis, { __dalUsageDisabled: true, __dalUsageContextDisabled: true, __dalIngestEndpoint: 'about:blank' });
+Object.assign(globalThis, {
+  __dalUsageDisabled: true, __dalUsageContextDisabled: true, __dalIngestEndpoint: 'about:blank',
+  __ortoWasm: async (url) => {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('model wasm: HTTP ' + res.status);
+    let bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+      bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+    }
+    if (!(bytes[0] === 0 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6d)) {
+      throw new Error('model wasm: not a wasm file (' + new TextDecoder().decode(bytes.slice(0, 60)) + ')');
+    }
+    return new Response(bytes, { headers: { 'Content-Type': 'application/wasm' } });
+  },
+});
 const models = {}, loading = {};
-const wasm = () => ({ litertWasmDir: new URL('./node_modules/@litertjs/core/wasm/', location.href).href, onProgress: (p) => post({ event: 'progress', p }) });
+const LITERT_KEY = 'Go7Qkt1KTFm58kx6MvCipX6qX9g9jTeJQu2zYnctK5mT'; // radica-litert container on Freenet
+const wasm = () => {
+  const m = location.href.match(/^(.*\/contract\/web\/)[^/]+\//);
+  return {
+    litertWasmDir: m ? `${m[1]}${LITERT_KEY}/moderation/litert/` : new URL('./node_modules/@litertjs/core/wasm/', location.href).href,
+    onProgress: (p) => post({ event: 'progress', p }),
+  };
+};
 const load = (name) => loading[name] ||= (async () => {
   if (name === 'emo') models.emo = await (await import('@desert-ant-labs/emo')).Emo.load(wasm());
   else models.gist = await (await import('@desert-ant-labs/gist')).Gist.load(wasm());

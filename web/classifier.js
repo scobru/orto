@@ -35,12 +35,17 @@ export function setAiEnabled(on) {
   } catch (_) { }
 }
 
+const ORTO_MODELS_KEY = 'LCDG4tmrWVPWzHQe7HHC9mw5gLU4SXjjN3TK1CUbShj'; // orto-models container on Freenet
+
 const resolveUrl = (base, path) => {
   if (base) return base + path;
   if (globalThis.location?.pathname?.includes('/v1/contract/')) {
     const clean = path.replace(/^\//, '');
-    const m = globalThis.location.pathname.match(/^(\/v1\/contract\/[^/]+(?:\/[^/]+)?)/);
-    if (m) return m[1].replace(/\/$/, '') + '/' + clean;
+    const m = globalThis.location.pathname.match(/^(\/v[12]\/contract\/web\/)([^/]+)/);
+    if (m) {
+      const key = clean.startsWith('models/') && ORTO_MODELS_KEY ? ORTO_MODELS_KEY : m[2];
+      return m[1] + key + '/' + clean;
+    }
     return './' + clean;
   }
   return path;

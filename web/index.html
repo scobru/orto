@@ -4219,7 +4219,8 @@
 
         if (window.parent !== window) {
           try {
-            window.parent.postMessage({ __freenet_shell__: true, type: 'hash', hash: '#sk=' + kp.secretHex }, '*');
+            const targetOrigin = (location.origin && location.origin !== 'null') ? location.origin : '*';
+            window.parent.postMessage({ __freenet_shell__: true, type: 'hash', hash: '#sk=' + kp.secretHex }, targetOrigin);
           } catch (_) {}
         }
 
@@ -4445,7 +4446,8 @@
           safeStore.setItem('orto_viso_pending_nonce', nonce);
           const target = `${location.origin && location.origin !== 'null' ? location.origin : `${location.protocol}//${location.host}`}/v1/contract/web/${VISO_KEY}/?connect=v1&key=v1&epk=${epk}&challenge=${nonce}&return=${encodeURIComponent(visoReturnUrl())}`;
           if (window.parent !== window) {
-            try { parent.postMessage({ __freenet_shell__: true, type: 'navigate', href: target }, '*'); } catch (_) {}
+            const targetOrigin = (location.origin && location.origin !== 'null') ? location.origin : '*';
+            try { parent.postMessage({ __freenet_shell__: true, type: 'navigate', href: target }, targetOrigin); } catch (_) {}
             setTimeout(() => window.open(target, '_blank'), 350); // if the shell ignores in-place navigation
           } else {
             location.href = target;

@@ -16,7 +16,9 @@
     "start": "node --no-warnings server.js",
     "desktop": "node --no-warnings desktop.js",
     "freenet:build": "node -e \"import('node:fs').then(fs => fs.writeFileSync('web/orto_vault.wasm', fs.readFileSync('contracts/orto_vault.wasm').subarray(40)))\" && npx esbuild src-freenet/vault.ts --bundle --minify --external:node:* --outfile=web/freenet-chunks.js --format=iife --global-name=FreenetChunksLib",
-    "freenet:publish": "npm run freenet:build && node -e \"import('node:fs').then(fs => fs.copyFileSync('orto.js', 'web/orto.js'))\" && fdev website update web --key orto",
+    "freenet:publish": "node scripts/publish-freenet.mjs",
+    "freenet:models:publish": "node scripts/publish-freenet.mjs models --init",
+    "freenet:models:update": "node scripts/publish-freenet.mjs models",
     "test": "node --no-warnings test.js && node --no-warnings test-freenet.js"
   },
   "keywords": [
