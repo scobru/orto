@@ -43,6 +43,31 @@ try {
     const kat = await crypto.subtle.importKey('raw', Buffer.alloc(32, 1), 'HKDF', false, ['deriveBits']);
     const katKey = await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: Buffer.concat([Buffer.alloc(32, 2), Buffer.alloc(32, 3)]), info: new TextEncoder().encode('viso connect v1 app secret') }, kat, 256);
     assert.equal(hexOf(katKey), '19d4be8a0f28c60650e355bd8db0549ca0db302e5330c0c7353725981de879d2');
+
+    // Sandbox navigation resets safeStore (window.name/localStorage), so the one-time private key must survive via identity delegate fallback
+    const dStore = new Map();
+    const { visoNewEpk: epkWithDel, visoOpenEsk: openWithDel } = new Function(
+      'safeStore', 'crypto', 'nodeKeepSoon', 'nodeKeep', 'nodeRead', 'NODE_VISO_EPRIV',
+      block + '; return { visoNewEpk, visoOpenEsk };'
+    )(
+      safeStore, globalThis.crypto,
+      async (k, v) => { dStore.set(k, v); return true; },
+      async (k, v) => { if (v) dStore.set(k, v); else dStore.delete(k); return true; },
+      async (k) => dStore.get(k) ?? null,
+      'orto-viso-epriv'
+    );
+    const dEpk = await epkWithDel();
+    const dOurs = await crypto.subtle.importKey('raw', Buffer.from(dEpk, 'hex'), 'X25519', false, []);
+    const dShared = await crypto.subtle.deriveBits({ name: 'X25519', public: dOurs }, eph.privateKey, 256);
+    const dIkm = await crypto.subtle.importKey('raw', dShared, 'HKDF', false, ['deriveKey']);
+    const dChallenge = `wd1.${'ef'.repeat(32)}.${dEpk}`;
+    const dKey = await crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: Buffer.concat([vEpk, Buffer.from(dEpk, 'hex')]), info: new TextEncoder().encode('viso connect v1 app secret') }, dIkm, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+    const dCt = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: new Uint8Array(12), additionalData: new TextEncoder().encode(dChallenge) }, dKey, secret));
+    const dEsk = `${hexOf(vEpk)}.${hexOf(dCt)}`;
+    store.clear(); // simulate full-page navigation wiping page storage / window.name
+    assert.equal(await openWithDel(dEsk, dChallenge), secret.toString('hex'), 'opens via identity delegate when page storage was cleared');
+    assert.equal(dStore.has('orto-viso-epriv'), false, 'delegate private key copy is burned after single use');
+    await assert.rejects(() => openWithDel(dEsk, dChallenge), /no pending/);
   }
 
   console.log('1. Freenet mode: login and identity derivation');
