@@ -120,7 +120,7 @@ const LITERT_KEY = 'Go7Qkt1KTFm58kx6MvCipX6qX9g9jTeJQu2zYnctK5mT'; // radica-lit
 const wasm = () => {
   const m = location.href.match(/^(.*\/contract\/web\/)[^/]+\//);
   return {
-    litertWasmDir: m ? `${m[1]}${LITERT_KEY}/moderation/litert/` : new URL('./node_modules/@litertjs/core/wasm/', location.href).href,
+    litertWasmDir: m ? m[1] + LITERT_KEY + '/moderation/litert/' : new URL('./node_modules/@litertjs/core/wasm/', location.href).href,
     onProgress: (p) => post({ event: 'progress', p }),
   };
 };
