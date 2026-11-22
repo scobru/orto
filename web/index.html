@@ -3008,6 +3008,463 @@
     .cal-modal p.hint { margin: 0; font-size: 12px; color: var(--text-muted); }
     .cal-modal .share-row { display: flex; gap: 8px; align-items: center; font-size: 14px; }
     .cal-modal .share-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── Wiki-links, Project Chips, & Note Backlinks ── */
+    .bear-wikilink-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--bear-red);
+      background: var(--bear-red-light);
+      border: 1px solid color-mix(in srgb, var(--bear-red) 28%, transparent);
+      padding: 1px 7px;
+      border-radius: 6px;
+      font-weight: 500;
+      cursor: pointer;
+      vertical-align: baseline;
+      text-decoration: none;
+      transition: background var(--transition-fast), border-color var(--transition-fast);
+    }
+    .bear-wikilink-pill:hover,
+    .bear-wikilink-pill:focus-visible {
+      background: color-mix(in srgb, var(--bear-red) 18%, transparent);
+      border-color: var(--bear-red);
+      outline: none;
+    }
+    .bear-wikilink-pill.missing {
+      color: var(--text-secondary);
+      background: var(--input-bg);
+      border-style: dashed;
+      border-color: var(--border-color);
+    }
+    .bear-wikilink-pill.missing:hover {
+      color: var(--bear-red);
+      border-color: var(--bear-red);
+    }
+
+    .proj-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--proj-color, var(--bear-red)) 12%, transparent);
+      border: 1px solid color-mix(in srgb, var(--proj-color, var(--bear-red)) 35%, transparent);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: background var(--transition-fast), border-color var(--transition-fast);
+    }
+    .proj-chip:hover {
+      background: color-mix(in srgb, var(--proj-color, var(--bear-red)) 20%, transparent);
+      border-color: var(--proj-color, var(--bear-red));
+    }
+    .proj-chip.add {
+      background: var(--input-bg);
+      border-style: dashed;
+      border-color: var(--border-color);
+      color: var(--text-muted);
+    }
+    .proj-chip.add:hover {
+      color: var(--bear-red);
+      border-color: var(--bear-red);
+    }
+    .proj-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: var(--proj-color, var(--bear-red));
+    }
+
+    .note-card-project {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--proj-color, var(--bear-red)) 12%, transparent);
+      color: var(--text-secondary);
+      max-width: 140px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .note-backlinks {
+      margin-top: 28px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .note-backlinks:empty {
+      display: none;
+    }
+    .note-backlinks-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .note-backlinks-label {
+      font-size: 11.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .note-backlinks-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .backlink-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 8px;
+      background: var(--bg-list);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      font-size: 12.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background var(--transition-fast), border-color var(--transition-fast);
+    }
+    .backlink-chip:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--bear-red);
+    }
+    .backlink-chip.missing {
+      border-style: dashed;
+      color: var(--text-secondary);
+    }
+    .backlink-chip small {
+      color: var(--text-muted);
+      font-weight: 400;
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ── Projects Workspace View ── */
+    .projects-pane {
+      flex: 1;
+      display: none;
+      min-width: 0;
+      background: var(--bg-editor);
+      color: var(--text-primary);
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+    }
+    body.projects-mode .projects-pane {
+      display: flex;
+    }
+    body.projects-mode .note-list-pane,
+    body.projects-mode .editor-pane {
+      display: none !important;
+    }
+    .projects-bar {
+      display: flex;
+      gap: 8px;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border-color);
+      align-items: center;
+      flex-wrap: wrap;
+      background: var(--bg-list);
+    }
+    .projects-bar input[type=search] {
+      flex: 1;
+      min-width: 140px;
+      background: var(--input-bg);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 7px;
+      padding: 7px 10px;
+      font: inherit;
+      font-size: 14px;
+    }
+    .projects-layout {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .projects-list {
+      width: 310px;
+      flex-shrink: 0;
+      border-right: 1px solid var(--border-color);
+      background: var(--bg-list);
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .project-list-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: var(--shadow-card);
+      transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
+    }
+    .project-list-card:hover {
+      border-color: color-mix(in srgb, var(--proj-color, var(--bear-red)) 45%, var(--border-color));
+      box-shadow: var(--shadow-card-hover);
+    }
+    .project-list-card.active {
+      background: var(--bg-card-selected);
+      border-color: var(--proj-color, var(--bear-red));
+    }
+    .project-card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .project-card-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      font-family: var(--font-heading);
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text-primary);
+    }
+    .project-card-name span:last-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .project-card-desc {
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      line-height: 1.4;
+    }
+    .project-card-counts {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 11.5px;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+    .proj-status-badge {
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      flex-shrink: 0;
+    }
+    .proj-status-active { background: rgba(46, 196, 182, 0.14); color: #0f9d8f; }
+    .proj-status-on_hold { background: rgba(245, 158, 11, 0.14); color: #d97706; }
+    .proj-status-completed { background: rgba(59, 130, 246, 0.14); color: #2563eb; }
+    .proj-status-archived { background: rgba(107, 114, 128, 0.14); color: #6b7280; }
+
+    .project-detail {
+      flex: 1;
+      min-width: 0;
+      overflow-y: auto;
+      padding: 24px 28px 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .project-detail-empty {
+      margin: auto;
+      text-align: center;
+      max-width: 340px;
+      color: var(--text-secondary);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .project-hero {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .project-hero-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font-heading);
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+    .project-hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      font-size: 12.5px;
+      color: var(--text-secondary);
+    }
+    .project-hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .project-graph-card {
+      background: var(--bg-list);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .project-graph-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: var(--font-heading);
+    }
+    .project-graph-svg {
+      width: 100%;
+      height: 230px;
+      display: block;
+      background: var(--bg-editor);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+    }
+    .project-graph-svg .pg-node {
+      cursor: pointer;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .project-graph-svg .pg-node rect {
+        transition: stroke-width 0.14s ease, fill 0.14s ease;
+      }
+    }
+    .project-graph-svg .pg-node:hover rect {
+      stroke-width: 2.2;
+    }
+    .project-sections {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+      align-items: start;
+    }
+    .project-section-card {
+      background: var(--bg-list);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .project-section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-family: var(--font-heading);
+      font-weight: 600;
+      font-size: 13.5px;
+    }
+    .project-item-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      cursor: pointer;
+      transition: border-color var(--transition-fast), background var(--transition-fast);
+    }
+    .project-item-row:hover {
+      border-color: var(--bear-red);
+      background: var(--bg-card-hover);
+    }
+    .project-item-main {
+      min-width: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .project-item-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .project-item-sub {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .project-color-swatches {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+    .project-color-swatch {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      cursor: pointer;
+    }
+    .project-color-swatch.sel {
+      border-color: var(--text-primary);
+      box-shadow: 0 0 0 2px var(--bg-card) inset;
+    }
+
+    @media (max-width: 900px) {
+      .projects-layout {
+        flex-direction: column;
+      }
+      .projects-list {
+        width: 100%;
+        max-height: 220px;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+      }
+      .project-detail {
+        padding: 16px 16px 32px;
+      }
+    }
   </style>
 </head>
 
@@ -3164,6 +3621,12 @@
           <span class="nav-icon"><i class="ti ti-pin"></i></span>
           <span class="nav-text">Pinned</span>
           <span class="nav-count" id="count-pinned">0</span>
+        </a>
+
+        <a class="nav-item" id="nav-projects" onclick="openProjects()">
+          <span class="nav-icon"><i class="ti ti-folders"></i></span>
+          <span class="nav-text">Projects</span>
+          <span class="nav-count" id="count-projects">0</span>
         </a>
 
         <a class="nav-item" id="nav-calendar" onclick="openCalendar()">
@@ -3520,6 +3983,29 @@
       </div>
     </section>
 
+    <!-- Projects pane: encrypted project workspaces & wiki-link graph -->
+    <section class="projects-pane" id="projects-pane">
+      <div class="projects-bar">
+        <button class="mobile-menu-btn" onclick="toggleSidebar()" title="Menu" aria-label="Menu"><i class="ti ti-menu-2"></i></button>
+        <input type="search" id="projects-search" placeholder="Search projects or #tag" oninput="projSearch(this.value)">
+        <select id="projects-filter-status" onchange="projFilterStatus(this.value)"
+          aria-label="Filter projects by status"
+          style="background:var(--input-bg);color:var(--text-primary);border:1px solid var(--border-color);border-radius:7px;padding:7px 10px;font:inherit;font-size:14px;">
+          <option value="">All Status</option>
+          <option value="active">Active</option>
+          <option value="on_hold">On Hold</option>
+          <option value="completed">Completed</option>
+          <option value="archived">Archived</option>
+        </select>
+        <button class="cal-btn" onclick="loadDemo('projects')" title="Add example project and linked notes (safe to click twice)"><i class="ti ti-sparkles"></i> Examples</button>
+        <button class="cal-btn primary" onclick="projNew()"><i class="ti ti-plus"></i> New Project</button>
+      </div>
+      <div class="projects-layout" id="projects-layout">
+        <div class="projects-list" id="projects-list"></div>
+        <div class="project-detail" id="project-detail"></div>
+      </div>
+    </section>
+
     <!-- ════════════════════════════════════════════════════════════
          COLUMN 3: Bear Editor Canvas
     ════════════════════════════════════════════════════════════ -->
@@ -3593,6 +4079,9 @@
               <button class="popover-item" onclick="taskNewForNote()">
                 <span><i class="ti ti-checkbox"></i> Add to tasks</span>
               </button>
+              <button class="popover-item" onclick="assignProjectForActiveNote()">
+                <span><i class="ti ti-folder"></i> <span id="menu-project-label">Assign to project…</span></span>
+              </button>
               <button class="popover-item hidden" id="menu-suggest-tags" onclick="suggestTagsForNote()">
                 <span><i class="ti ti-tags"></i> Suggest tags</span>
               </button>
@@ -3646,8 +4135,9 @@
 
             <!-- Edit Mode (Raw Markdown Textarea) -->
             <textarea id="editor-textarea" class="markdown-textarea hidden"
-              placeholder="Write your private note here with markdown: #headings, **bold**, - [ ] todos, #tags..."
+              placeholder="Write your private note here with markdown: #headings, **bold**, - [ ] todos, #tags, [[Note Links]]..."
               oninput="handleBodyInput(this.value)"></textarea>
+            <div id="note-backlinks" class="note-backlinks"></div>
           </div>
         </div>
 
@@ -3666,6 +4156,8 @@
               class="ti ti-highlight"></i></button>
           <button class="bar-btn" onclick="formatToolbarAction('link')" title="Insert Link (Ctrl+K)"><i
               class="ti ti-link"></i></button>
+          <button class="bar-btn" onclick="openNoteLinkPicker()" title="Link Note [[...]]"><span
+              style="font-family:var(--font-mono);font-size:12px;font-weight:700;letter-spacing:-1px;">[[ ]]</span></button>
           <button class="bar-btn" onclick="formatToolbarAction('table')" title="Insert Table"><i
               class="ti ti-table"></i></button>
           <button class="bar-btn" onclick="formatToolbarAction('image')" title="Insert Image"><i
@@ -4227,7 +4719,7 @@
         del(soul) { delete entries[soul]; save(); }
       };
     }
-    const bmCache = createCache('bookmarks'), notesCache = createCache('vault'), calCache = createCache('calendar'), tasksCache = createCache('tasks');
+    const bmCache = createCache('bookmarks'), notesCache = createCache('vault'), calCache = createCache('calendar'), tasksCache = createCache('tasks'), projectsCache = createCache('projects');
 
     function initDashboard() {
       document.getElementById('login-screen').classList.add('hidden');
@@ -4251,6 +4743,7 @@
       updateSidebarToggleState();
       syncStart();
       loadNotes();
+      loadProjects();
       loadCalendar();
       loadBlog();
       loadBookmarks();
@@ -4606,7 +5099,7 @@
         }
 
         localNotes[id] = note;
-        const sig = JSON.stringify([note.title, note.body, note.cat, note.pinned, note.trash, note.timestamp]);
+        const sig = JSON.stringify([note.title, note.body, note.cat, note.pinned, note.trash, note.projectId || '', note.timestamp]);
         notesCache.set(id, sig, note);
         triggerRender();
       }, (souls) => { // drop cached notes that were deleted from another device
@@ -4794,8 +5287,10 @@
       const trashedBookmarks = Object.entries(bookmarks).filter(([, b]) => b && b.trash).map(([id, b]) => ({ ...b, id, kind: 'bookmark' }));
       const trashedContacts = Object.entries(contacts).filter(([, c]) => c && c.trash).map(([id, c]) => ({ ...c, id, kind: 'contact' }));
       const trashedSecrets = Object.entries(secrets).filter(([, s]) => s && s.trash).map(([id, s]) => ({ ...s, id, kind: 'secret' }));
+      const trashedProjects = Object.entries(projects).filter(([, p]) => p && p.trash).map(([id, p]) => ({ ...p, id, kind: 'project' }));
       const allTrashed = [
         ...trashNotes.map(n => ({ ...n, kind: 'note' })),
+        ...trashedProjects,
         ...trashedEvents,
         ...trashedTasks,
         ...trashedBookmarks,
@@ -4844,6 +5339,7 @@
       // Update active nav item highlight
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
       if (calMode) document.getElementById('nav-calendar')?.classList.add('active');
+      else if (typeof projectsMode !== 'undefined' && projectsMode) document.getElementById('nav-projects')?.classList.add('active');
       else if (blogMode) document.getElementById('nav-blog')?.classList.add('active');
       else if (bmMode) document.getElementById('nav-bookmarks')?.classList.add('active');
       else if (typeof tasksMode !== 'undefined' && tasksMode) document.getElementById('nav-tasks')?.classList.add('active');
@@ -4946,7 +5442,7 @@
         if (currentFilter === 'trash') {
           if (emptyIcon) emptyIcon.className = 'ti ti-trash list-empty-icon';
           if (emptyTitle) emptyTitle.textContent = 'Trash is empty';
-          if (emptyDesc) emptyDesc.textContent = 'Deleted notes, events, tasks, bookmarks, contacts and secrets will appear here.';
+          if (emptyDesc) emptyDesc.textContent = 'Deleted notes, projects, events, tasks, bookmarks, contacts and secrets will appear here.';
           if (emptyAction) emptyAction.classList.add('hidden');
           if (emptyDemo) emptyDemo.classList.add('hidden');
         } else {
@@ -5102,6 +5598,27 @@
                   </div>
                 </div>
               `;
+            } else if (item.kind === 'project') {
+              card.onclick = () => { if (typeof projEdit === 'function') projEdit(item.id); };
+              card.innerHTML = `
+                <div class="note-card-main">
+                  <div class="note-card-title-row" style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+                    <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1;">
+                      <span class="proj-dot" style="--proj-color:${escapeHtml(item.color || '#c4532f')}"></span>
+                      <h4 class="note-card-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(item.name)}</h4>
+                    </div>
+                    <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(46,196,182,0.14);color:#0f9d8f;font-weight:600;flex-shrink:0;">Project</span>
+                  </div>
+                  <p class="note-card-preview">${escapeHtml(item.desc || item.status || '')}</p>
+                  <div class="note-card-footer" style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
+                    <span class="note-card-date">${formatRelativeDate(item.updatedAt || item.createdAt)}</span>
+                    <div style="display:flex;gap:4px;" onclick="event.stopPropagation()">
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;" data-kind="project" data-id="${escapeHtml(item.id)}" onclick="restoreTrashItem(this.dataset.kind, this.dataset.id)" title="Restore"><i class="ti ti-rotate-clockwise"></i> Restore</button>
+                      <button class="cal-btn" style="padding:2px 8px;font-size:11px;color:var(--bear-red);border-color:var(--bear-red);" data-kind="project" data-id="${escapeHtml(item.id)}" onclick="deleteTrashItemForever(this.dataset.kind, this.dataset.id)" title="Delete Forever"><i class="ti ti-trash-x"></i></button>
+                    </div>
+                  </div>
+                </div>
+              `;
             }
             container.appendChild(card);
           });
@@ -5114,6 +5631,7 @@
 
             const thumbUrl = extractThumbnail(note.body);
             const dateStr = formatRelativeDate(note.timestamp);
+            const noteProj = note.projectId && projects[note.projectId] && !projects[note.projectId].trash ? projects[note.projectId] : null;
 
             card.innerHTML = `
               <div class="note-card-main">
@@ -5124,6 +5642,7 @@
                 <p class="note-card-preview">${renderSnippetWithTags(note.body)}</p>
                 <div class="note-card-footer">
                   <span class="note-card-date">${dateStr}</span>
+                  ${noteProj ? `<span class="note-card-project" style="--proj-color:${escapeHtml(noteProj.color || '#c4532f')}"><span class="proj-dot"></span><span>${escapeHtml(noteProj.name)}</span></span>` : ''}
                 </div>
               </div>
               ${thumbUrl ? `
@@ -5139,6 +5658,7 @@
 
       // If active note is selected, render editor
       renderEditor();
+      if (typeof projectsMode !== 'undefined' && projectsMode && typeof renderProjects === 'function') renderProjects();
     }
 
     // ── Editor Renderer ──
@@ -5226,8 +5746,14 @@
         if (resBtn) {
           resBtn.classList.toggle('hidden', !note.trash);
         }
+        const projLabel = document.getElementById('menu-project-label');
+        if (projLabel) {
+          const p = note.projectId && projects[note.projectId] && !projects[note.projectId].trash ? projects[note.projectId] : null;
+          projLabel.textContent = p ? `Project: ${p.name}` : 'Assign to project…';
+        }
       }
       renderNoteEvents();
+      if (typeof renderNoteBacklinks === 'function') renderNoteBacklinks();
 
       // Switch view vs edit mode
       if (isEditMode) {
@@ -5249,7 +5775,7 @@
       }
     }
 
-    // Markdown Parser with Task List interactivity & Highlighted Bear Tags
+    // Markdown Parser with Task List interactivity, Wiki-links & Highlighted Bear Tags
     function renderMarkdownWithInteractions(text) {
       const wrap = document.createElement('div');
       if (!text) {
@@ -5279,14 +5805,62 @@
         if (li) li.classList.add('task-list-item');
       });
 
-      // Highlight Bear #tags in safe text nodes only (never inside pre/code/a or HTML attributes)
+      // Render [[Note Title]] / [[Note Title|Label]] wiki-links in safe text nodes
+      const wikiRe = /\[\[([^\[\]\r\n]+?)\]\]/g;
+      const wikiWalker = document.createTreeWalker(wrap, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          if (!node.nodeValue || !node.nodeValue.includes('[[')) return NodeFilter.FILTER_REJECT;
+          let p = node.parentNode;
+          while (p && p !== wrap) {
+            if (p.nodeName === 'PRE' || p.nodeName === 'CODE' || p.nodeName === 'A') return NodeFilter.FILTER_REJECT;
+            p = p.parentNode;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      });
+      const wikiNodes = [];
+      let wCur;
+      while ((wCur = wikiWalker.nextNode())) wikiNodes.push(wCur);
+      for (const node of wikiNodes) {
+        const s = node.nodeValue;
+        wikiRe.lastIndex = 0;
+        let last = 0, m, frag = null;
+        while ((m = wikiRe.exec(s)) !== null) {
+          const inner = m[1];
+          const pipe = inner.indexOf('|');
+          const target = (pipe >= 0 ? inner.slice(0, pipe) : inner).trim();
+          if (!target) continue;
+          const label = (pipe >= 0 ? inner.slice(pipe + 1).trim() : '') || target;
+          if (!frag) frag = document.createDocumentFragment();
+          if (m.index > last) frag.appendChild(document.createTextNode(s.slice(last, m.index)));
+          const hit = typeof findNoteByTitleOrSoul === 'function' ? findNoteByTitleOrSoul(target) : null;
+          const pill = document.createElement('span');
+          pill.className = 'bear-wikilink-pill' + (hit ? '' : ' missing');
+          pill.setAttribute('role', 'button');
+          pill.tabIndex = 0;
+          pill.dataset.wikilink = target;
+          pill.title = hit ? ('Open note: ' + (hit.note.title || target)) : ('Create note: ' + target);
+          const icon = document.createElement('i');
+          icon.className = hit ? 'ti ti-note' : 'ti ti-file-plus';
+          pill.appendChild(icon);
+          pill.appendChild(document.createTextNode(label));
+          frag.appendChild(pill);
+          last = wikiRe.lastIndex;
+        }
+        if (frag) {
+          if (last < s.length) frag.appendChild(document.createTextNode(s.slice(last)));
+          node.parentNode.replaceChild(frag, node);
+        }
+      }
+
+      // Highlight Bear #tags in safe text nodes only (never inside pre/code/a/wiki-links or HTML attributes)
       const tagRe = /(^|\s)#([a-zA-Z0-9_\u00C0-\u017F\/\-]+)/g;
       const walker = document.createTreeWalker(wrap, NodeFilter.SHOW_TEXT, {
         acceptNode(node) {
           if (!node.nodeValue || !node.nodeValue.includes('#')) return NodeFilter.FILTER_REJECT;
           let p = node.parentNode;
           while (p && p !== wrap) {
-            if (p.nodeName === 'PRE' || p.nodeName === 'CODE' || p.nodeName === 'A') return NodeFilter.FILTER_REJECT;
+            if (p.nodeName === 'PRE' || p.nodeName === 'CODE' || p.nodeName === 'A' || p.classList?.contains('bear-wikilink-pill')) return NodeFilter.FILTER_REJECT;
             p = p.parentNode;
           }
           return NodeFilter.FILTER_ACCEPT;
@@ -5421,6 +5995,8 @@
       const body = bodyInput.value;
       const cat = currentNote.cat || '';
       const isPinned = !!currentNote.pinned;
+      const projectId = currentNote.projectId || '';
+      const links = currentNote.links;
       const savedAt = Date.now();
       const soul = isNew ? ('vault-' + savedAt + '-' + Math.random().toString(36).substring(7)) : activeId;
 
@@ -5430,6 +6006,8 @@
           body,
           cat,
           pinned: isPinned,
+          projectId,
+          ...(links !== undefined && { links }),
           trash: false,
           soul
         });
@@ -5444,6 +6022,8 @@
           body,
           cat,
           pinned: isPinned,
+          projectId,
+          ...(links !== undefined && { links }),
           trash: false,
           timestamp: savedAt
         };
@@ -5452,7 +6032,7 @@
           delete localNotes['new'];
           if (selectedNoteId === 'new') selectedNoteId = soul;
         }
-        const sig = JSON.stringify([title, body, cat, isPinned, false, savedAt]);
+        const sig = JSON.stringify([title, body, cat, isPinned, false, projectId, savedAt]);
         notesCache.set(soul, sig, savedRec);
         if (typeof notesCache.flush === 'function') {
           await notesCache.flush();
@@ -5617,7 +6197,67 @@
         { soul: 'demo-cal-2', title: 'Dentist', start: at(3, 15), end: at(3, 16), location: 'Via Roma 1', notes: 'Example event.' },
         { soul: 'demo-cal-3', title: 'Lunch with Grace', start: at(5, 13), end: at(5, 14), location: 'Trattoria da Mario', notes: 'Example event.' },
         { soul: 'demo-cal-4', title: 'Release day', start: at(10, 0), allDay: true, notes: 'Example event.' }
-      ].map(e => os.writeCalendarEvent(e))
+      ].map(e => os.writeCalendarEvent(e)),
+      projects: () => [
+        os.writeProject({
+          soul: 'demo-proj-1',
+          name: 'Orto Workspace Launch',
+          desc: 'Coordinate release milestones, architecture notes, and checklist items in one encrypted workspace.',
+          status: 'active',
+          color: '#c4532f',
+          dueDate: at(14, 18),
+          tags: ['launch', 'workspace']
+        }),
+        os.writeVaultNote({
+          soul: 'demo-proj-note-1',
+          title: 'Launch Overview',
+          cat: 'projects',
+          projectId: 'demo-proj-1',
+          pinned: true,
+          body: '#launch\n\nCentral kickoff note connecting [[Architecture Decisions]] and [[Release Checklist]].\n\n- [x] Define scope\n- [ ] Finalize release notes'
+        }),
+        os.writeVaultNote({
+          soul: 'demo-proj-note-2',
+          title: 'Architecture Decisions',
+          cat: 'projects',
+          projectId: 'demo-proj-1',
+          body: '#architecture\n\nClient-side AES-GCM encryption across collections.\n\nBack to [[Launch Overview]] and see [[Release Checklist|Checklist]].'
+        }),
+        os.writeVaultNote({
+          soul: 'demo-proj-note-3',
+          title: 'Release Checklist',
+          cat: 'projects',
+          projectId: 'demo-proj-1',
+          body: '#release\n\n- [ ] Verify end-to-end tests\n- [ ] Update changelog\n\nLinked from [[Launch Overview]].'
+        }),
+        os.writeTask({
+          soul: 'demo-proj-task-1',
+          title: 'Publish launch announcement',
+          status: 'in_progress',
+          priority: 'high',
+          dueDate: at(7, 12),
+          tags: ['launch'],
+          projectId: 'demo-proj-1',
+          desc: 'Review copy against Launch Overview note.'
+        }),
+        os.writeTask({
+          soul: 'demo-proj-task-2',
+          title: 'Verify mobile responsive layout',
+          status: 'todo',
+          priority: 'medium',
+          dueDate: at(4, 16),
+          tags: ['ui'],
+          projectId: 'demo-proj-1'
+        }),
+        os.writeCalendarEvent({
+          soul: 'demo-proj-cal-1',
+          title: 'Launch Milestone Review',
+          start: at(6, 11),
+          end: at(6, 12),
+          projectId: 'demo-proj-1',
+          notes: 'Review open checklist items.'
+        })
+      ]
     };
     async function loadDemo(kind) {
       if (!isAuthenticated || !DEMO[kind]) return;
@@ -5732,11 +6372,11 @@ print("Welcome to Orto!")
       }
     }
 
-    function createNewNote() {
+    function createNewNote(initialProjectId = '') {
       if (currentFilter === 'trash') setFilter('all');
       selectedNoteId = 'new';
       isEditMode = true;
-      localNotes['new'] = { id: 'new', title: '', body: '', timestamp: Date.now(), pinned: false, cat: '' };
+      localNotes['new'] = { id: 'new', title: '', body: '', timestamp: Date.now(), pinned: false, cat: '', projectId: initialProjectId || '' };
 
       const titleInput = document.getElementById('editor-title');
       const textarea = document.getElementById('editor-textarea');
@@ -5836,11 +6476,13 @@ print("Welcome to Orto!")
           body: note.body,
           cat: note.cat || '',
           pinned: !!note.pinned,
+          projectId: note.projectId || '',
+          ...(note.links !== undefined && { links: note.links }),
           trash: true,
           soul
         });
         note.trash = true;
-        const sig = JSON.stringify([note.title, note.body, note.cat || '', !!note.pinned, true, note.timestamp]);
+        const sig = JSON.stringify([note.title, note.body, note.cat || '', !!note.pinned, true, note.projectId || '', note.timestamp]);
         notesCache.set(soul, sig, note);
         if (typeof notesCache.flush === 'function') await notesCache.flush();
         if (typeof window.syncHashState === 'function') await window.syncHashState(true);
@@ -5865,11 +6507,13 @@ print("Welcome to Orto!")
           body: note.body,
           cat: note.cat || '',
           pinned: !!note.pinned,
+          projectId: note.projectId || '',
+          ...(note.links !== undefined && { links: note.links }),
           trash: false,
           soul
         });
         note.trash = false;
-        const sig = JSON.stringify([note.title, note.body, note.cat || '', !!note.pinned, false, note.timestamp]);
+        const sig = JSON.stringify([note.title, note.body, note.cat || '', !!note.pinned, false, note.projectId || '', note.timestamp]);
         notesCache.set(soul, sig, note);
         if (typeof notesCache.flush === 'function') await notesCache.flush();
         if (typeof window.syncHashState === 'function') await window.syncHashState(true);
@@ -5902,6 +6546,7 @@ print("Welcome to Orto!")
 
     async function restoreTrashItem(kind, soul) {
       if (kind === 'note') return restoreActiveNote(soul);
+      if (kind === 'project') return projRestore(soul);
       if (kind === 'event') return restoreCalEvent(soul);
       if (kind === 'task') return taskRestore(soul);
       if (kind === 'bookmark') return bmRestore(soul);
@@ -5912,6 +6557,7 @@ print("Welcome to Orto!")
     async function deleteTrashItemForever(kind, soul) {
       if (!confirm("Permanently delete this item? This cannot be undone.")) return;
       if (kind === 'note') return deleteActiveNoteForever(soul);
+      if (kind === 'project') return projDeleteForever(soul);
       if (kind === 'event') return deleteCalEventForever(soul);
       if (kind === 'task') return taskDeleteForever(soul);
       if (kind === 'bookmark') return bmDeleteForever(soul);
@@ -5921,12 +6567,13 @@ print("Welcome to Orto!")
 
     async function emptyAllTrash() {
       const tNotes = Object.entries(localNotes).filter(([id, n]) => id !== 'new' && n.trash);
+      const tProjects = Object.entries(projects).filter(([, p]) => p && p.trash);
       const tEvents = Object.entries(calEvents).filter(([, e]) => e && e.trash);
       const tTasks = Object.entries(tasks).filter(([, t]) => t && t.trash);
       const tBookmarks = Object.entries(bookmarks).filter(([, b]) => b && b.trash);
       const tContacts = Object.entries(contacts).filter(([, c]) => c && c.trash);
       const tSecrets = Object.entries(secrets).filter(([, s]) => s && s.trash);
-      const total = tNotes.length + tEvents.length + tTasks.length + tBookmarks.length + tContacts.length + tSecrets.length;
+      const total = tNotes.length + tProjects.length + tEvents.length + tTasks.length + tBookmarks.length + tContacts.length + tSecrets.length;
       if (total === 0) return showToast('Trash is already empty');
       if (!confirm(`Permanently delete all ${total} items in Trash? This cannot be undone.`)) return;
 
@@ -5935,14 +6582,16 @@ print("Welcome to Orto!")
           for (let i = 0; i < items.length; i += 8) await Promise.all(items.slice(i, i + 8).map(fn));
         };
         await runBatched(tNotes, ([id]) => os.deleteVaultNote(id).then(() => { delete localNotes[id]; notesCache.del(id); }).catch(() => {}));
+        await runBatched(tProjects, ([id]) => os.deleteProject(id).then(() => { delete projects[id]; projectsCache.del(id); }).catch(() => {}));
         await runBatched(tEvents, ([id]) => os.deleteCalendarEvent(id).then(() => { delete calEvents[id]; calCache.del(id); }).catch(() => {}));
         await runBatched(tTasks, ([id]) => os.deleteTask(id).then(() => { delete tasks[id]; tasksCache.del(id); }).catch(() => {}));
         await runBatched(tBookmarks, ([id]) => os.deleteBookmark(id).then(() => { delete bookmarks[id]; bmCache.del(id); }).catch(() => {}));
         await runBatched(tContacts, ([id]) => os.deleteContact(id).then(() => { delete contacts[id]; }).catch(() => {}));
         await runBatched(tSecrets, ([id]) => os.deleteSecret(id).then(() => { delete secrets[id]; }).catch(() => {}));
-        for (const c of [notesCache, calCache, tasksCache, bmCache]) {
+        for (const c of [notesCache, projectsCache, calCache, tasksCache, bmCache]) {
           if (typeof c.flush === 'function') await c.flush();
         }
+        document.getElementById('count-projects').textContent = Object.values(projects).filter(p => !p.trash).length;
         document.getElementById('count-calendar').textContent = Object.values(calEvents).filter(e => !e.trash).length;
         document.getElementById('count-tasks').textContent = Object.values(tasks).filter(t => !t.trash).length;
         document.getElementById('count-bookmarks').textContent = Object.values(bookmarks).filter(b => !b.trash).length;
@@ -5959,6 +6608,7 @@ print("Welcome to Orto!")
 
     function setFilter(filter) {
       closeCalendar();
+      if (typeof closeProjects === 'function') closeProjects();
       closeBlog();
       closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
       closeTasks();
@@ -6127,12 +6777,15 @@ print("Welcome to Orto!")
       if (autoSaveTimeout) { clearTimeout(autoSaveTimeout); autoSaveTimeout = null; }
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
       if (bmTimer) { clearTimeout(bmTimer); bmTimer = null; }
-      for (const c of [bmCache, notesCache, calCache, tasksCache]) {
+      for (const c of [bmCache, notesCache, calCache, tasksCache, projectsCache]) {
         try { c.reset(); } catch (_) {}
       }
-      for (const map of [localNotes, calEvents, blogPosts, bookmarks, contacts, secrets, feeds, feedData, tasks]) {
+      for (const map of [localNotes, projects, calEvents, blogPosts, bookmarks, contacts, secrets, feeds, feedData, tasks]) {
         for (const k of Object.keys(map)) delete map[k];
       }
+      if (typeof projectsMode !== 'undefined') projectsMode = false;
+      if (typeof selectedProjectId !== 'undefined') selectedProjectId = null;
+      document.body.classList.remove('projects-mode');
       secShown.clear();
       mediaParams.clear();
       attachCache.forEach((u) => { try { URL.revokeObjectURL(u); } catch (_) {} });
@@ -6446,29 +7099,43 @@ print("Welcome to Orto!")
     }
     function unlinkNoteFromModal(soul) { evLinks = evLinks.filter(l => !(l.kind === 'note' && l.soul === soul)); renderEvLinks(); }
     function openLinkedNote(soul) {
-      closeEventModal(); if (typeof closeTaskModal === 'function') closeTaskModal(); closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia(); if (typeof closeTasks === 'function') closeTasks(); if (typeof setFilter === 'function') setFilter('all'); selectNote(soul);
+      closeEventModal(); if (typeof closeTaskModal === 'function') closeTaskModal(); closeCalendar(); if (typeof closeProjects === 'function') closeProjects(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia(); if (typeof closeTasks === 'function') closeTasks(); if (typeof setFilter === 'function') setFilter('all'); selectNote(soul);
     }
-    // events & tasks linked to the open note, shown under its title; click one to open it
+    // events, project membership & tasks linked to the open note, shown under its title; click one to open it
     function renderNoteEvents() {
       const box = document.getElementById('note-events'); if (!box) return;
       const loc = navigator.language || 'en-US';
+      const activeNote = selectedNoteId && selectedNoteId !== 'new' ? localNotes[selectedNoteId] : null;
+      let projHtml = '';
+      if (selectedNoteId && selectedNoteId !== 'new' && activeNote && !activeNote.trash && typeof projects !== 'undefined') {
+        const p = activeNote.projectId && projects[activeNote.projectId] && !projects[activeNote.projectId].trash ? projects[activeNote.projectId] : null;
+        if (p) {
+          projHtml = `<span class="proj-chip" style="--proj-color:${escapeHtml(p.color || '#c4532f')}" onclick="openProjects('${escapeHtml(activeNote.projectId)}')" title="Open project"><span class="proj-dot"></span>${escapeHtml(p.name)}</span>`;
+        } else if (Object.values(projects).some(x => x && !x.trash)) {
+          projHtml = `<span class="proj-chip add" onclick="assignProjectForActiveNote()" title="Assign note to a project"><i class="ti ti-folder-plus"></i>Project</span>`;
+        }
+      }
       const evs = selectedNoteId && selectedNoteId !== 'new' ? eventsForNote(selectedNoteId).map(e =>
         `<span class="ev-chip" onclick="calEditEvent('${escapeHtml(e.soul)}')" title="Open event"><i class="ti ti-calendar-event"></i>${escapeHtml(new Date(e.start).toLocaleDateString(loc, { day: 'numeric', month: 'short' }))}${e.allDay ? '' : ' ' + escapeHtml(fmtTime(e.start))} · ${escapeHtml(e.title)}</span>`).join('') : '';
       const tsks = (selectedNoteId && selectedNoteId !== 'new' && typeof tasksForNote === 'function') ? tasksForNote(selectedNoteId).map(t =>
         `<span class="tsk-chip ${(t.status === 'done' || t.column === 'done') ? 'done' : ''}" onclick="taskEdit('${escapeHtml(t.soul)}')" title="Open task"><i class="ti ${(t.status === 'done' || t.column === 'done') ? 'ti-circle-check' : 'ti-circle'}"></i>${escapeHtml(t.title)}</span>`).join('') : '';
-      box.innerHTML = evs + tsks;
+      box.innerHTML = projHtml + evs + tsks;
     }
     // "Add to calendar" on the open note: new event titled after it, already linked
     function calNewEventForNote() {
       if (!selectedNoteId || selectedNoteId === 'new' || !localNotes[selectedNoteId]) return showToast('Save the note first');
       closePopovers && closePopovers();
       const start = new Date(); start.setMinutes(0, 0, 0); start.setHours(start.getHours() + 1);
-      openEventModal({ soul: null, title: noteTitle(selectedNoteId), start: start.getTime(), end: start.getTime() + 3600000, allDay: false, location: '', notes: '', color: CAL_COLORS[0], links: [{ kind: 'note', soul: selectedNoteId }] });
+      openEventModal({ soul: null, title: noteTitle(selectedNoteId), start: start.getTime(), end: start.getTime() + 3600000, allDay: false, location: '', notes: '', color: CAL_COLORS[0], projectId: localNotes[selectedNoteId].projectId || '', links: [{ kind: 'note', soul: selectedNoteId }] });
     }
 
     function openEventModal(ev) {
       closeEventModal();
       evLinks = (ev.links || []).map(l => ({ ...l }));
+      const projOpts = typeof projects !== 'undefined'
+        ? Object.entries(projects).filter(([, p]) => p && !p.trash).sort((a, b) => (a[1].name || '').localeCompare(b[1].name || ''))
+            .map(([id, p]) => `<option value="${escapeHtml(id)}" ${(ev.projectId || '') === id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')
+        : '';
       const bg = document.createElement('div');
       bg.className = 'cal-modal-bg'; bg.id = 'cal-modal-bg';
       bg.onclick = (e) => { if (e.target === bg) closeEventModal(); };
@@ -6478,6 +7145,7 @@ print("Welcome to Orto!")
         <div class="row"><label>Start<input type="${ev.allDay ? 'date' : 'datetime-local'}" id="ev-start" value="${toInput(ev.start, ev.allDay)}"></label>
         <label>End<input type="${ev.allDay ? 'date' : 'datetime-local'}" id="ev-end" value="${toInput(ev.end ?? ev.start, ev.allDay)}"></label></div>
         <input type="text" id="ev-loc" placeholder="Location" value="${escapeHtml(ev.location || '')}">
+        <label>Project<select id="ev-project" style="background:var(--input-bg);color:var(--text-primary);border:1px solid var(--border-color);border-radius:7px;padding:8px 10px;font:inherit;font-size:14px;"><option value="">No project</option>${projOpts}</select></label>
         <textarea id="ev-notes" rows="3" placeholder="Notes">${escapeHtml(ev.notes || '')}</textarea>
         <div class="ev-links" id="ev-links"></div>
         <div class="cal-colors" id="ev-colors">${CAL_COLORS.map(c => `<span style="--c:${c}" data-c="${c}" class="${c === (ev.color || CAL_COLORS[0]) ? 'sel' : ''}"></span>`).join('')}</div>
@@ -6513,7 +7181,7 @@ print("Welcome to Orto!")
         evLinks.push({ kind: 'note', soul: pickSoul });
       }
       const existing = soul ? calEvents[soul] : null;
-      const ev = { title, start, end, allDay, location: $('ev-loc').value.trim(), notes: $('ev-notes').value.trim(), color: $('ev-colors').querySelector('.sel')?.dataset.c || CAL_COLORS[0], links: evLinks, trash: !!existing?.trash };
+      const ev = { title, start, end, allDay, location: $('ev-loc').value.trim(), notes: $('ev-notes').value.trim(), projectId: $('ev-project')?.value || '', color: $('ev-colors').querySelector('.sel')?.dataset.c || CAL_COLORS[0], links: evLinks, trash: !!existing?.trash };
       try {
         const res = await os.writeCalendarEvent({ ...ev, soul });
         const id = res.soul;
@@ -8133,15 +8801,16 @@ print("Welcome to Orto!")
       os = next; window.os = os;
       currentSpace = id ? { id: next.spaceId, name: next.spaceName, role: next.spaceRole } : null;
       document.body.classList.toggle('in-space', !!currentSpace);
-      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
-      for (const m of [localNotes, calEvents, blogPosts, bookmarks, contacts, secrets, feeds, feedData, tasks]) for (const k of Object.keys(m)) delete m[k];
+      closeCalendar(); closeBlog(); closeTasks(); if (typeof closeProjects === 'function') closeProjects(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
+      for (const m of [localNotes, projects, calEvents, blogPosts, bookmarks, contacts, secrets, feeds, feedData, tasks]) for (const k of Object.keys(m)) delete m[k];
       attachCache.forEach((u) => { try { URL.revokeObjectURL(u); } catch (_) { } }); attachCache.clear(); mediaParams.clear();
-      for (const c of [bmCache, notesCache, calCache, tasksCache]) c.reset();
+      for (const c of [bmCache, notesCache, calCache, tasksCache, projectsCache]) c.reset();
+      if (typeof selectedProjectId !== 'undefined') selectedProjectId = null;
       selectedNoteId = null; filesCache = []; filesGroups = { folders: [], albums: [], playlists: [] }; filesFolder = filesAlbum = mediaPlaylist = null;
       document.querySelectorAll('.nav-count').forEach((el) => { if (el.id !== 'count-garden' && el.id !== 'count-spaces') el.textContent = '0'; });
       document.getElementById('space-label').textContent = currentSpace ? currentSpace.name : 'Personal';
       setFilter('all');
-      syncStart(); loadNotes(); loadCalendar(); loadBlog(); loadBookmarks(); loadContacts(); loadSecrets(); loadFeeds(); loadTasks();
+      syncStart(); loadNotes(); loadProjects(); loadCalendar(); loadBlog(); loadBookmarks(); loadContacts(); loadSecrets(); loadFeeds(); loadTasks();
       if (document.getElementById('sp-modal')) drawSpaces();
     }
 
@@ -8323,7 +8992,7 @@ print("Welcome to Orto!")
     }
 
     function openTasks() {
-      closeCalendar(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
+      closeCalendar(); if (typeof closeProjects === 'function') closeProjects(); closeBlog(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
       tasksMode = true;
       document.body.classList.add('tasks-mode');
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
@@ -8336,6 +9005,8 @@ print("Welcome to Orto!")
       tasksMode = false;
       document.body.classList.remove('tasks-mode');
       document.getElementById('nav-tasks')?.classList.remove('active');
+      if (typeof closeProjects === 'function' && !projectsMode) { /* closed elsewhere */ }
+      else if (typeof closeProjects === 'function') closeProjects();
     }
 
     // ── Garden: a living picture of the workspace. Nothing is stored: every render is computed from the other apps.
@@ -8552,6 +9223,8 @@ print("Welcome to Orto!")
           }
           const linksCount = (t.links || []).length;
           const linksHtml = linksCount ? `<span class="task-links-badge" title="${linksCount} linked item(s)"><i class="ti ti-link"></i>${linksCount}</span>` : '';
+          const taskProj = (t.projectId && typeof projects !== 'undefined' && projects[t.projectId] && !projects[t.projectId].trash) ? projects[t.projectId] : null;
+          const projHtml = taskProj ? `<span class="note-card-project" style="--proj-color:${escapeHtml(taskProj.color || '#c4532f')}"><span class="proj-dot"></span><span>${escapeHtml(taskProj.name)}</span></span>` : '';
 
           return `<div class="task-card ${isDone ? 'done' : ''}" draggable="true" ondragstart="taskDragStart(event, '${t.soul}')" onclick="taskEdit('${t.soul}')">
             <div class="task-card-header">
@@ -8567,6 +9240,7 @@ print("Welcome to Orto!")
             ${t.desc ? `<div class="task-desc">${escapeHtml(t.desc)}</div>` : ''}
             <div class="task-meta">
               <span class="task-badge priority-${escapeHtml(prio)}">${escapeHtml(prio)}</span>
+              ${projHtml}
               ${dueHtml}
               ${linksHtml}
               ${tags.map(tag => `<span class="task-tag">#${escapeHtml(tag.replace(/^#/, ''))}</span>`).join('')}
@@ -8635,6 +9309,7 @@ print("Welcome to Orto!")
         dueDate: t.dueDate || null,
         tags: Array.isArray(t.tags) ? t.tags : (t.tags ? String(t.tags).split(',').map(s => s.trim().replace(/^#/, '')).filter(Boolean) : []),
         assignee: t.assignee || '',
+        projectId: t.projectId ? String(t.projectId).trim() : '',
         links: Array.isArray(t.links) ? t.links : [],
         createdAt: t.createdAt || Date.now(),
         completedAt: t.completedAt || null,
@@ -8663,7 +9338,7 @@ print("Welcome to Orto!")
       showToast(isDone ? 'Task marked incomplete' : 'Task marked complete');
     }
 
-    function taskNew(initialCol = 'todo', initialLinks = []) {
+    function taskNew(initialCol = 'todo', initialLinks = [], initialProjectId = '') {
       openTaskModal({
         soul: null,
         title: '',
@@ -8673,6 +9348,7 @@ print("Welcome to Orto!")
         desc: '',
         dueDate: null,
         tags: [],
+        projectId: initialProjectId,
         links: initialLinks
       });
     }
@@ -8689,6 +9365,7 @@ print("Welcome to Orto!")
         desc: '',
         dueDate: null,
         tags: [],
+        projectId: localNotes[selectedNoteId].projectId || '',
         links: [{ kind: 'note', soul: selectedNoteId }]
       });
     }
@@ -8716,6 +9393,10 @@ print("Welcome to Orto!")
       const col = t.column || t.status || 'todo';
       const prio = t.priority || 'medium';
       const tagsStr = Array.isArray(t.tags) ? t.tags.join(', ') : (t.tags || '');
+      const projOpts = typeof projects !== 'undefined'
+        ? Object.entries(projects).filter(([, p]) => p && !p.trash).sort((a, b) => (a[1].name || '').localeCompare(b[1].name || ''))
+            .map(([id, p]) => `<option value="${escapeHtml(id)}" ${(t.projectId || '') === id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')
+        : '';
 
       let dueVal = '';
       if (t.dueDate) {
@@ -8743,6 +9424,12 @@ print("Welcome to Orto!")
           </label>
         </div>
         <label>Due Date<input type="datetime-local" id="tsk-due" value="${dueVal}"></label>
+        <label>Project
+          <select id="tsk-project" style="background:var(--input-bg);color:var(--text-primary);border:1px solid var(--border-color);border-radius:7px;padding:8px 10px;font:inherit;font-size:14px;">
+            <option value="">No project</option>
+            ${projOpts}
+          </select>
+        </label>
         <label>Tags (comma separated)<input type="text" id="tsk-tags" placeholder="dev, release, ui" value="${escapeHtml(tagsStr)}"></label>
         <label>Description<textarea id="tsk-desc" rows="3" placeholder="Task details...">${escapeHtml(t.desc || '')}</textarea></label>
         <div class="ev-links" id="tsk-links"></div>
@@ -8814,6 +9501,7 @@ print("Welcome to Orto!")
       const col = document.getElementById('tsk-col').value;
       const prio = document.getElementById('tsk-priority').value;
       const dueInput = document.getElementById('tsk-due').value;
+      const projectId = document.getElementById('tsk-project')?.value || '';
       const desc = document.getElementById('tsk-desc').value.trim();
       const tags = document.getElementById('tsk-tags').value.split(',').map(s => s.trim().replace(/^#/, '')).filter(Boolean);
 
@@ -8837,6 +9525,7 @@ print("Welcome to Orto!")
         priority: prio,
         dueDate,
         tags,
+        projectId,
         desc,
         links: currentTaskLinks,
         createdAt: originalCreatedAt || Date.now(),
@@ -8924,6 +9613,1046 @@ print("Welcome to Orto!")
       taskSearch, taskFilterPriority, taskDragStart, taskDragOver, taskDragLeave, taskDrop,
       taskToggleDone, taskDelete, taskRestore, taskDeleteForever, linkTaskNoteFromSelect, unlinkTaskNote,
       emptyAllTrash, restoreTrashItem, deleteTrashItemForever
+    });
+
+    // ═══════════════════════════════════════════════════════════════
+    // Wiki-Links ([[Note Title]] & Backlinks) + Projects Workspace
+    // ═══════════════════════════════════════════════════════════════
+    const projects = {};
+    let projectsMode = false, selectedProjectId = null, projQuery = '', projStatusFilter = '';
+    const PROJECT_STATUS_LABEL = { active: 'Active', on_hold: 'On Hold', completed: 'Completed', archived: 'Archived' };
+
+    function extractWikiLinksFromText(text) {
+      if (!text) return [];
+      const cleaned = String(text).replace(/```[\s\S]*?```/g, '').replace(/`[^`\r\n]+`/g, '');
+      const seen = new Map();
+      const re = /\[\[([^\[\]\r\n]+?)\]\]/g;
+      let m;
+      while ((m = re.exec(cleaned)) !== null) {
+        const inner = m[1];
+        const pipe = inner.indexOf('|');
+        const target = (pipe >= 0 ? inner.slice(0, pipe) : inner).trim();
+        if (!target) continue;
+        const label = (pipe >= 0 ? inner.slice(pipe + 1).trim() : '') || target;
+        const key = target.toLowerCase();
+        if (!seen.has(key)) seen.set(key, { target, label });
+      }
+      return [...seen.values()];
+    }
+
+    function findNoteByTitleOrSoul(target) {
+      const clean = String(target || '').trim();
+      if (!clean) return null;
+      if (clean !== 'new' && localNotes[clean] && !localNotes[clean].trash) {
+        return { soul: clean, note: localNotes[clean] };
+      }
+      const low = clean.toLowerCase();
+      for (const [id, n] of Object.entries(localNotes)) {
+        if (id === 'new' || !n || n.trash) continue;
+        if ((n.title || '').trim().toLowerCase() === low) return { soul: id, note: n };
+      }
+      return null;
+    }
+
+    async function openWikiLinkTarget(target) {
+      const clean = String(target || '').trim();
+      if (!clean) return;
+      const hit = findNoteByTitleOrSoul(clean);
+      if (hit) {
+        openLinkedNote(hit.soul);
+        return;
+      }
+      if (!isAuthenticated) return;
+      const srcNote = selectedNoteId && selectedNoteId !== 'new' ? localNotes[selectedNoteId] : null;
+      const initialBody = srcNote ? `Linked from [[${srcNote.title || selectedNoteId}]].\n\n` : '';
+      try {
+        const res = await os.writeVaultNote({
+          title: clean,
+          body: initialBody,
+          cat: srcNote?.cat || '',
+          projectId: srcNote?.projectId || ''
+        });
+        const rec = {
+          id: res.soul,
+          title: clean,
+          body: initialBody,
+          cat: srcNote?.cat || '',
+          pinned: false,
+          projectId: srcNote?.projectId || '',
+          trash: false,
+          timestamp: res.timestamp
+        };
+        localNotes[res.soul] = rec;
+        notesCache.set(res.soul, JSON.stringify([rec.title, rec.body, rec.cat, false, false, rec.projectId, rec.timestamp]), rec);
+        if (typeof notesCache.flush === 'function') await notesCache.flush();
+        openLinkedNote(res.soul);
+        isEditMode = true;
+        renderEditor();
+        document.getElementById('editor-textarea')?.focus();
+        showToast('Created linked note: ' + clean);
+      } catch (err) {
+        showToast('Could not create note: ' + err.message);
+      }
+    }
+
+    function openNoteLinkPicker() {
+      if (!selectedNoteId || localNotes[selectedNoteId]?.trash) return;
+      isEditMode = true;
+      renderEditor();
+      const textarea = document.getElementById('editor-textarea');
+      if (!textarea) return;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const selected = textarea.value.slice(start, end);
+
+      const bg = modal(`<b style="font-family:var(--font-heading);font-size:16px;">Link a Note <small style="color:var(--text-muted);font-weight:400;">([[Wiki-Link]])</small></b>
+        <input type="search" id="wikilink-search" placeholder="Filter existing notes or type a new title…">
+        <div id="wikilink-results" style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto;"></div>
+        <div class="cal-actions"><button class="cal-btn" id="wikilink-cancel">Cancel</button></div>`);
+
+      const searchEl = document.getElementById('wikilink-search');
+      const resultsEl = document.getElementById('wikilink-results');
+      document.getElementById('wikilink-cancel').onclick = () => bg.remove();
+
+      const insertLink = (targetTitle) => {
+        const snippet = selected ? `[[${targetTitle}|${selected}]]` : `[[${targetTitle}]]`;
+        bg.remove();
+        textarea.focus();
+        textarea.setRangeText(snippet, start, end, 'end');
+        handleBodyInput(textarea.value);
+      };
+
+      const drawList = () => {
+        const q = (searchEl.value || '').trim();
+        const qLow = q.toLowerCase();
+        const candidates = Object.entries(localNotes)
+          .filter(([id, n]) => id !== 'new' && id !== selectedNoteId && n && !n.trash)
+          .map(([id, n]) => ({ id, title: n.title || 'Untitled Note', projectId: n.projectId || '', timestamp: n.timestamp || 0 }))
+          .filter(item => !qLow || item.title.toLowerCase().includes(qLow))
+          .sort((a, b) => b.timestamp - a.timestamp);
+
+        resultsEl.replaceChildren();
+        const exactMatch = q && candidates.some(c => c.title.toLowerCase() === qLow);
+
+        if (q && !exactMatch) {
+          const createBtn = document.createElement('button');
+          createBtn.type = 'button';
+          createBtn.className = 'project-item-row';
+          createBtn.style.borderStyle = 'dashed';
+          const main = document.createElement('div');
+          main.className = 'project-item-main';
+          const ttl = document.createElement('div');
+          ttl.className = 'project-item-title';
+          ttl.textContent = `Create new link [[${q}]]`;
+          const sub = document.createElement('div');
+          sub.className = 'project-item-sub';
+          sub.textContent = 'Inserts link now; clicking in preview creates the note.';
+          main.appendChild(ttl);
+          main.appendChild(sub);
+          createBtn.appendChild(main);
+          createBtn.onclick = () => insertLink(q);
+          resultsEl.appendChild(createBtn);
+        }
+
+        if (candidates.length === 0 && !q) {
+          const hint = document.createElement('p');
+          hint.className = 'hint';
+          hint.textContent = 'No other notes yet. Type a title above to create a [[link]].';
+          resultsEl.appendChild(hint);
+          return;
+        }
+
+        candidates.slice(0, 40).forEach(item => {
+          const row = document.createElement('button');
+          row.type = 'button';
+          row.className = 'project-item-row';
+          const main = document.createElement('div');
+          main.className = 'project-item-main';
+          const ttl = document.createElement('div');
+          ttl.className = 'project-item-title';
+          ttl.textContent = item.title;
+          main.appendChild(ttl);
+          const p = item.projectId && projects[item.projectId] && !projects[item.projectId].trash ? projects[item.projectId] : null;
+          if (p) {
+            const sub = document.createElement('div');
+            sub.className = 'project-item-sub';
+            sub.textContent = p.name;
+            main.appendChild(sub);
+          }
+          row.appendChild(main);
+          row.onclick = () => insertLink(item.title);
+          resultsEl.appendChild(row);
+        });
+      };
+
+      searchEl.oninput = drawList;
+      searchEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          if (e.isComposing || e.keyCode === 229) return;
+          e.preventDefault();
+          resultsEl.querySelector('button.project-item-row')?.click();
+        }
+      });
+      drawList();
+      searchEl.focus();
+    }
+
+    function renderNoteBacklinks() {
+      const box = document.getElementById('note-backlinks');
+      if (!box) return;
+      box.replaceChildren();
+      if (!selectedNoteId || selectedNoteId === 'new' || !localNotes[selectedNoteId]) return;
+
+      const cur = localNotes[selectedNoteId];
+      const outgoing = extractWikiLinksFromText(cur.body || '');
+      const curTitleLow = (cur.title || '').trim().toLowerCase();
+      const incoming = [];
+
+      for (const [id, n] of Object.entries(localNotes)) {
+        if (id === 'new' || id === selectedNoteId || !n || n.trash) continue;
+        const links = extractWikiLinksFromText(n.body || '');
+        const matched = links.some(l => l.target === selectedNoteId || (curTitleLow && l.target.toLowerCase() === curTitleLow));
+        if (!matched) continue;
+        const line = (n.body || '').split(/\r?\n/).find(ln => ln.includes('[[')) || '';
+        incoming.push({ id, title: n.title || 'Untitled Note', snippet: line.trim().slice(0, 80) });
+      }
+
+      if (outgoing.length > 0) {
+        const grp = document.createElement('div');
+        grp.className = 'note-backlinks-group';
+        const lbl = document.createElement('div');
+        lbl.className = 'note-backlinks-label';
+        const ic = document.createElement('i');
+        ic.className = 'ti ti-arrow-up-right';
+        lbl.appendChild(ic);
+        lbl.appendChild(document.createTextNode('Linked Notes'));
+        grp.appendChild(lbl);
+
+        const list = document.createElement('div');
+        list.className = 'note-backlinks-list';
+        outgoing.forEach(item => {
+          const hit = findNoteByTitleOrSoul(item.target);
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'backlink-chip' + (hit ? '' : ' missing');
+          btn.title = hit ? ('Open: ' + (hit.note.title || item.target)) : ('Click to create note "' + item.target + '"');
+          const bIc = document.createElement('i');
+          bIc.className = hit ? 'ti ti-note' : 'ti ti-file-plus';
+          btn.appendChild(bIc);
+          btn.appendChild(document.createTextNode(hit ? (hit.note.title || item.target) : `${item.target} (create)`));
+          btn.onclick = () => openWikiLinkTarget(item.target);
+          list.appendChild(btn);
+        });
+        grp.appendChild(list);
+        box.appendChild(grp);
+      }
+
+      if (incoming.length > 0) {
+        const grp = document.createElement('div');
+        grp.className = 'note-backlinks-group';
+        const lbl = document.createElement('div');
+        lbl.className = 'note-backlinks-label';
+        const ic = document.createElement('i');
+        ic.className = 'ti ti-arrow-down-left';
+        lbl.appendChild(ic);
+        lbl.appendChild(document.createTextNode(`Referenced by (${incoming.length})`));
+        grp.appendChild(lbl);
+
+        const list = document.createElement('div');
+        list.className = 'note-backlinks-list';
+        incoming.forEach(src => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'backlink-chip';
+          btn.title = 'Open note: ' + src.title;
+          const bIc = document.createElement('i');
+          bIc.className = 'ti ti-link';
+          btn.appendChild(bIc);
+          btn.appendChild(document.createTextNode(src.title));
+          if (src.snippet) {
+            const sm = document.createElement('small');
+            sm.textContent = src.snippet;
+            btn.appendChild(sm);
+          }
+          btn.onclick = () => openLinkedNote(src.id);
+          list.appendChild(btn);
+        });
+        grp.appendChild(list);
+        box.appendChild(grp);
+      }
+    }
+
+    const mdViewEl = document.getElementById('markdown-rendered-view');
+    if (mdViewEl) {
+      mdViewEl.addEventListener('click', (e) => {
+        const pill = e.target.closest('.bear-wikilink-pill');
+        if (!pill) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openWikiLinkTarget(pill.dataset.wikilink);
+      });
+      mdViewEl.addEventListener('dblclick', (e) => {
+        if (e.target.closest('.bear-wikilink-pill')) e.stopPropagation();
+      });
+      mdViewEl.addEventListener('keydown', (e) => {
+        const pill = e.target.closest('.bear-wikilink-pill');
+        if (!pill) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          if (e.isComposing || e.keyCode === 229) return;
+          e.preventDefault();
+          e.stopPropagation();
+          openWikiLinkTarget(pill.dataset.wikilink);
+        }
+      });
+    }
+
+    async function assignProjectForActiveNote() {
+      if (!selectedNoteId) return;
+      const note = selectedNoteId === 'new' ? (localNotes['new'] || {}) : localNotes[selectedNoteId];
+      if (!note || note.trash) return;
+      closePopovers && closePopovers();
+
+      const activeProjs = Object.entries(projects).filter(([, p]) => p && !p.trash).sort((a, b) => (a[1].name || '').localeCompare(b[1].name || ''));
+      const projOpts = activeProjs.map(([id, p]) => `<option value="${escapeHtml(id)}" ${(note.projectId || '') === id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
+
+      const bg = modal(`<b style="font-family:var(--font-heading);font-size:16px;">Assign to Project</b>
+        <label>Project
+          <select id="assign-proj-select" style="background:var(--input-bg);color:var(--text-primary);border:1px solid var(--border-color);border-radius:7px;padding:8px 10px;font:inherit;font-size:14px;">
+            <option value="">No project</option>
+            ${projOpts}
+          </select>
+        </label>
+        <label>Or create new project
+          <input type="text" id="assign-proj-new" placeholder="New project name (optional)">
+        </label>
+        <div class="cal-actions">
+          <button class="cal-btn" id="assign-proj-cancel">Cancel</button>
+          <button class="cal-btn primary" id="assign-proj-save">Save</button>
+        </div>`);
+
+      document.getElementById('assign-proj-cancel').onclick = () => bg.remove();
+      document.getElementById('assign-proj-save').onclick = async () => {
+        let nextProjId = document.getElementById('assign-proj-select').value;
+        const newName = document.getElementById('assign-proj-new').value.trim();
+        try {
+          if (newName) {
+            const pRes = await os.writeProject({ name: newName, status: 'active', color: CAL_COLORS[0] });
+            const newProjRec = { soul: pRes.soul, name: newName, desc: '', status: 'active', color: CAL_COLORS[0], dueDate: null, tags: [], links: [], createdAt: Date.now(), updatedAt: pRes.updatedAt, trash: false };
+            projects[pRes.soul] = newProjRec;
+            projectsCache.set(pRes.soul, newProjRec.name, newProjRec);
+            document.getElementById('count-projects').textContent = Object.values(projects).filter(x => !x.trash).length;
+            nextProjId = pRes.soul;
+          }
+          if (selectedNoteId === 'new') {
+            if (!localNotes['new']) localNotes['new'] = { id: 'new', title: document.getElementById('editor-title')?.value || '', body: document.getElementById('editor-textarea')?.value || '', timestamp: Date.now(), pinned: false, cat: '' };
+            localNotes['new'].projectId = nextProjId;
+            await saveActiveNote(true);
+          } else {
+            const cur = localNotes[selectedNoteId];
+            await os.writeVaultNote({
+              title: cur.title,
+              body: cur.body,
+              cat: cur.cat || '',
+              pinned: !!cur.pinned,
+              projectId: nextProjId,
+              ...(cur.links !== undefined && { links: cur.links }),
+              trash: false,
+              soul: selectedNoteId
+            });
+            cur.projectId = nextProjId;
+            const sig = JSON.stringify([cur.title, cur.body, cur.cat || '', !!cur.pinned, false, nextProjId, cur.timestamp]);
+            notesCache.set(selectedNoteId, sig, cur);
+            if (typeof notesCache.flush === 'function') await notesCache.flush();
+          }
+          bg.remove();
+          showToast(nextProjId ? 'Assigned to project' : 'Removed from project');
+          triggerRender();
+        } catch (err) {
+          showToast('Failed to assign project: ' + err.message);
+        }
+      };
+    }
+
+    async function loadProjects() {
+      const cached = await projectsCache.load();
+      if (Object.keys(cached).length) {
+        Object.assign(projects, cached);
+        document.getElementById('count-projects').textContent = Object.values(projects).filter(x => !x.trash).length;
+        if (projectsMode) renderProjects();
+        renderNoteEvents();
+        syncBump();
+      }
+      os.onProject((p, soul, isDeleted) => {
+        syncBump();
+        if (isDeleted) {
+          delete projects[soul];
+          projectsCache.del(soul);
+        } else {
+          projects[soul] = p;
+          projectsCache.set(soul, p.name, p);
+        }
+        document.getElementById('count-projects').textContent = Object.values(projects).filter(x => !x.trash).length;
+        if (projectsMode) renderProjects();
+        renderNoteEvents();
+        renderApp();
+      });
+    }
+
+    function openProjects(projectSoul = null) {
+      closeCalendar(); closeBlog(); closeTasks(); closeBookmarks(); closeFiles(); closeContacts(); closeSecrets(); closeFeeds(); closeGarden(); closeMedia();
+      projectsMode = true;
+      if (projectSoul && projects[projectSoul] && !projects[projectSoul].trash) selectedProjectId = projectSoul;
+      document.body.classList.add('projects-mode');
+      document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
+      document.getElementById('nav-projects')?.classList.add('active');
+      if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('open')) toggleSidebar();
+      renderProjects();
+    }
+
+    function closeProjects() {
+      projectsMode = false;
+      document.body.classList.remove('projects-mode');
+      document.getElementById('nav-projects')?.classList.remove('active');
+    }
+
+    const projSearch = (v) => { projQuery = (v || '').toLowerCase(); renderProjects(); };
+    const projFilterStatus = (s) => { projStatusFilter = s || ''; renderProjects(); };
+    const projSelect = (soul) => { selectedProjectId = soul; renderProjects(); };
+
+    function itemsForProject(projectSoul) {
+      const p = projects[projectSoul];
+      const linkedNotes = new Set((p?.links || []).filter(l => l.kind === 'note').map(l => l.soul));
+      const linkedTasks = new Set((p?.links || []).filter(l => l.kind === 'task').map(l => l.soul));
+      const linkedEvents = new Set((p?.links || []).filter(l => l.kind === 'event').map(l => l.soul));
+
+      const pNotes = Object.entries(localNotes)
+        .filter(([id, n]) => id !== 'new' && n && !n.trash && (n.projectId === projectSoul || linkedNotes.has(id) || (n.links || []).some(l => l.kind === 'project' && l.soul === projectSoul)))
+        .map(([id, n]) => ({ id, ...n }))
+        .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.timestamp || 0) - (a.timestamp || 0));
+
+      const pTasks = Object.entries(tasks)
+        .filter(([id, t]) => t && !t.trash && (t.projectId === projectSoul || linkedTasks.has(id) || (t.links || []).some(l => l.kind === 'project' && l.soul === projectSoul)))
+        .map(([id, t]) => ({ soul: id, ...t }))
+        .sort((a, b) => (a.status === 'done') - (b.status === 'done') || (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+
+      const pEvents = Object.entries(calEvents)
+        .filter(([id, e]) => e && !e.trash && (e.projectId === projectSoul || linkedEvents.has(id) || (e.links || []).some(l => l.kind === 'project' && l.soul === projectSoul)))
+        .map(([id, e]) => ({ soul: id, ...e }))
+        .sort((a, b) => a.start - b.start);
+
+      return { notes: pNotes, tasks: pTasks, events: pEvents };
+    }
+
+    function renderProjectGraphSvg(projectSoul, projNotes, accentColor) {
+      const SVG_NS = 'http://www.w3.org/2000/svg';
+      const nodesMap = new Map();
+      projNotes.slice(0, 14).forEach(n => nodesMap.set(n.id, { id: n.id, title: n.title || 'Untitled Note', inProject: true }));
+
+      const edges = [];
+      for (const src of projNotes) {
+        if (!nodesMap.has(src.id)) continue;
+        for (const wl of extractWikiLinksFromText(src.body || '')) {
+          const hit = findNoteByTitleOrSoul(wl.target);
+          if (!hit || hit.soul === src.id) continue;
+          if (!nodesMap.has(hit.soul) && nodesMap.size < 18) {
+            nodesMap.set(hit.soul, { id: hit.soul, title: hit.note.title || wl.target, inProject: false });
+          }
+          if (nodesMap.has(hit.soul)) edges.push({ from: src.id, to: hit.soul });
+        }
+      }
+
+      const nodes = [...nodesMap.values()];
+      if (nodes.length === 0) return null;
+
+      const W = 640, H = 230;
+      const positions = new Map();
+      if (nodes.length === 1) {
+        positions.set(nodes[0].id, { x: W / 2, y: H / 2 });
+      } else if (nodes.length <= 6) {
+        const cx = W / 2, cy = H / 2, rx = 205, ry = 68;
+        nodes.forEach((nd, i) => {
+          const ang = -Math.PI / 2 + (2 * Math.PI * i) / nodes.length;
+          positions.set(nd.id, { x: cx + rx * Math.cos(ang), y: cy + ry * Math.sin(ang) });
+        });
+      } else {
+        const cols = Math.min(5, Math.ceil(Math.sqrt(nodes.length * 1.4)));
+        const rows = Math.ceil(nodes.length / cols);
+        nodes.forEach((nd, i) => {
+          const c = i % cols, r = Math.floor(i / cols);
+          const x = ((c + 0.5) / cols) * (W - 100) + 50;
+          const y = ((r + 0.5) / rows) * (H - 56) + 28 + (c % 2 ? 10 : -10);
+          positions.set(nd.id, { x, y });
+        });
+      }
+
+      const svg = document.createElementNS(SVG_NS, 'svg');
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svg.setAttribute('class', 'project-graph-svg');
+      svg.setAttribute('role', 'img');
+      svg.setAttribute('aria-label', 'Project note connection graph');
+
+      const defs = document.createElementNS(SVG_NS, 'defs');
+      const marker = document.createElementNS(SVG_NS, 'marker');
+      marker.setAttribute('id', 'pg-arrow');
+      marker.setAttribute('viewBox', '0 0 10 10');
+      marker.setAttribute('refX', '8');
+      marker.setAttribute('refY', '5');
+      marker.setAttribute('markerWidth', '6');
+      marker.setAttribute('markerHeight', '6');
+      marker.setAttribute('orient', 'auto-start-reverse');
+      const mPath = document.createElementNS(SVG_NS, 'path');
+      mPath.setAttribute('d', 'M 0 1 L 8 5 L 0 9 z');
+      mPath.setAttribute('fill', accentColor || '#c4532f');
+      mPath.setAttribute('fill-opacity', '0.75');
+      marker.appendChild(mPath);
+      defs.appendChild(marker);
+      svg.appendChild(defs);
+
+      for (const edge of edges) {
+        const a = positions.get(edge.from), b = positions.get(edge.to);
+        if (!a || !b) continue;
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const padEnd = 24;
+        const ex = b.x - (dx / len) * padEnd;
+        const ey = b.y - (dy / len) * (padEnd * 0.65);
+        const cx = (a.x + ex) / 2 - dy * 0.14;
+        const cy = (a.y + ey) / 2 + dx * 0.14;
+        const path = document.createElementNS(SVG_NS, 'path');
+        path.setAttribute('d', `M ${a.x.toFixed(1)} ${a.y.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${ex.toFixed(1)} ${ey.toFixed(1)}`);
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', accentColor || '#c4532f');
+        path.setAttribute('stroke-opacity', '0.55');
+        path.setAttribute('stroke-width', '1.6');
+        path.setAttribute('marker-end', 'url(#pg-arrow)');
+        svg.appendChild(path);
+      }
+
+      for (const nd of nodes) {
+        const pos = positions.get(nd.id);
+        const label = nd.title.length > 18 ? nd.title.slice(0, 17) + '…' : nd.title;
+        const bw = Math.min(138, Math.max(76, label.length * 7.2 + 20));
+        const bh = 28;
+        const g = document.createElementNS(SVG_NS, 'g');
+        g.setAttribute('class', 'pg-node');
+        g.setAttribute('transform', `translate(${pos.x.toFixed(1)}, ${pos.y.toFixed(1)})`);
+        const tt = document.createElementNS(SVG_NS, 'title');
+        tt.textContent = nd.title + (nd.inProject ? '' : ' (linked outside project)') + ' — Click to open note';
+        g.appendChild(tt);
+
+        const rect = document.createElementNS(SVG_NS, 'rect');
+        rect.setAttribute('x', (-bw / 2).toFixed(1));
+        rect.setAttribute('y', (-bh / 2).toFixed(1));
+        rect.setAttribute('width', bw.toFixed(1));
+        rect.setAttribute('height', String(bh));
+        rect.setAttribute('rx', '8');
+        rect.setAttribute('fill', 'var(--bg-card)');
+        rect.setAttribute('stroke', nd.inProject ? (accentColor || '#c4532f') : 'var(--border-color)');
+        if (!nd.inProject) rect.setAttribute('stroke-dasharray', '4 2');
+        rect.setAttribute('stroke-width', nd.inProject ? '1.6' : '1.2');
+        g.appendChild(rect);
+
+        const txt = document.createElementNS(SVG_NS, 'text');
+        txt.setAttribute('text-anchor', 'middle');
+        txt.setAttribute('dominant-baseline', 'central');
+        txt.setAttribute('fill', 'var(--text-primary)');
+        txt.setAttribute('font-size', '11.5');
+        txt.setAttribute('font-weight', '600');
+        txt.textContent = label;
+        g.appendChild(txt);
+
+        g.addEventListener('click', () => openLinkedNote(nd.id));
+        svg.appendChild(g);
+      }
+
+      return svg;
+    }
+
+    function renderProjects() {
+      const listEl = document.getElementById('projects-list');
+      const detailEl = document.getElementById('project-detail');
+      if (!listEl || !detailEl) return;
+
+      const all = Object.entries(projects)
+        .filter(([, p]) => p && !p.trash)
+        .map(([soul, p]) => ({ soul, ...p }));
+      const ORDER = { active: 0, on_hold: 1, completed: 2, archived: 3 };
+      const filtered = all.filter(p => {
+        if (projStatusFilter && (p.status || 'active') !== projStatusFilter) return false;
+        if (projQuery) {
+          const hit = (p.name || '').toLowerCase().includes(projQuery)
+            || (p.desc || '').toLowerCase().includes(projQuery)
+            || (p.tags || []).some(t => String(t).toLowerCase().includes(projQuery.replace(/^#/, '')));
+          if (!hit) return false;
+        }
+        return true;
+      }).sort((a, b) =>
+        (ORDER[(a.status || 'active').toLowerCase()] ?? 1) - (ORDER[(b.status || 'active').toLowerCase()] ?? 1)
+        || (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+
+      if (!selectedProjectId || !filtered.some(p => p.soul === selectedProjectId)) {
+        selectedProjectId = filtered[0]?.soul || null;
+      }
+
+      listEl.replaceChildren();
+      if (filtered.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'padding:24px 12px;text-align:center;color:var(--text-muted);font-size:13px;';
+        empty.textContent = all.length ? 'No projects match this filter.' : 'No projects yet.';
+        listEl.appendChild(empty);
+      } else {
+        filtered.forEach(p => {
+          const items = itemsForProject(p.soul);
+          const color = p.color || '#c4532f';
+          const status = (p.status || 'active').toLowerCase();
+          const card = document.createElement('div');
+          card.className = 'project-list-card' + (p.soul === selectedProjectId ? ' active' : '');
+          card.style.setProperty('--proj-color', color);
+          card.onclick = () => projSelect(p.soul);
+
+          card.innerHTML = `
+            <div class="project-card-top">
+              <div class="project-card-name"><span class="proj-dot" style="--proj-color:${escapeHtml(color)}"></span><span>${escapeHtml(p.name)}</span></div>
+              <span class="proj-status-badge proj-status-${escapeHtml(status)}">${escapeHtml(PROJECT_STATUS_LABEL[status] || status)}</span>
+            </div>
+            ${p.desc ? `<div class="project-card-desc">${escapeHtml(p.desc)}</div>` : ''}
+            <div class="project-card-counts">
+              <span><i class="ti ti-notes"></i> ${items.notes.length} notes</span>
+              <span><i class="ti ti-checkbox"></i> ${items.tasks.filter(t => t.status !== 'done' && t.column !== 'done').length}/${items.tasks.length} tasks</span>
+              ${items.events.length ? `<span><i class="ti ti-calendar"></i> ${items.events.length}</span>` : ''}
+            </div>
+          `;
+          listEl.appendChild(card);
+        });
+      }
+
+      detailEl.replaceChildren();
+      const cur = filtered.find(p => p.soul === selectedProjectId);
+      if (!cur) {
+        detailEl.innerHTML = `<div class="project-detail-empty">
+          <i class="ti ti-folders" style="font-size:44px;color:var(--bear-red);opacity:0.85;"></i>
+          <h3 style="font-family:var(--font-heading);">Organize work into Projects</h3>
+          <p style="font-size:13.5px;line-height:1.5;">Group related notes, tasks, and calendar events inside a project workspace and connect ideas with <code>[[Note Links]]</code>.</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
+            <button class="cal-btn" onclick="loadDemo('projects')"><i class="ti ti-sparkles"></i> Load Example</button>
+            <button class="cal-btn primary" onclick="projNew()"><i class="ti ti-plus"></i> New Project</button>
+          </div>
+        </div>`;
+        return;
+      }
+
+      const items = itemsForProject(cur.soul);
+      const color = cur.color || '#c4532f';
+      const status = (cur.status || 'active').toLowerCase();
+      const tags = Array.isArray(cur.tags) ? cur.tags : [];
+      const dueStr = cur.dueDate ? new Date(Number(cur.dueDate)).toLocaleDateString(navigator.language || 'en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+
+      const hero = document.createElement('div');
+      hero.className = 'project-hero';
+      hero.innerHTML = `
+        <div>
+          <div class="project-hero-title">
+            <span class="proj-dot" style="width:12px;height:12px;--proj-color:${escapeHtml(color)}"></span>
+            <span>${escapeHtml(cur.name)}</span>
+          </div>
+          <div class="project-hero-meta">
+            <span class="proj-status-badge proj-status-${escapeHtml(status)}">${escapeHtml(PROJECT_STATUS_LABEL[status] || status)}</span>
+            ${dueStr ? `<span><i class="ti ti-clock"></i> Due ${escapeHtml(dueStr)}</span>` : ''}
+            ${tags.map(t => `<span class="bear-tag-pill">#${escapeHtml(String(t).replace(/^#/, ''))}</span>`).join('')}
+          </div>
+          ${cur.desc ? `<p style="margin-top:10px;font-size:14px;color:var(--text-secondary);line-height:1.55;max-width:720px;">${escapeHtml(cur.desc)}</p>` : ''}
+        </div>
+        <div class="project-hero-actions">
+          <button class="cal-btn primary" onclick="projCreateNote('${escapeHtml(cur.soul)}')"><i class="ti ti-note"></i> New Note</button>
+          <button class="cal-btn" onclick="projLinkNoteModal('${escapeHtml(cur.soul)}')"><i class="ti ti-link-plus"></i> Link Note</button>
+          <button class="cal-btn" onclick="projCreateTask('${escapeHtml(cur.soul)}')"><i class="ti ti-checkbox"></i> New Task</button>
+          <button class="cal-btn" onclick="projCreateEvent('${escapeHtml(cur.soul)}')"><i class="ti ti-calendar-plus"></i> New Event</button>
+          <button class="cal-btn" onclick="projEdit('${escapeHtml(cur.soul)}')"><i class="ti ti-pencil"></i> Edit</button>
+          <button class="cal-btn" style="color:var(--bear-red);" onclick="projDelete('${escapeHtml(cur.soul)}')"><i class="ti ti-trash"></i></button>
+        </div>
+      `;
+      detailEl.appendChild(hero);
+
+      const graphCard = document.createElement('div');
+      graphCard.className = 'project-graph-card';
+      graphCard.innerHTML = `<div class="project-graph-head">
+        <span><i class="ti ti-hierarchy-2" style="color:${escapeHtml(color)};margin-right:6px;"></i>Knowledge Graph <small style="color:var(--text-muted);font-weight:400;">([[Wiki-Links]] across project notes)</small></span>
+        <span style="font-size:12px;color:var(--text-muted);">${items.notes.length} notes · ${items.tasks.length} tasks · ${items.events.length} events</span>
+      </div>`;
+      const svgEl = renderProjectGraphSvg(cur.soul, items.notes, color);
+      if (svgEl) {
+        graphCard.appendChild(svgEl);
+      } else {
+        const gEmpty = document.createElement('p');
+        gEmpty.className = 'hint';
+        gEmpty.style.cssText = 'font-size:13px;color:var(--text-muted);';
+        gEmpty.textContent = 'Create or link notes in this project and connect them using [[Note Title]] to visualize the graph.';
+        graphCard.appendChild(gEmpty);
+      }
+      detailEl.appendChild(graphCard);
+
+      const sections = document.createElement('div');
+      sections.className = 'project-sections';
+
+      // Notes section
+      const notesSec = document.createElement('div');
+      notesSec.className = 'project-section-card';
+      notesSec.innerHTML = `<div class="project-section-head">
+        <span><i class="ti ti-notes" style="color:var(--bear-red);margin-right:6px;"></i>Notes (${items.notes.length})</span>
+        <button class="cal-btn" style="padding:3px 9px;font-size:12px;" onclick="projCreateNote('${escapeHtml(cur.soul)}')"><i class="ti ti-plus"></i> Add</button>
+      </div>`;
+      if (items.notes.length === 0) {
+        const p = document.createElement('p');
+        p.style.cssText = 'font-size:12.5px;color:var(--text-muted);';
+        p.textContent = 'No notes attached yet.';
+        notesSec.appendChild(p);
+      } else {
+        items.notes.forEach(n => {
+          const linkCount = extractWikiLinksFromText(n.body || '').length;
+          const row = document.createElement('div');
+          row.className = 'project-item-row';
+          row.onclick = () => openLinkedNote(n.id);
+          row.innerHTML = `
+            <div class="project-item-main">
+              <div class="project-item-title">${n.pinned ? '<i class="ti ti-pin-filled" style="color:var(--bear-red);font-size:12px;margin-right:4px;"></i>' : ''}${escapeHtml(n.title || 'Untitled Note')}</div>
+              <div class="project-item-sub">${formatRelativeDate(n.timestamp)}${linkCount ? ` · ${linkCount} [[link]]${linkCount > 1 ? 's' : ''}` : ''}</div>
+            </div>
+            <button class="ev-link-x" title="Remove from project" onclick="event.stopPropagation();projUnlinkItem('${escapeHtml(cur.soul)}', 'note', '${escapeHtml(n.id)}')">&times;</button>
+          `;
+          notesSec.appendChild(row);
+        });
+      }
+      sections.appendChild(notesSec);
+
+      // Tasks section
+      const tasksSec = document.createElement('div');
+      tasksSec.className = 'project-section-card';
+      tasksSec.innerHTML = `<div class="project-section-head">
+        <span><i class="ti ti-checkbox" style="color:var(--bear-red);margin-right:6px;"></i>Tasks (${items.tasks.length})</span>
+        <button class="cal-btn" style="padding:3px 9px;font-size:12px;" onclick="projCreateTask('${escapeHtml(cur.soul)}')"><i class="ti ti-plus"></i> Add</button>
+      </div>`;
+      if (items.tasks.length === 0) {
+        const p = document.createElement('p');
+        p.style.cssText = 'font-size:12.5px;color:var(--text-muted);';
+        p.textContent = 'No tasks in this project yet.';
+        tasksSec.appendChild(p);
+      } else {
+        items.tasks.forEach(t => {
+          const isDone = (t.status === 'done' || t.column === 'done');
+          const row = document.createElement('div');
+          row.className = 'project-item-row';
+          row.onclick = () => taskEdit(t.soul);
+          row.innerHTML = `
+            <span onclick="event.stopPropagation();taskToggleDone('${escapeHtml(t.soul)}', event)" style="color:${isDone ? 'var(--text-muted)' : 'var(--bear-red)'};cursor:pointer;" title="${isDone ? 'Mark incomplete' : 'Mark done'}">
+              <i class="ti ${isDone ? 'ti-circle-check' : 'ti-circle'}"></i>
+            </span>
+            <div class="project-item-main">
+              <div class="project-item-title" style="${isDone ? 'text-decoration:line-through;color:var(--text-muted);' : ''}">${escapeHtml(t.title)}</div>
+              <div class="project-item-sub">${escapeHtml(t.priority || 'medium')}${t.dueDate ? ' · ' + escapeHtml(new Date(Number(t.dueDate)).toLocaleDateString(navigator.language || 'en-US', { month: 'short', day: 'numeric' })) : ''}</div>
+            </div>
+            <button class="ev-link-x" title="Remove from project" onclick="event.stopPropagation();projUnlinkItem('${escapeHtml(cur.soul)}', 'task', '${escapeHtml(t.soul)}')">&times;</button>
+          `;
+          tasksSec.appendChild(row);
+        });
+      }
+      sections.appendChild(tasksSec);
+
+      // Events section
+      const eventsSec = document.createElement('div');
+      eventsSec.className = 'project-section-card';
+      eventsSec.innerHTML = `<div class="project-section-head">
+        <span><i class="ti ti-calendar-event" style="color:var(--bear-red);margin-right:6px;"></i>Calendar Events (${items.events.length})</span>
+        <button class="cal-btn" style="padding:3px 9px;font-size:12px;" onclick="projCreateEvent('${escapeHtml(cur.soul)}')"><i class="ti ti-plus"></i> Add</button>
+      </div>`;
+      if (items.events.length === 0) {
+        const p = document.createElement('p');
+        p.style.cssText = 'font-size:12.5px;color:var(--text-muted);';
+        p.textContent = 'No events scheduled for this project.';
+        eventsSec.appendChild(p);
+      } else {
+        eventsSec.append(...items.events.map(ev => {
+          const row = document.createElement('div');
+          row.className = 'project-item-row';
+          row.onclick = () => calEditEvent(ev.soul);
+          row.innerHTML = `
+            <div class="project-item-main">
+              <div class="project-item-title">${escapeHtml(ev.title)}</div>
+              <div class="project-item-sub">${escapeHtml(fmtDate(ev.start))}${ev.allDay ? ' (All day)' : ' ' + escapeHtml(fmtTime(ev.start))}${ev.location ? ' · ' + escapeHtml(ev.location) : ''}</div>
+            </div>
+            <button class="ev-link-x" title="Remove from project" onclick="event.stopPropagation();projUnlinkItem('${escapeHtml(cur.soul)}', 'event', '${escapeHtml(ev.soul)}')">&times;</button>
+          `;
+          return row;
+        }));
+      }
+      sections.appendChild(eventsSec);
+
+      detailEl.appendChild(sections);
+    }
+
+    function projModal(p) {
+      const status = p.status || 'active';
+      const curColor = p.color || CAL_COLORS[0];
+      const tagsStr = Array.isArray(p.tags) ? p.tags.join(', ') : (p.tags || '');
+      const dueVal = p.dueDate ? toInput(Number(p.dueDate), false) : '';
+
+      const bg = modal(`<b style="font-family:var(--font-heading);font-size:16px;">${p.soul ? 'Edit Project' : 'New Project'}</b>
+        <label>Project Name<input type="text" id="proj-name" placeholder="e.g. Website Redesign" value="${escapeHtml(p.name || '')}"></label>
+        <div class="row">
+          <label>Status
+            <select id="proj-status" style="background:var(--input-bg);color:var(--text-primary);border:1px solid var(--border-color);border-radius:7px;padding:8px 10px;font:inherit;font-size:14px;">
+              <option value="active" ${status === 'active' ? 'selected' : ''}>Active</option>
+              <option value="on_hold" ${status === 'on_hold' ? 'selected' : ''}>On Hold</option>
+              <option value="completed" ${status === 'completed' ? 'selected' : ''}>Completed</option>
+              <option value="archived" ${status === 'archived' ? 'selected' : ''}>Archived</option>
+            </select>
+          </label>
+          <label>Due Date<input type="datetime-local" id="proj-due" value="${dueVal}"></label>
+        </div>
+        <label>Color
+          <div class="project-color-swatches" id="proj-colors">${CAL_COLORS.map(c => `<span class="project-color-swatch ${c === curColor ? 'sel' : ''}" style="background:${c}" data-c="${c}"></span>`).join('')}</div>
+        </label>
+        <label>Tags (comma separated)<input type="text" id="proj-tags" placeholder="launch, product, q4" value="${escapeHtml(tagsStr)}"></label>
+        <label>Description<textarea id="proj-desc" rows="3" placeholder="Project goals and scope...">${escapeHtml(p.desc || '')}</textarea></label>
+        <div class="cal-actions">
+          ${p.soul ? (p.trash
+            ? `<button class="cal-btn" id="proj-res" style="margin-right:8px;"><i class="ti ti-rotate-clockwise"></i> Restore</button><button class="cal-btn" id="proj-del" style="margin-right:auto;color:var(--bear-red);">Delete Forever</button>`
+            : `<button class="cal-btn" id="proj-del" style="margin-right:auto;color:var(--bear-red);">Delete</button>`) : ''}
+          <button class="cal-btn" id="proj-cancel">Cancel</button>
+          <button class="cal-btn primary" id="proj-save">Save</button>
+        </div>`);
+
+      const colorsEl = document.getElementById('proj-colors');
+      colorsEl.onclick = (e) => {
+        if (e.target.dataset.c) [...colorsEl.children].forEach(el => el.classList.toggle('sel', el === e.target));
+      };
+      document.getElementById('proj-cancel').onclick = () => bg.remove();
+      if (document.getElementById('proj-res')) document.getElementById('proj-res').onclick = () => { bg.remove(); projRestore(p.soul); };
+      if (document.getElementById('proj-del')) document.getElementById('proj-del').onclick = () => { bg.remove(); projDelete(p.soul); };
+      document.getElementById('proj-save').onclick = () => projSave(p.soul || null, p, bg);
+      document.getElementById('proj-name').focus();
+    }
+
+    function projNew() {
+      projModal({ soul: null, name: '', status: 'active', color: CAL_COLORS[0], dueDate: null, tags: [], desc: '', links: [] });
+    }
+
+    function projEdit(soul) {
+      const p = projects[soul];
+      if (!p) return;
+      projModal({ soul, ...p });
+    }
+
+    async function projSave(soul, orig, modalBg) {
+      const name = document.getElementById('proj-name').value.trim();
+      if (!name) return showToast('Project name is required');
+      const status = document.getElementById('proj-status').value;
+      const dueStr = document.getElementById('proj-due').value;
+      let dueDate = null;
+      if (dueStr) {
+        dueDate = new Date(dueStr).getTime();
+        if (Number.isNaN(dueDate)) dueDate = null;
+      }
+      const color = document.getElementById('proj-colors').querySelector('.sel')?.dataset.c || CAL_COLORS[0];
+      const tags = document.getElementById('proj-tags').value.split(',').map(s => s.trim().replace(/^#/, '')).filter(Boolean);
+      const desc = document.getElementById('proj-desc').value.trim();
+
+      try {
+        const res = await os.writeProject({
+          soul,
+          name,
+          status,
+          dueDate,
+          color,
+          tags,
+          desc,
+          links: orig?.links || [],
+          createdAt: orig?.createdAt,
+          trash: !!orig?.trash
+        });
+        const rec = {
+          soul: res.soul,
+          name,
+          status,
+          dueDate,
+          color,
+          tags,
+          desc,
+          links: orig?.links || [],
+          createdAt: orig?.createdAt || res.updatedAt,
+          updatedAt: res.updatedAt,
+          trash: !!orig?.trash
+        };
+        projects[res.soul] = rec;
+        projectsCache.set(res.soul, rec.name, rec);
+        selectedProjectId = res.soul;
+        if (modalBg) modalBg.remove();
+        document.getElementById('count-projects').textContent = Object.values(projects).filter(x => !x.trash).length;
+        if (projectsMode) renderProjects();
+        renderNoteEvents();
+        renderApp();
+        showToast('Project encrypted & saved');
+      } catch (err) {
+        showToast('Project save failed: ' + err.message);
+      }
+    }
+
+    async function projDelete(soul) {
+      const p = projects[soul];
+      if (!p) return;
+      if (p.trash) {
+        if (!confirm(`Delete project "${p.name}" forever? Notes, tasks, and events stay safe.`)) return;
+        return projDeleteForever(soul);
+      }
+      try {
+        await os.trashProject(soul);
+        projects[soul] = { ...p, trash: true };
+        projectsCache.set(soul, p.name, projects[soul]);
+        if (selectedProjectId === soul) selectedProjectId = null;
+        document.getElementById('count-projects').textContent = Object.values(projects).filter(x => !x.trash).length;
+        if (projectsMode) renderProjects();
+        renderNoteEvents();
+        renderApp();
+        showToast('Project moved to Trash');
+      } catch (err) {
+        showToast('Delete failed: ' + err.message);
+      }
+    }
+
+    async function projRestore(soul) {
+      const p = projects[soul];
+      if (!p) return;
+      try {
+        await os.restoreProject(soul);
+        projects[soul] = { ...p, trash: false };
+        projectsCache.set(soul, p.name, projects[soul]);
+        document.getElementById('count-projects').textContent = Object.values(projects).filter(x => !x.trash).length;
+        if (projectsMode) renderProjects();
+        renderNoteEvents();
+        renderApp();
+        showToast('Project restored');
+      } catch (err) {
+        showToast('Restore failed: ' + err.message);
+      }
+    }
+
+    async function projDeleteForever(soul) {
+      try {
+        await os.deleteProject(soul);
+        delete projects[soul];
+        projectsCache.del(soul);
+        if (selectedProjectId === soul) selectedProjectId = null;
+        document.getElementById('count-projects').textContent = Object.values(projects).filter(x => !x.trash).length;
+        if (projectsMode) renderProjects();
+        renderNoteEvents();
+        renderApp();
+        showToast('Project permanently deleted');
+      } catch (err) {
+        showToast('Delete failed: ' + err.message);
+      }
+    }
+
+    function projCreateNote(projectSoul) {
+      setFilter('all');
+      createNewNote(projectSoul);
+    }
+
+    function projLinkNoteModal(projectSoul) {
+      const currentIds = new Set(itemsForProject(projectSoul).notes.map(n => n.id));
+      const candidates = Object.entries(localNotes)
+        .filter(([id, n]) => id !== 'new' && n && !n.trash && !currentIds.has(id))
+        .map(([id, n]) => ({ id, title: n.title || 'Untitled Note', timestamp: n.timestamp || 0, note: n }))
+        .sort((a, b) => b.timestamp - a.timestamp);
+
+      if (candidates.length === 0) return showToast('All notes are already linked to this project');
+
+      const bg = modal(`<b style="font-family:var(--font-heading);font-size:16px;">Link Existing Note</b>
+        <input type="search" id="proj-link-search" placeholder="Filter notes…">
+        <div id="proj-link-results" style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto;"></div>
+        <div class="cal-actions"><button class="cal-btn" id="proj-link-cancel">Close</button></div>`);
+
+      const sEl = document.getElementById('proj-link-search');
+      const rEl = document.getElementById('proj-link-results');
+      document.getElementById('proj-link-cancel').onclick = () => bg.remove();
+
+      const draw = () => {
+        const q = (sEl.value || '').trim().toLowerCase();
+        rEl.replaceChildren();
+        candidates.filter(c => !q || c.title.toLowerCase().includes(q)).slice(0, 40).forEach(c => {
+          const row = document.createElement('button');
+          row.type = 'button';
+          row.className = 'project-item-row';
+          row.innerHTML = `<div class="project-item-main"><div class="project-item-title">${escapeHtml(c.title)}</div><div class="project-item-sub">${formatRelativeDate(c.timestamp)}</div></div>`;
+          row.onclick = async () => {
+            try {
+              if (!c.note.projectId) {
+                await os.writeVaultNote({ ...c.note, projectId: projectSoul, soul: c.id });
+                c.note.projectId = projectSoul;
+                notesCache.set(c.id, JSON.stringify([c.note.title, c.note.body, c.note.cat || '', !!c.note.pinned, false, projectSoul, c.note.timestamp]), c.note);
+              } else {
+                await os.linkToProject(projectSoul, { kind: 'note', soul: c.id });
+                const curP = projects[projectSoul];
+                if (curP) {
+                  curP.links = [...(curP.links || []), { kind: 'note', soul: c.id }];
+                  projectsCache.set(projectSoul, curP.name, curP);
+                }
+              }
+              bg.remove();
+              renderProjects();
+              triggerRender();
+              showToast('Note linked to project');
+            } catch (err) {
+              showToast('Link failed: ' + err.message);
+            }
+          };
+          rEl.appendChild(row);
+        });
+      };
+
+      sEl.oninput = draw;
+      draw();
+      sEl.focus();
+    }
+
+    async function projUnlinkItem(projectSoul, kind, soul) {
+      try {
+        await os.unlinkFromProject(projectSoul, { kind, soul });
+        const p = projects[projectSoul];
+        if (p && Array.isArray(p.links)) {
+          p.links = p.links.filter(l => !(l.kind === kind && l.soul === soul));
+          projectsCache.set(projectSoul, p.name, p);
+        }
+        if (kind === 'note' && localNotes[soul] && localNotes[soul].projectId === projectSoul) {
+          localNotes[soul].projectId = '';
+        } else if (kind === 'task' && tasks[soul] && tasks[soul].projectId === projectSoul) {
+          tasks[soul].projectId = '';
+        } else if (kind === 'event' && calEvents[soul] && calEvents[soul].projectId === projectSoul) {
+          calEvents[soul].projectId = '';
+        }
+        renderProjects();
+        renderNoteEvents();
+        triggerRender();
+        showToast('Removed from project');
+      } catch (err) {
+        showToast('Unlink failed: ' + err.message);
+      }
+    }
+
+    function projCreateTask(projectSoul) {
+      taskNew('todo', [], projectSoul);
+    }
+
+    function projCreateEvent(projectSoul) {
+      const start = new Date();
+      start.setMinutes(0, 0, 0);
+      start.setHours(start.getHours() + 1);
+      openEventModal({ soul: null, title: '', start: start.getTime(), end: start.getTime() + 3600000, allDay: false, location: '', notes: '', color: projects[projectSoul]?.color || CAL_COLORS[0], projectId: projectSoul });
+    }
+
+    Object.assign(window, {
+      openProjects, closeProjects, projSearch, projFilterStatus, projSelect,
+      projNew, projEdit, projDelete, projRestore, projDeleteForever,
+      projCreateNote, projLinkNoteModal, projUnlinkItem, projCreateTask, projCreateEvent,
+      openNoteLinkPicker, openWikiLinkTarget, assignProjectForActiveNote
     });
 
     if (demoCfg && new URLSearchParams(location.search).has('demo')) demoLogin(); // e.g. https://my-server/?demo

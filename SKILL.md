@@ -55,31 +55,41 @@ Usage:
   node cli.js secret-generate [--length 24] [--no-symbols]                        # no login needed
 
   # Vault (Encrypted Notes)
-  node cli.js vault-write  [--user <user> --pass <pass>] --title <title> --body <body> [--cat <cat>] [--pinned] [--soul <soul>]
+  node cli.js vault-write  [--user <user> --pass <pass>] --title <title> --body <body> [--cat <cat>] [--pinned] [--project <soul>] [--soul <soul>]
   node cli.js vault-get    [--user <user> --pass <pass>] --soul <soul>
-  node cli.js vault-read   [--user <user> --pass <pass>] [--cat <cat>] [--query <q>] [--pinned]
+  node cli.js vault-read   [--user <user> --pass <pass>] [--cat <cat>] [--project <soul>] [--query <q>] [--pinned]
   node cli.js vault-delete [--user <user> --pass <pass>] --soul <soul>
   # Attach a file to a note: file-upload it, then put `[name](#orto-file=<id>)` (or `![name](#orto-file=<id>)` for an image) in the body; the web app shows it
+  # Link notes to each other with `[[Note Title]]` or `[[Note Title|Label]]` in the body
+
+  # Projects (Encrypted Workspaces)
+  node cli.js project-write  [--user <user> --pass <pass>] --name <name> [--desc <desc>] [--status <active|on_hold|completed|archived>] [--color <hex>] [--due <date>] [--tags <t1,t2>] [--soul <soul>]
+  node cli.js project-get    [--user <user> --pass <pass>] --soul <soul>
+  node cli.js project-read   [--user <user> --pass <pass>] [--status <s>] [--tag <t>] [--query <q>]
+  node cli.js project-update [--user <user> --pass <pass>] --soul <soul> [--name <name>] [--desc <desc>] [--status <s>] [--color <hex>] [--due <date>] [--tags <tags>]
+  node cli.js project-delete [--user <user> --pass <pass>] --soul <soul>
+  node cli.js project-link   [--user <user> --pass <pass>] --project <soul> (--note <soul> | --event <soul> | --task <soul> | --bookmark <soul>)
+  node cli.js project-unlink [--user <user> --pass <pass>] --project <soul> (--note <soul> | --event <soul> | --task <soul> | --bookmark <soul>)
 
   # Calendar (Encrypted Events & Graph Links)
-  node cli.js calendar-write      [--user <user> --pass <pass>] --title <title> --start <date> [--end <date>] [--allDay] [--notes <text>] [--location <loc>] [--soul <soul>]
+  node cli.js calendar-write      [--user <user> --pass <pass>] --title <title> --start <date> [--end <date>] [--allDay] [--notes <text>] [--location <loc>] [--project <soul>] [--soul <soul>]
   node cli.js calendar-get        [--user <user> --pass <pass>] --soul <soul>
-  node cli.js calendar-read       [--user <user> --pass <pass>] [--from <date>] [--to <date>]
+  node cli.js calendar-read       [--user <user> --pass <pass>] [--from <date>] [--to <date>] [--project <soul>]
   node cli.js calendar-delete     [--user <user> --pass <pass>] --soul <soul>
-  node cli.js calendar-events-for [--user <user> --pass <pass>] (--note <soul> | --bookmark <soul>)
+  node cli.js calendar-events-for [--user <user> --pass <pass>] (--note <soul> | --bookmark <soul> | --project <soul>)
   node cli.js calendar-notes-for  [--user <user> --pass <pass>] --event <soul>
-  node cli.js event-link          [--user <user> --pass <pass>] --event <soul> (--note <soul> | --bookmark <soul> | --task <soul>)
-  node cli.js event-unlink        [--user <user> --pass <pass>] --event <soul> (--note <soul> | --bookmark <soul> | --task <soul>)
+  node cli.js event-link          [--user <user> --pass <pass>] --event <soul> (--note <soul> | --bookmark <soul> | --task <soul> | --project <soul>)
+  node cli.js event-unlink        [--user <user> --pass <pass>] --event <soul> (--note <soul> | --bookmark <soul> | --task <soul> | --project <soul>)
 
   # Tasks & Kanban (Encrypted Projects & Tasks)
-  node cli.js task-write   [--user <user> --pass <pass>] --title <title> [--status <todo|in_progress|done|blocked>] [--priority <low|medium|high|urgent>] [--desc <desc>] [--due <date>] [--tags <t1,t2>] [--assignee <who>] [--column <col>] [--soul <soul>]
+  node cli.js task-write   [--user <user> --pass <pass>] --title <title> [--status <todo|in_progress|done|blocked>] [--priority <low|medium|high|urgent>] [--desc <desc>] [--due <date>] [--tags <t1,t2>] [--assignee <who>] [--column <col>] [--project <soul>] [--soul <soul>]
   node cli.js task-get     [--user <user> --pass <pass>] --soul <soul>
-  node cli.js task-read    [--user <user> --pass <pass>] [--status <s>] [--priority <p>] [--tag <t>] [--query <q>]
-  node cli.js task-update  [--user <user> --pass <pass>] --soul <soul> [--title <title>] [--status <s>] [--priority <p>] [--desc <desc>] [--due <date>] [--tags <tags>] [--assignee <who>]
+  node cli.js task-read    [--user <user> --pass <pass>] [--status <s>] [--priority <p>] [--tag <t>] [--project <soul>] [--query <q>]
+  node cli.js task-update  [--user <user> --pass <pass>] --soul <soul> [--title <title>] [--status <s>] [--priority <p>] [--desc <desc>] [--due <date>] [--tags <tags>] [--assignee <who>] [--project <soul>]
   node cli.js task-delete  [--user <user> --pass <pass>] --soul <soul>
-  node cli.js task-link    [--user <user> --pass <pass>] --task <soul> (--note <soul> | --event <soul> | --bookmark <soul> | --linked-task <soul>)
-  node cli.js task-unlink  [--user <user> --pass <pass>] --task <soul> (--note <soul> | --event <soul> | --bookmark <soul> | --linked-task <soul>)
-  node cli.js tasks-for    [--user <user> --pass <pass>] (--note <soul> | --event <soul> | --bookmark <soul> | --task <soul>)
+  node cli.js task-link    [--user <user> --pass <pass>] --task <soul> (--note <soul> | --event <soul> | --bookmark <soul> | --linked-task <soul> | --project <soul>)
+  node cli.js task-unlink  [--user <user> --pass <pass>] --task <soul> (--note <soul> | --event <soul> | --bookmark <soul> | --linked-task <soul> | --project <soul>)
+  node cli.js tasks-for    [--user <user> --pass <pass>] (--note <soul> | --event <soul> | --bookmark <soul> | --task <soul> | --project <soul>)
 
   # Bookmarks (Encrypted & Deduplicated)
   node cli.js bookmarks-write  [--user <user> --pass <pass>] --url <url> [--title <title>] [--folder <path>] [--tags <t1,t2>]

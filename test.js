@@ -631,12 +631,26 @@ console.log('MCP server (stdio)');
     const bm = (await J('bookmark_list', {}))[0].soul;
     await J('bookmark_update', { soul: bm, folder: 'Dev', tags: ['t'] });
     assert.equal((await J('bookmark_list', { folder: 'Dev' }))[0].title, 'A');
-    // links
+    // projects & links over MCP
+    const prMcp = (await J('project_write', { name: 'MCP Project', desc: 'Initial scope', tags: ['mcp'] })).soul;
+    await J('project_update', { soul: prMcp, status: 'on_hold', desc: 'Updated scope' });
+    await J('note_update', { soul, projectId: prMcp });
+    const prGot = await J('project_get', { soul: prMcp });
+    assert.equal(prGot.status, 'on_hold');
+    assert.equal(prGot.notes.length, 1);
+    await J('link_add', { owner: 'project', ownerSoul: prMcp, kind: 'task', soul: tk });
     await J('link_add', { owner: 'task', ownerSoul: tk, kind: 'note', soul });
     await J('link_add', { owner: 'event', ownerSoul: evSoul, kind: 'note', soul });
-    const lk = await J('linked_list', { kind: 'note', soul }); assert.equal(lk.tasks.length, 1); assert.equal(lk.events.length, 1);
+    const lk = await J('linked_list', { kind: 'note', soul }); assert.equal(lk.tasks.length, 1); assert.equal(lk.events.length, 1); assert.equal(lk.projects.length, 1);
+    const prLinked = await J('project_get', { soul: prMcp });
+    assert.equal(prLinked.tasks.length, 1);
+    await J('link_remove', { owner: 'project', ownerSoul: prMcp, kind: 'task', soul: tk });
     await J('link_remove', { owner: 'task', ownerSoul: tk, kind: 'note', soul });
     assert.equal((await J('linked_list', { kind: 'note', soul })).tasks.length, 0);
+    await J('note_update', { soul, projectId: '' });
+    assert.equal((await J('project_list', {}))[0].soul, prMcp);
+    await tool(rpc, 'delete', { kind: 'project', id: prMcp });
+    assert.equal((await J('project_list', {})).length, 0);
     // files: text in, text out, moved, listed in groups; binary is not dumped
     const up = await J('file_write', { name: 'todo.txt', content: 'milk\neggs', folder: 'Home' });
     assert.equal((await J('file_read', { id: up.id })).content, 'milk\neggs');
@@ -665,7 +679,7 @@ console.log('MCP server (stdio)');
   });
   await run({ ORTO_MCP_READONLY: '1', ORTO_MCP_SECRETS: '1' }, async (rpc) => {
     const names = (await rpc('tools/list')).result.tools.map((x) => x.name);
-    assert(names.includes('note_list') && names.includes('secret_get') && !names.includes('note_write') && !names.includes('delete'), 'read-only hides writes');
+    assert(names.includes('note_list') && names.includes('project_list') && names.includes('secret_get') && !names.includes('note_write') && !names.includes('project_write') && !names.includes('delete'), 'read-only hides writes');
     assert(names.includes('space_list') && names.includes('space_members') && !names.includes('space_create') && !names.includes('space_remove'), 'read-only hides the space writes');
   });
   await run({ ORTO_SPACE: String(mcpSpace) }, async (rpc) => { // ORTO_SPACE points every tool at one space
@@ -836,6 +850,49 @@ console.log('Shared spaces');
   await sp.deleteSpace();
   assert.equal((await ann.spaces()).some((x) => x.name === 'Family'), false);
   await assert.rejects(ann._json('GET', `/sp/${sp.spaceId}/c/vault`), (e) => e.status === 404);
+}
+
+console.log('Projects (SDK, CLI, Trash & Linking)');
+{
+  const { execFile: _execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const execFile = promisify(_execFile);
+  const cu = await client('proj-tester', 'pw-proj');
+  const cliEnv = { ...process.env, ORTO_SERVER: url, ORTO_USER: 'proj-tester', ORTO_PASS: 'pw-proj' };
+  const cliJson = async (...args) => JSON.parse((await execFile(process.execPath, ['cli.js', ...args], { env: cliEnv })).stdout);
+
+  const pRes = await cliJson('project-write', '--name', 'CLI Workspace', '--desc', 'Core project', '--status', 'active', '--color', '#c4532f', '--tags', 'cli,test');
+  assert(pRes.soul);
+  await cliJson('project-update', '--soul', pRes.soul, '--status', 'on_hold');
+  const n1 = await cliJson('vault-write', '--title', 'Roadmap Note', '--body', 'Linked to [[Spec Note]]', '--project', pRes.soul);
+  const n2 = await cliJson('vault-write', '--title', 'Spec Note', '--body', 'Referenced by Roadmap');
+  await cliJson('project-link', '--project', pRes.soul, '--note', n2.soul);
+  const t1 = await cliJson('task-write', '--title', 'Milestone 1', '--project', pRes.soul);
+  const e1 = await cliJson('calendar-write', '--title', 'Kickoff', '--start', new Date().toISOString(), '--project', pRes.soul);
+
+  const got = await cliJson('project-get', '--soul', pRes.soul);
+  assert.equal(got.status, 'on_hold');
+  assert.equal(got.notes.length, 2);
+  assert.equal(got.tasks.length, 1);
+  assert.equal(got.events.length, 1);
+
+  assert.equal((await cliJson('project-read', '--status', 'on_hold')).length, 1);
+  assert.equal((await cliJson('vault-read', '--project', pRes.soul)).length, 2);
+  assert.equal((await cliJson('task-read', '--project', pRes.soul)).length, 1);
+
+  await cliJson('project-unlink', '--project', pRes.soul, '--note', n1.soul);
+  assert.equal((await cliJson('project-get', '--soul', pRes.soul)).notes.length, 1);
+
+  await cu.trashProject(pRes.soul);
+  assert.equal((await cu.readProjects()).length, 0);
+  assert.equal((await cu.readProjects({ includeTrash: true })).length, 1);
+  await cu.restoreProject(pRes.soul);
+  assert.equal((await cu.readProjects()).length, 1);
+
+  await cliJson('project-delete', '--soul', pRes.soul);
+  assert.equal((await cliJson('project-read')).length, 0);
+  // confirm linked items clean up cleanly
+  assert.ok(t1.soul && e1.soul);
 }
 
 console.log('ok - all tests passed');

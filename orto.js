@@ -123,8 +123,8 @@ export function generatePassword(length = 20, { symbols = true } = {}) {
   return out;
 }
 
-// what an event or task can point at; the link lives inside the encrypted record, so there is one source of truth
-const LINK_KINDS = ['note', 'bookmark', 'event', 'task'];
+// what an event, task, or project can point at; the link lives inside the encrypted record, so there is one source of truth
+const LINK_KINDS = ['note', 'bookmark', 'event', 'task', 'project'];
 
 // ─── Feeds (RSS 2.0, RSS 1.0 and Atom) ─────────────────────────────────────────────────────────
 // A small tolerant reader, no XML library: fine for the regular shape of feeds. Text fields can hold HTML: sanitize before showing.
@@ -201,7 +201,7 @@ const checkLinks = (links) => {
 /** What contracts/vault accepts (is_valid_key, MAX_RECORD_DATA_BYTES): anything else would make it refuse the whole update. */
 const utf8Len = (s) => new TextEncoder().encode(s).length;
 const vaultable = (key, rec) => /^[^\s|\x00-\x1f\x7f]{1,160}$/.test(key) && key.includes(':') && (rec.deleted || (typeof rec.data === 'string' && utf8Len(rec.data) <= 2 * 1024 * 1024));
-const COLLECTIONS = ['vault', 'calendar', 'tasks', 'bookmarks', 'contacts', 'secrets', 'feeds', 'files', 'shares']; // encrypted ones; `posts` is public
+const COLLECTIONS = ['vault', 'projects', 'calendar', 'tasks', 'bookmarks', 'contacts', 'secrets', 'feeds', 'files', 'shares']; // encrypted ones; `posts` is public
 // Freenet keeps no browser storage between visits, so the vault carries posts too: they are public, stored as plain JSON in `data`
 const VAULT_COLLS = [...COLLECTIONS, 'posts', 'spaces']; // `spaces`: one encrypted record, the list of your Freenet spaces
 const toVault = (coll, rec) => rec && coll === 'posts' && !rec.deleted ? { ...rec, data: JSON.stringify(rec) } : rec;
@@ -882,17 +882,34 @@ export class Orto {
 
   // ─── Vault (encrypted notes) ─────────────────────────────────────
 
-  async writeVaultNote({ title, body, cat = 'general', pinned = false, soul = null, trash = false }) {
+  async writeVaultNote({ title, body, cat = 'general', pinned = false, soul = null, trash = false, projectId = '', links = undefined }) {
     this._needKey();
+    checkLinks(links);
     const noteSoul = soul || this._newSoul('vault-');
     const timestamp = Date.now();
-    await this.put('vault', noteSoul, { title, body, cat, pinned: !!pinned, trash: !!trash, timestamp });
+    await this.put('vault', noteSoul, {
+      title, body, cat, pinned: !!pinned, trash: !!trash,
+      projectId: projectId ? String(projectId).trim() : '',
+      ...(links !== undefined && { links }),
+      timestamp
+    });
     return { soul: noteSoul, status: 'saved', timestamp, trash: !!trash };
   }
 
+  async _projLinked(projectId, kind) {
+    if (!projectId) return null;
+    const p = await this._get('projects', projectId);
+    return new Set(!p || p.trash ? [] : (p.links || []).filter(l => l.kind === kind).map(l => l.soul));
+  }
+
   /** Decrypted notes (trashed ones skipped by default), pinned first then newest. `timeoutMs` kept for API compatibility. */
-  async readVaultNotes({ includeTrash = false } = {}) {
-    const notes = (await this._readAll('vault')).filter(n => (includeTrash || !n.trash) && n.title !== undefined);
+  async readVaultNotes({ includeTrash = false, projectId = null } = {}) {
+    const linked = await this._projLinked(projectId, 'note');
+    const notes = (await this._readAll('vault')).filter(n =>
+      (includeTrash || !n.trash)
+      && n.title !== undefined
+      && (!projectId || n.projectId === projectId || linked.has(n.soul) || (n.links || []).some(l => l.kind === 'project' && l.soul === projectId))
+    );
     return notes.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.timestamp - a.timestamp);
   }
 
@@ -921,7 +938,7 @@ export class Orto {
 
   // ─── Calendar ───────────────────────────────────────────────────────
 
-  /** @param {{title:string, start:number|string, end?:number|string, allDay?:boolean, notes?:string, location?:string, links?:{kind:string, soul:string}[], soul?:string, trash?:boolean}} event */
+  /** @param {{title:string, start:number|string, end?:number|string, allDay?:boolean, notes?:string, location?:string, projectId?:string, links?:{kind:string, soul:string}[], soul?:string, trash?:boolean}} event */
   async writeCalendarEvent({ soul = null, ...event }) {
     this._needKey();
     if (!event.title || event.start == null) throw new Error('title and start are required');
@@ -932,7 +949,8 @@ export class Orto {
     const eventSoul = soul || this._newSoul('cal-');
     delete event.updatedAt;
     const trash = !!event.trash;
-    const r = await this.put('calendar', eventSoul, { ...event, start, end, trash });
+    const projectId = event.projectId !== undefined ? String(event.projectId || '').trim() : undefined;
+    const r = await this.put('calendar', eventSoul, { ...event, ...(projectId !== undefined && { projectId }), start, end, trash });
     return { ...r, updatedAt: Date.now() };
   }
 
@@ -979,10 +997,15 @@ export class Orto {
   }
 
   /** Events overlapping [from, to] (ms or date string), by start time. Filtering is client-side: times are encrypted. */
-  async readCalendarEvents({ from = null, to = null, includeTrash = false } = {}) {
+  async readCalendarEvents({ from = null, to = null, projectId = null, includeTrash = false } = {}) {
     const lo = from != null ? new Date(from).getTime() : -Infinity;
     const hi = to != null ? new Date(to).getTime() : Infinity;
-    return (await this._readAll('calendar')).filter(ev => (includeTrash || !ev.trash) && ev.end >= lo && ev.start <= hi).sort((a, b) => a.start - b.start);
+    const linked = await this._projLinked(projectId, 'event');
+    return (await this._readAll('calendar')).filter(ev =>
+      (includeTrash || !ev.trash)
+      && ev.end >= lo && ev.start <= hi
+      && (!projectId || ev.projectId === projectId || linked.has(ev.soul) || (ev.links || []).some(l => l.kind === 'project' && l.soul === projectId))
+    ).sort((a, b) => a.start - b.start);
   }
 
   deleteCalendarEvent(soul) { return this._del('calendar', soul); }
@@ -2022,7 +2045,9 @@ export class Orto {
     const trash = !!task.trash;
     await this.put('tasks', taskSoul, {
       title: task.title.trim(), status, priority: task.priority || 'medium', desc: task.desc || task.description || '', dueDate,
-      tags: asList(task.tags), assignee: task.assignee || '', column: task.column || status, links: task.links || [],
+      tags: asList(task.tags), assignee: task.assignee || '', column: task.column || status,
+      projectId: task.projectId ? String(task.projectId).trim() : '',
+      links: task.links || [],
       createdAt: task.createdAt != null ? Number(task.createdAt) : now, completedAt, trash
     });
     return { soul: taskSoul, status: 'saved', updatedAt: now, trash };
@@ -2051,11 +2076,16 @@ export class Orto {
   }
 
   /** Open tasks first, then by priority, due date, last update. */
-  async readTasks({ status = null, priority = null, tag = null, query = null, includeTrash = false } = {}) {
+  async readTasks({ status = null, priority = null, tag = null, projectId = null, query = null, includeTrash = false } = {}) {
     const q = query ? query.toLowerCase() : null, same = (a, b) => (a || '').toLowerCase() === b.toLowerCase();
     const ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
+    const linked = await this._projLinked(projectId, 'task');
     return (await this._readAll('tasks'))
-      .filter(t => (includeTrash || !t.trash) && t.title && (!status || same(t.status, status)) && (!priority || same(t.priority, priority)) && (!tag || (t.tags || []).some(x => same(x, tag)))
+      .filter(t => (includeTrash || !t.trash) && t.title
+        && (!status || same(t.status, status))
+        && (!priority || same(t.priority, priority))
+        && (!tag || (t.tags || []).some(x => same(x, tag)))
+        && (!projectId || t.projectId === projectId || linked.has(t.soul) || (t.links || []).some(l => l.kind === 'project' && l.soul === projectId))
         && (!q || (t.title + ' ' + (t.desc || '') + ' ' + (t.assignee || '')).toLowerCase().includes(q)))
       .sort((a, b) =>
         (a.status === 'done') - (b.status === 'done')
@@ -2082,7 +2112,145 @@ export class Orto {
   }
 
   async tasksFor({ kind = 'note', soul }) {
-    return (await this.readTasks()).filter(t => (t.links || []).some(l => l.kind === kind && l.soul === soul));
+    return (await this.readTasks()).filter(t => (t.links || []).some(l => l.kind === kind && l.soul === soul) || (kind === 'project' && t.projectId === soul));
+  }
+
+  // ─── Projects (Encrypted Workspaces & Link Hubs) ────────────────
+
+  /**
+   * Create or replace a project workspace in `projects`.
+   * @param {{soul?:string, name:string, desc?:string, status?:string, color?:string, dueDate?:number|string|null,
+   *          tags?:string[]|string, links?:{kind:string, soul:string}[], createdAt?:number, trash?:boolean}} project
+   */
+  async writeProject({ soul = null, ...project }) {
+    this._needKey();
+    const name = String(project.name || '').trim();
+    if (!name) throw new Error('name is required');
+    const status = String(project.status || 'active').trim();
+    let dueDate = null;
+    if (project.dueDate != null && project.dueDate !== '') {
+      dueDate = new Date(project.dueDate).getTime();
+      if (Number.isNaN(dueDate)) throw new Error('Invalid dueDate');
+    }
+    checkLinks(project.links);
+    const now = Date.now();
+    const projSoul = soul || this._newSoul('proj-');
+    const trash = !!project.trash;
+    await this.put('projects', projSoul, {
+      name,
+      desc: project.desc || project.description || '',
+      status,
+      color: project.color || '',
+      dueDate,
+      tags: asList(project.tags),
+      links: project.links || [],
+      createdAt: project.createdAt != null ? Number(project.createdAt) : now,
+      trash
+    });
+    return { soul: projSoul, status: 'saved', updatedAt: now, trash };
+  }
+
+  async getProject(soul, { includeTrash = false } = {}) {
+    const p = await this._get('projects', soul);
+    return p && (includeTrash || !p.trash) && p.name ? p : null;
+  }
+
+  async updateProject(soul, patch) {
+    const cur = await this.getProject(soul, { includeTrash: true });
+    if (!cur) throw new Error('Project not found: ' + soul);
+    return this.writeProject({ ...cur, ...patch, soul });
+  }
+
+  async trashProject(soul) {
+    const p = await this.getProject(soul, { includeTrash: true });
+    if (!p) throw new Error('Project not found: ' + soul);
+    return this.writeProject({ ...p, soul, trash: true });
+  }
+
+  async restoreProject(soul) {
+    const p = await this.getProject(soul, { includeTrash: true });
+    if (!p) throw new Error('Project not found: ' + soul);
+    return this.writeProject({ ...p, soul, trash: false });
+  }
+
+  /** Active projects first, then on hold, completed, archived, sorted by last update. */
+  async readProjects({ status = null, tag = null, query = null, includeTrash = false } = {}) {
+    const q = query ? query.toLowerCase() : null;
+    const same = (a, b) => (a || '').toLowerCase() === b.toLowerCase();
+    const ORDER = { active: 0, on_hold: 1, completed: 2, archived: 3 };
+    return (await this._readAll('projects'))
+      .filter(p => (includeTrash || !p.trash) && p.name
+        && (!status || same(p.status, status))
+        && (!tag || (p.tags || []).some(x => same(x, tag)))
+        && (!q || (p.name + ' ' + (p.desc || '')).toLowerCase().includes(q)))
+      .sort((a, b) =>
+        (ORDER[a.status?.toLowerCase()] ?? 1) - (ORDER[b.status?.toLowerCase()] ?? 1)
+        || (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+  }
+
+  deleteProject(soul) { return this._del('projects', soul); }
+  onProject(callback) { return this._on('projects', callback); }
+
+  async linkToProject(projectSoul, { kind = 'note', soul }) {
+    const p = await this.getProject(projectSoul);
+    if (!p) throw new Error('Project not found: ' + projectSoul);
+    checkLinks([{ kind, soul }]);
+    const links = p.links || [];
+    if (!links.some(l => l.kind === kind && l.soul === soul)) links.push({ kind, soul });
+    return this.writeProject({ ...p, soul: projectSoul, links });
+  }
+
+  async unlinkFromProject(projectSoul, { kind = 'note', soul }) {
+    const p = await this.getProject(projectSoul);
+    if (!p) throw new Error('Project not found: ' + projectSoul);
+    const res = await this.writeProject({ ...p, soul: projectSoul, links: (p.links || []).filter(l => !(l.kind === kind && l.soul === soul)) });
+    if (kind === 'note') {
+      const n = await this.getVaultNote(soul, { includeTrash: true });
+      if (n && n.projectId === projectSoul) await this.writeVaultNote({ ...n, soul, projectId: '' });
+    } else if (kind === 'task') {
+      const t = await this.getTask(soul, { includeTrash: true });
+      if (t && t.projectId === projectSoul) await this.updateTask(soul, { projectId: '' });
+    } else if (kind === 'event') {
+      const e = await this.getCalendarEvent(soul, { includeTrash: true });
+      if (e && e.projectId === projectSoul) await this.writeCalendarEvent({ ...e, soul, projectId: '' });
+    }
+    return res;
+  }
+
+  async projectsFor({ kind = 'note', soul }) {
+    const all = await this.readProjects();
+    let itemProjId = '';
+    if (kind === 'note') itemProjId = (await this.getVaultNote(soul))?.projectId || '';
+    else if (kind === 'task') itemProjId = (await this.getTask(soul))?.projectId || '';
+    else if (kind === 'event') itemProjId = (await this.getCalendarEvent(soul))?.projectId || '';
+    return all.filter(p => p.soul === itemProjId || (p.links || []).some(l => l.kind === kind && l.soul === soul));
+  }
+
+  async notesForProject(projectSoul) {
+    const p = await this.getProject(projectSoul);
+    if (!p) throw new Error('Project not found: ' + projectSoul);
+    const wanted = new Set((p.links || []).filter(l => l.kind === 'note').map(l => l.soul));
+    return (await this.readVaultNotes()).filter(n =>
+      n.projectId === projectSoul || wanted.has(n.soul) || (n.links || []).some(l => l.kind === 'project' && l.soul === projectSoul)
+    );
+  }
+
+  async tasksForProject(projectSoul) {
+    const p = await this.getProject(projectSoul);
+    if (!p) throw new Error('Project not found: ' + projectSoul);
+    const wanted = new Set((p.links || []).filter(l => l.kind === 'task').map(l => l.soul));
+    return (await this.readTasks()).filter(t =>
+      t.projectId === projectSoul || wanted.has(t.soul) || (t.links || []).some(l => l.kind === 'project' && l.soul === projectSoul)
+    );
+  }
+
+  async eventsForProject(projectSoul) {
+    const p = await this.getProject(projectSoul);
+    if (!p) throw new Error('Project not found: ' + projectSoul);
+    const wanted = new Set((p.links || []).filter(l => l.kind === 'event').map(l => l.soul));
+    return (await this.readCalendarEvents()).filter(e =>
+      e.projectId === projectSoul || wanted.has(e.soul) || (e.links || []).some(l => l.kind === 'project' && l.soul === projectSoul)
+    );
   }
 
   // ─── Blog (public, plaintext) ───────────────────────────────

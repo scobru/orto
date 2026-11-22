@@ -538,6 +538,44 @@ try {
   await os15.restoreSecret(sc1.soul);
   assert.equal((await os15.readSecrets()).length, 1);
 
+  // 7. Project
+  const pr1 = await os15.writeProject({ name: 'Trash Project', desc: 'Project details' });
+  assert.equal((await os15.readProjects()).length, 1);
+  await os15.trashProject(pr1.soul);
+  assert.equal((await os15.readProjects()).length, 0);
+  assert.equal(await os15.getProject(pr1.soul), null);
+  assert.equal((await os15.readProjects({ includeTrash: true })).length, 1);
+  await os15.restoreProject(pr1.soul);
+  assert.equal((await os15.readProjects()).length, 1);
+
+  console.log('16. Freenet mode: projects CRUD, projectId filtering & linking');
+  const prA = await os15.writeProject({ name: 'Alpha Workspace', status: 'active', color: '#c4532f', tags: ['work', 'mvp'] });
+  await os15.updateProject(prA.soul, { status: 'on_hold', desc: 'Updated scope' });
+  const gotPrA = await os15.getProject(prA.soul);
+  assert.equal(gotPrA.name, 'Alpha Workspace');
+  assert.equal(gotPrA.status, 'on_hold');
+  assert.equal(gotPrA.desc, 'Updated scope');
+
+  const prNote = await os15.writeVaultNote({ title: 'Alpha Spec', body: 'See [[Alpha Plan]]', projectId: prA.soul });
+  const prNoteLinked = await os15.writeVaultNote({ title: 'Alpha Plan', body: 'Back to [[Alpha Spec]]' });
+  await os15.linkToProject(prA.soul, { kind: 'note', soul: prNoteLinked.soul });
+  const prTask = await os15.writeTask({ title: 'Draft Alpha', projectId: prA.soul });
+  const prEv = await os15.writeCalendarEvent({ title: 'Alpha Sync', start: Date.now() + 3600000, projectId: prA.soul });
+
+  assert.equal((await os15.readVaultNotes({ projectId: prA.soul })).length, 2);
+  assert.equal((await os15.readTasks({ projectId: prA.soul })).length, 1);
+  assert.equal((await os15.readCalendarEvents({ projectId: prA.soul })).length, 1);
+  assert.equal((await os15.notesForProject(prA.soul)).length, 2);
+  assert.equal((await os15.tasksForProject(prA.soul)).length, 1);
+  assert.equal((await os15.eventsForProject(prA.soul)).length, 1);
+  assert.equal((await os15.projectsFor({ kind: 'note', soul: prNote.soul }))[0].soul, prA.soul);
+  assert.equal((await os15.projectsFor({ kind: 'task', soul: prTask.soul }))[0].soul, prA.soul);
+  assert.equal((await os15.projectsFor({ kind: 'event', soul: prEv.soul }))[0].soul, prA.soul);
+
+  await os15.unlinkFromProject(prA.soul, { kind: 'note', soul: prNote.soul });
+  await os15.unlinkFromProject(prA.soul, { kind: 'note', soul: prNoteLinked.soul });
+  assert.equal((await os15.notesForProject(prA.soul)).length, 0);
+
   console.log('ok - all freenet tests passed');
 } catch (e) {
   console.error(e);

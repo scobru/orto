@@ -254,30 +254,39 @@ Usage:
   node cli.js secret-generate [--length 24] [--no-symbols]                        # no login needed
 
   # Vault (Encrypted Notes)
-  node cli.js vault-write  [--user <user> --pass <pass>] --title <title> --body <body> [--cat <cat>] [--pinned] [--soul <soul>]
+  node cli.js vault-write  [--user <user> --pass <pass>] --title <title> --body <body> [--cat <cat>] [--pinned] [--project <soul>] [--soul <soul>]
   node cli.js vault-get    [--user <user> --pass <pass>] --soul <soul>
-  node cli.js vault-read   [--user <user> --pass <pass>] [--cat <cat>] [--query <q>] [--pinned]
+  node cli.js vault-read   [--user <user> --pass <pass>] [--cat <cat>] [--project <soul>] [--query <q>] [--pinned]
   node cli.js vault-delete [--user <user> --pass <pass>] --soul <soul>
 
+  # Projects (Encrypted Workspaces)
+  node cli.js project-write  [--user <user> --pass <pass>] --name <name> [--desc <desc>] [--status <active|on_hold|completed|archived>] [--color <hex>] [--due <date>] [--tags <t1,t2>] [--soul <soul>]
+  node cli.js project-get    [--user <user> --pass <pass>] --soul <soul>
+  node cli.js project-read   [--user <user> --pass <pass>] [--status <s>] [--tag <t>] [--query <q>]
+  node cli.js project-update [--user <user> --pass <pass>] --soul <soul> [--name <name>] [--desc <desc>] [--status <s>] [--color <hex>] [--due <date>] [--tags <tags>]
+  node cli.js project-delete [--user <user> --pass <pass>] --soul <soul>
+  node cli.js project-link   [--user <user> --pass <pass>] --project <soul> (--note <soul> | --event <soul> | --task <soul> | --bookmark <soul>)
+  node cli.js project-unlink [--user <user> --pass <pass>] --project <soul> (--note <soul> | --event <soul> | --task <soul> | --bookmark <soul>)
+
   # Calendar (Encrypted Events & Graph Links)
-  node cli.js calendar-write      [--user <user> --pass <pass>] --title <title> --start <date> [--end <date>] [--allDay] [--notes <text>] [--location <loc>] [--soul <soul>]
+  node cli.js calendar-write      [--user <user> --pass <pass>] --title <title> --start <date> [--end <date>] [--allDay] [--notes <text>] [--location <loc>] [--project <soul>] [--soul <soul>]
   node cli.js calendar-get        [--user <user> --pass <pass>] --soul <soul>
-  node cli.js calendar-read       [--user <user> --pass <pass>] [--from <date>] [--to <date>]
+  node cli.js calendar-read       [--user <user> --pass <pass>] [--from <date>] [--to <date>] [--project <soul>]
   node cli.js calendar-delete     [--user <user> --pass <pass>] --soul <soul>
-  node cli.js calendar-events-for [--user <user> --pass <pass>] (--note <soul> | --bookmark <soul>)
+  node cli.js calendar-events-for [--user <user> --pass <pass>] (--note <soul> | --bookmark <soul> | --project <soul>)
   node cli.js calendar-notes-for  [--user <user> --pass <pass>] --event <soul>
-  node cli.js event-link          [--user <user> --pass <pass>] --event <soul> (--note <soul> | --bookmark <soul> | --task <soul>)
-  node cli.js event-unlink        [--user <user> --pass <pass>] --event <soul> (--note <soul> | --bookmark <soul> | --task <soul>)
+  node cli.js event-link          [--user <user> --pass <pass>] --event <soul> (--note <soul> | --bookmark <soul> | --task <soul> | --project <soul>)
+  node cli.js event-unlink        [--user <user> --pass <pass>] --event <soul> (--note <soul> | --bookmark <soul> | --task <soul> | --project <soul>)
 
   # Tasks & Kanban (Encrypted Projects & Tasks)
-  node cli.js task-write   [--user <user> --pass <pass>] --title <title> [--status <todo|in_progress|done|blocked>] [--priority <low|medium|high|urgent>] [--desc <desc>] [--due <date>] [--tags <t1,t2>] [--assignee <who>] [--column <col>] [--soul <soul>]
+  node cli.js task-write   [--user <user> --pass <pass>] --title <title> [--status <todo|in_progress|done|blocked>] [--priority <low|medium|high|urgent>] [--desc <desc>] [--due <date>] [--tags <t1,t2>] [--assignee <who>] [--column <col>] [--project <soul>] [--soul <soul>]
   node cli.js task-get     [--user <user> --pass <pass>] --soul <soul>
-  node cli.js task-read    [--user <user> --pass <pass>] [--status <s>] [--priority <p>] [--tag <t>] [--query <q>]
-  node cli.js task-update  [--user <user> --pass <pass>] --soul <soul> [--title <title>] [--status <s>] [--priority <p>] [--desc <desc>] [--due <date>] [--tags <tags>] [--assignee <who>]
+  node cli.js task-read    [--user <user> --pass <pass>] [--status <s>] [--priority <p>] [--tag <t>] [--project <soul>] [--query <q>]
+  node cli.js task-update  [--user <user> --pass <pass>] --soul <soul> [--title <title>] [--status <s>] [--priority <p>] [--desc <desc>] [--due <date>] [--tags <tags>] [--assignee <who>] [--project <soul>]
   node cli.js task-delete  [--user <user> --pass <pass>] --soul <soul>
-  node cli.js task-link    [--user <user> --pass <pass>] --task <soul> (--note <soul> | --event <soul> | --bookmark <soul> | --linked-task <soul>)
-  node cli.js task-unlink  [--user <user> --pass <pass>] --task <soul> (--note <soul> | --event <soul> | --bookmark <soul> | --linked-task <soul>)
-  node cli.js tasks-for    [--user <user> --pass <pass>] (--note <soul> | --event <soul> | --bookmark <soul> | --task <soul>)
+  node cli.js task-link    [--user <user> --pass <pass>] --task <soul> (--note <soul> | --event <soul> | --bookmark <soul> | --linked-task <soul> | --project <soul>)
+  node cli.js task-unlink  [--user <user> --pass <pass>] --task <soul> (--note <soul> | --event <soul> | --bookmark <soul> | --linked-task <soul> | --project <soul>)
+  node cli.js tasks-for    [--user <user> --pass <pass>] (--note <soul> | --event <soul> | --bookmark <soul> | --task <soul> | --project <soul>)
 
   # Bookmarks (Encrypted & Deduplicated)
   node cli.js bookmarks-write  [--user <user> --pass <pass>] --url <url> [--title <title>] [--folder <path>] [--tags <t1,t2>]
@@ -521,6 +530,7 @@ Server (all commands):
         body,
         cat: flags.cat || 'agent',
         pinned: !!flags.pinned,
+        projectId: flags.project || '',
         soul: flags.soul
       });
       console.log(JSON.stringify(res, null, 2));
@@ -545,7 +555,9 @@ Server (all commands):
     case 'vault-read': {
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      let notes = await os.readVaultNotes();
+      let notes = flags.project && await os.getProject(flags.project)
+        ? await os.notesForProject(flags.project)
+        : await os.readVaultNotes({ projectId: flags.project || null });
 
       if (flags.cat) {
         notes = notes.filter(n => n.cat === flags.cat);
@@ -590,6 +602,7 @@ Server (all commands):
         notes: flags.notes || flags.note || flags.description || '',
         location: flags.location || '',
         color: flags.color || undefined,
+        projectId: flags.project || '',
         soul: flags.soul
       });
       console.log(JSON.stringify(res, null, 2));
@@ -614,7 +627,7 @@ Server (all commands):
     case 'calendar-read': {
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const evs = await os.readCalendarEvents({ from: flags.from, to: flags.to });
+      const evs = await os.readCalendarEvents({ from: flags.from, to: flags.to, projectId: flags.project || null });
       outputResults(evs, flags);
       process.exit(0);
       break;
@@ -634,10 +647,11 @@ Server (all commands):
       const noteSoul = flags.note;
       const bmSoul = flags.bookmark;
       const taskSoul = flags.task;
-      if (!noteSoul && !bmSoul && !taskSoul) throw new Error('--note, --bookmark, or --task soul is required.');
+      const projSoul = flags.project;
+      if (!noteSoul && !bmSoul && !taskSoul && !projSoul) throw new Error('--note, --bookmark, --task, or --project soul is required.');
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
-      const target = noteSoul ? { kind: 'note', soul: noteSoul } : (bmSoul ? { kind: 'bookmark', soul: bmSoul } : { kind: 'task', soul: taskSoul });
+      const target = noteSoul ? { kind: 'note', soul: noteSoul } : (bmSoul ? { kind: 'bookmark', soul: bmSoul } : (taskSoul ? { kind: 'task', soul: taskSoul } : { kind: 'project', soul: projSoul }));
       const evs = await os.eventsFor(target);
       outputResults(evs, flags);
       process.exit(0);
@@ -656,13 +670,13 @@ Server (all commands):
 
     case 'event-link':
     case 'event-unlink': {
-      if (!flags.event || (!flags.note && !flags.bookmark && !flags.task)) {
-        throw new Error('--event and one of --note, --bookmark, or --task are required.');
+      if (!flags.event || (!flags.note && !flags.bookmark && !flags.task && !flags.project)) {
+        throw new Error('--event and one of --note, --bookmark, --task, or --project are required.');
       }
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
       const fn = cmd === 'event-link' ? 'linkToEvent' : 'unlinkFromEvent';
-      const target = flags.note ? { kind: 'note', soul: flags.note } : (flags.bookmark ? { kind: 'bookmark', soul: flags.bookmark } : { kind: 'task', soul: flags.task });
+      const target = flags.note ? { kind: 'note', soul: flags.note } : (flags.bookmark ? { kind: 'bookmark', soul: flags.bookmark } : (flags.task ? { kind: 'task', soul: flags.task } : { kind: 'project', soul: flags.project }));
       console.log(JSON.stringify(await os[fn](flags.event, target), null, 2));
       safeExit(0);
       break;
@@ -949,6 +963,7 @@ Server (all commands):
         tags,
         assignee: flags.assignee || '',
         column: flags.column || '',
+        projectId: flags.project || '',
         soul: flags.soul
       });
       console.log(JSON.stringify(res, null, 2));
@@ -985,6 +1000,7 @@ Server (all commands):
       if (flags.tags !== undefined) patch.tags = String(flags.tags).split(',').map(t => t.trim()).filter(Boolean);
       if (flags.assignee !== undefined) patch.assignee = flags.assignee;
       if (flags.column !== undefined) patch.column = flags.column;
+      if (flags.project !== undefined) patch.projectId = flags.project;
       const res = await os.updateTask(flags.soul, patch);
       console.log(JSON.stringify(res, null, 2));
       safeExit(0);
@@ -998,6 +1014,7 @@ Server (all commands):
         status: flags.status,
         priority: flags.priority,
         tag: flags.tag,
+        projectId: flags.project || null,
         query: flags.query
       });
       outputResults(tasks, flags);
@@ -1017,8 +1034,8 @@ Server (all commands):
 
     case 'task-link':
     case 'task-unlink': {
-      if (!flags.task || (!flags.note && !flags.event && !flags.bookmark && !flags['linked-task'])) {
-        throw new Error('--task and one of --note, --event, --bookmark, or --linked-task are required.');
+      if (!flags.task || (!flags.note && !flags.event && !flags.bookmark && !flags['linked-task'] && !flags.project)) {
+        throw new Error('--task and one of --note, --event, --bookmark, --linked-task, or --project are required.');
       }
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
@@ -1029,7 +1046,9 @@ Server (all commands):
           ? { kind: 'event', soul: flags.event }
           : (flags.bookmark
             ? { kind: 'bookmark', soul: flags.bookmark }
-            : { kind: 'task', soul: flags['linked-task'] }));
+            : (flags.project
+              ? { kind: 'project', soul: flags.project }
+              : { kind: 'task', soul: flags['linked-task'] })));
       console.log(JSON.stringify(await os[fn](flags.task, target), null, 2));
       safeExit(0);
       break;
@@ -1037,8 +1056,8 @@ Server (all commands):
 
     case 'tasks-for':
     case 'task-links-for': {
-      if (!flags.note && !flags.event && !flags.bookmark && !flags.task) {
-        throw new Error('--note, --event, --bookmark, or --task soul is required.');
+      if (!flags.note && !flags.event && !flags.bookmark && !flags.task && !flags.project) {
+        throw new Error('--note, --event, --bookmark, --task, or --project soul is required.');
       }
       const { user, pass } = requireCredentials();
       await os.login(user, pass);
@@ -1048,7 +1067,9 @@ Server (all commands):
           ? { kind: 'event', soul: flags.event }
           : (flags.bookmark
             ? { kind: 'bookmark', soul: flags.bookmark }
-            : { kind: 'task', soul: flags.task }));
+            : (flags.project
+              ? { kind: 'project', soul: flags.project }
+              : { kind: 'task', soul: flags.task })));
       const tsks = await os.tasksFor(target);
       outputResults(tsks, flags);
       process.exit(0);
@@ -1115,6 +1136,114 @@ Server (all commands):
       const res = await os.deleteBlogPost(flags.id);
       console.log(JSON.stringify(res, null, 2));
       process.exit(0);
+      break;
+    }
+
+    // ─── Projects (Encrypted Workspaces) ──────────────────────
+
+    case 'project-write':
+    case 'project-add': {
+      const name = str(flags.name) || str(flags.title);
+      if (!name) throw new Error('--name is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const tags = flags.tags ? String(flags.tags).split(',').map(t => t.trim()).filter(Boolean) : [];
+      const res = await os.writeProject({
+        name,
+        desc: flags.desc || flags.description || '',
+        status: flags.status || 'active',
+        color: flags.color || '',
+        dueDate: flags.due || flags.dueDate || null,
+        tags,
+        soul: flags.soul
+      });
+      console.log(JSON.stringify(res, null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'project-get': {
+      if (!flags.soul) throw new Error('--soul is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const proj = await os.getProject(flags.soul);
+      if (!proj) {
+        console.error(JSON.stringify({ error: 'Project not found: ' + flags.soul }));
+        process.exit(1);
+      }
+      const [notes, tasks, events] = await Promise.all([
+        os.notesForProject(flags.soul),
+        os.tasksForProject(flags.soul),
+        os.eventsForProject(flags.soul)
+      ]);
+      console.log(JSON.stringify({
+        ...proj,
+        notes: notes.map(n => ({ soul: n.soul, title: n.title, cat: n.cat, pinned: n.pinned, timestamp: n.timestamp })),
+        tasks,
+        events
+      }, null, 2));
+      process.exit(0);
+      break;
+    }
+
+    case 'project-read': {
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const projects = await os.readProjects({
+        status: flags.status,
+        tag: flags.tag,
+        query: flags.query
+      });
+      outputResults(projects, flags);
+      process.exit(0);
+      break;
+    }
+
+    case 'project-update': {
+      if (!flags.soul) throw new Error('--soul is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const patch = {};
+      if (flags.name !== undefined) patch.name = flags.name;
+      if (flags.title !== undefined) patch.name = flags.title;
+      if (flags.desc !== undefined) patch.desc = flags.desc;
+      if (flags.description !== undefined) patch.desc = flags.description;
+      if (flags.status !== undefined) patch.status = flags.status;
+      if (flags.color !== undefined) patch.color = flags.color;
+      if (flags.due !== undefined) patch.dueDate = flags.due;
+      if (flags.dueDate !== undefined) patch.dueDate = flags.dueDate;
+      if (flags.tags !== undefined) patch.tags = String(flags.tags).split(',').map(t => t.trim()).filter(Boolean);
+      const res = await os.updateProject(flags.soul, patch);
+      console.log(JSON.stringify(res, null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'project-delete': {
+      if (!flags.soul) throw new Error('--soul is required.');
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const res = await os.deleteProject(flags.soul);
+      console.log(JSON.stringify(res, null, 2));
+      safeExit(0);
+      break;
+    }
+
+    case 'project-link':
+    case 'project-unlink': {
+      if (!flags.project || (!flags.note && !flags.event && !flags.task && !flags.bookmark)) {
+        throw new Error('--project and one of --note, --event, --task, or --bookmark are required.');
+      }
+      const { user, pass } = requireCredentials();
+      await os.login(user, pass);
+      const fn = cmd === 'project-link' ? 'linkToProject' : 'unlinkFromProject';
+      const target = flags.note
+        ? { kind: 'note', soul: flags.note }
+        : (flags.event
+          ? { kind: 'event', soul: flags.event }
+          : (flags.task ? { kind: 'task', soul: flags.task } : { kind: 'bookmark', soul: flags.bookmark }));
+      console.log(JSON.stringify(await os[fn](flags.project, target), null, 2));
+      safeExit(0);
       break;
     }
 

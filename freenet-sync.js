@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PKCS8 = Buffer.from('302e020100300506032b657004220420', 'hex');
-const SYNC_COLLS = ['vault', 'calendar', 'tasks', 'bookmarks', 'contacts', 'secrets', 'feeds', 'files', 'shares']; // encrypted ones; public `posts` are not replicated
+const SYNC_COLLS = ['vault', 'projects', 'calendar', 'tasks', 'bookmarks', 'contacts', 'secrets', 'feeds', 'files', 'shares']; // encrypted ones; public `posts` are not replicated
 const WASM = () => {
   if (process.env.ORTO_VAULT_WASM && fs.existsSync(process.env.ORTO_VAULT_WASM)) return process.env.ORTO_VAULT_WASM;
   const p1 = path.join(here, 'contracts', 'orto_vault.wasm');

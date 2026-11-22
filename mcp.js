@@ -35,19 +35,19 @@ const when = (d) => ({ type: 'string', description: d + ' (ISO 8601, e.g. 2026-1
 
 // [name, description, properties, required, kind ('read' | 'write' | 'delete'), run(os, args)]
 const TOOLS = [
-  ['note_list', 'List notes (newest first, pinned first) with a 200-character preview. Use note_get for the whole text.', { query: str('only notes whose title or text contains this'), limit: num('default 50') }, [], 'read',
-    async (os, a) => (await os.readVaultNotes()).filter((n) => !a.query || (n.title + ' ' + n.body).toLowerCase().includes(a.query.toLowerCase())).slice(0, lim(a))
-      .map((n) => ({ soul: n.soul, title: n.title, cat: n.cat, pinned: n.pinned, timestamp: n.timestamp, preview: cut(n.body, 200) }))],
+  ['note_list', 'List notes (newest first, pinned first) with a 200-character preview. Use note_get for the whole text.', { query: str('only notes whose title or text contains this'), projectId: str('only notes belonging to this project id'), limit: num('default 50') }, [], 'read',
+    async (os, a) => (await os.readVaultNotes({ projectId: a.projectId || null })).filter((n) => !a.query || (n.title + ' ' + n.body).toLowerCase().includes(a.query.toLowerCase())).slice(0, lim(a))
+      .map((n) => ({ soul: n.soul, title: n.title, cat: n.cat, pinned: n.pinned, ...(n.projectId && { projectId: n.projectId }), timestamp: n.timestamp, preview: cut(n.body, 200) }))],
   ['note_get', 'Read one note in full (Markdown).', { soul: str('note id from note_list') }, ['soul'], 'read', (os, a) => os.getVaultNote(a.soul)],
-  ['note_write', 'Create a note, or replace one when `soul` is given (send the whole body: it overwrites).', { title: str('title'), body: str('Markdown text; #tags and - [ ] checklists work; attach a file from file_list/file_write with [name](#orto-file=<file id>), or ![name](#orto-file=<file id>) for an image'), cat: str('category, default general'), pinned: { type: 'boolean' }, soul: str('existing note id to replace') }, ['title', 'body'], 'write',
+  ['note_write', 'Create a note, or replace one when `soul` is given (send the whole body: it overwrites).', { title: str('title'), body: str('Markdown text; #tags, [[Note Title]] wiki-links, and - [ ] checklists work; attach a file from file_list/file_write with [name](#orto-file=<file id>), or ![name](#orto-file=<file id>) for an image'), cat: str('category, default general'), pinned: { type: 'boolean' }, projectId: str('project id from project_list'), soul: str('existing note id to replace') }, ['title', 'body'], 'write',
     (os, a) => os.writeVaultNote(a)],
-  ['calendar_list', 'List calendar events, optionally inside a date range.', { from: when('range start'), to: when('range end') }, [], 'read', (os, a) => os.readCalendarEvents(a)],
-  ['event_write', 'Create a calendar event, or replace one when `soul` is given.', { title: str('title'), start: when('start'), end: when('end, defaults to start'), notes: str('free text'), soul: str('existing event id to replace') }, ['title', 'start'], 'write',
+  ['calendar_list', 'List calendar events, optionally inside a date range.', { from: when('range start'), to: when('range end'), projectId: str('only events linked to this project id') }, [], 'read', (os, a) => os.readCalendarEvents(a)],
+  ['event_write', 'Create a calendar event, or replace one when `soul` is given.', { title: str('title'), start: when('start'), end: when('end, defaults to start'), notes: str('free text'), projectId: str('project id from project_list'), soul: str('existing event id to replace') }, ['title', 'start'], 'write',
     (os, a) => os.writeCalendarEvent(a)],
-  ['task_list', 'List Kanban tasks, open ones first.', { status: str('todo | doing | done (or a custom column)'), priority: str('low | medium | high | urgent'), tag: str('tag'), query: str('text in title, description or assignee') }, [], 'read', (os, a) => os.readTasks(a)],
-  ['task_write', 'Create a task.', { title: str('title'), status: str('todo (default) | doing | done'), priority: str('low | medium (default) | high | urgent'), desc: str('description'), dueDate: when('due date'), tags: arr('tags'), assignee: str('who') }, ['title'], 'write', (os, a) => os.writeTask(a)],
-  ['task_update', 'Change fields of an existing task (only the fields you send).', { soul: str('task id from task_list'), title: str('title'), status: str('todo | doing | done'), priority: str('priority'), desc: str('description'), dueDate: when('due date'), tags: arr('tags'), assignee: str('who') }, ['soul'], 'write',
-    (os, { soul, ...patch }) => os.updateTask(soul, pick(patch, ['title', 'status', 'priority', 'desc', 'dueDate', 'tags', 'assignee']))],
+  ['task_list', 'List Kanban tasks, open ones first.', { status: str('todo | doing | done (or a custom column)'), priority: str('low | medium | high | urgent'), tag: str('tag'), projectId: str('only tasks belonging to this project id'), query: str('text in title, description or assignee') }, [], 'read', (os, a) => os.readTasks(a)],
+  ['task_write', 'Create a task.', { title: str('title'), status: str('todo (default) | doing | done'), priority: str('low | medium (default) | high | urgent'), desc: str('description'), dueDate: when('due date'), tags: arr('tags'), assignee: str('who'), projectId: str('project id from project_list') }, ['title'], 'write', (os, a) => os.writeTask(a)],
+  ['task_update', 'Change fields of an existing task (only the fields you send).', { soul: str('task id from task_list'), title: str('title'), status: str('todo | doing | done'), priority: str('priority'), desc: str('description'), dueDate: when('due date'), tags: arr('tags'), assignee: str('who'), projectId: str('project id ("" to clear)') }, ['soul'], 'write',
+    (os, { soul, ...patch }) => os.updateTask(soul, pick(patch, ['title', 'status', 'priority', 'desc', 'dueDate', 'tags', 'assignee', 'projectId']))],
   ['bookmark_list', 'List bookmarks (newest first).', { folder: str('folder path, includes subfolders'), query: str('text in title, url, folder or tags'), limit: num('default 50') }, [], 'read',
     async (os, a) => (await os.readBookmarks({ folder: a.folder, query: a.query })).slice(0, lim(a))],
   ['bookmark_add', 'Save a bookmark (the same URL is never stored twice).', { url: str('http(s) URL'), title: str('title'), folder: str('folder path like Dev/Tools'), tags: arr('tags') }, ['url'], 'write', (os, a) => os.writeBookmark(a)],
@@ -69,9 +69,9 @@ const TOOLS = [
   ['blog_publish', 'Publish a PUBLIC blog post (anyone can read it, it is not encrypted), or edit one when `id` is given.', { title: str('title'), content: str('Markdown'), tags: arr('tags'), id: str('existing post id to edit') }, ['title', 'content'], 'write', (os, a) => os.publishBlogPost(a)],
   ['file_list', 'List uploaded files (names, sizes, folders; no content).', { limit: num('default 50') }, [], 'read',
     async (os, a) => (await os.listFiles()).slice(0, lim(a)).map(({ thumb, ...f }) => f)],
-  ['delete', 'Permanently delete one item. There is no undo and no trash for most kinds: ask the user first.', { kind: { type: 'string', enum: ['note', 'event', 'task', 'bookmark', 'contact', 'feed', 'post', 'file'] }, id: str('soul (or id for post and file)') }, ['kind', 'id'], 'delete',
+  ['delete', 'Permanently delete one item. There is no undo and no trash for most kinds: ask the user first.', { kind: { type: 'string', enum: ['note', 'project', 'event', 'task', 'bookmark', 'contact', 'feed', 'post', 'file'] }, id: str('soul (or id for post and file)') }, ['kind', 'id'], 'delete',
     (os, a) => {
-      const f = { note: 'deleteVaultNote', event: 'deleteCalendarEvent', task: 'deleteTask', bookmark: 'deleteBookmark', contact: 'deleteContact', feed: 'deleteFeed', post: 'deleteBlogPost', file: 'deleteFile' }[a.kind];
+      const f = { note: 'deleteVaultNote', project: 'deleteProject', event: 'deleteCalendarEvent', task: 'deleteTask', bookmark: 'deleteBookmark', contact: 'deleteContact', feed: 'deleteFeed', post: 'deleteBlogPost', file: 'deleteFile' }[a.kind];
       if (!f) throw new Error('Unknown kind: ' + a.kind);
       return os[f](a.id);
     }]
@@ -81,24 +81,42 @@ const TOOLS = [
 const TEXT_MAX = 200000, BIN_MAX = 5 * 1024 * 1024;
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
 const merge = async (get, write, soul, patch, label) => { const cur = await get(soul); if (!cur) throw new Error(label + ' not found: ' + soul); const { updatedAt, ...rest } = cur; return write({ ...rest, ...patch, soul }); };
-const KINDS = { type: 'string', enum: ['note', 'bookmark', 'event', 'task'] };
+const KINDS = { type: 'string', enum: ['note', 'bookmark', 'event', 'task', 'project'] };
 TOOLS.push(
-  ['note_update', 'Change fields of an existing note (only the fields you send).', { soul: str('note id'), title: str('title'), body: str('whole new text'), cat: str('category'), pinned: { type: 'boolean' } }, ['soul'], 'write',
-    (os, { soul, ...p }) => merge((x) => os.getVaultNote(x), (n) => os.writeVaultNote(n), soul, pick(p, ['title', 'body', 'cat', 'pinned']), 'Note')],
+  ['note_update', 'Change fields of an existing note (only the fields you send).', { soul: str('note id'), title: str('title'), body: str('whole new text'), cat: str('category'), pinned: { type: 'boolean' }, projectId: str('project id ("" to clear)') }, ['soul'], 'write',
+    (os, { soul, ...p }) => merge((x) => os.getVaultNote(x), (n) => os.writeVaultNote(n), soul, pick(p, ['title', 'body', 'cat', 'pinned', 'projectId']), 'Note')],
+  ['project_list', 'List encrypted projects.', { status: str('active | on_hold | completed | archived'), tag: str('tag'), query: str('text in name or description') }, [], 'read',
+    (os, a) => os.readProjects(a)],
+  ['project_get', 'Read one project along with its member/linked notes, tasks and calendar events.', { soul: str('project id from project_list') }, ['soul'], 'read',
+    async (os, a) => {
+      const proj = await os.getProject(a.soul);
+      if (!proj) return null;
+      const [notes, tasks, events] = await Promise.all([os.notesForProject(a.soul), os.tasksForProject(a.soul), os.eventsForProject(a.soul)]);
+      return {
+        ...proj,
+        notes: notes.map((n) => ({ soul: n.soul, title: n.title, cat: n.cat, pinned: n.pinned, timestamp: n.timestamp })),
+        tasks,
+        events
+      };
+    }],
+  ['project_write', 'Create a project, or replace one when `soul` is given.', { name: str('project name'), desc: str('description'), status: str('active (default) | on_hold | completed | archived'), color: str('accent color hex'), dueDate: when('target due date'), tags: arr('tags'), soul: str('existing project id to replace') }, ['name'], 'write',
+    (os, a) => os.writeProject(a)],
+  ['project_update', 'Change fields of an existing project (only the fields you send).', { soul: str('project id from project_list'), name: str('name'), desc: str('description'), status: str('active | on_hold | completed | archived'), color: str('accent color hex'), dueDate: when('due date'), tags: arr('tags') }, ['soul'], 'write',
+    (os, { soul, ...patch }) => os.updateProject(soul, pick(patch, ['name', 'desc', 'status', 'color', 'dueDate', 'tags']))],
   ['event_get', 'Read one calendar event.', { soul: str('event id') }, ['soul'], 'read', (os, a) => os.getCalendarEvent(a.soul)],
-  ['event_update', 'Change fields of an existing event (only the fields you send).', { soul: str('event id'), title: str('title'), start: when('start'), end: when('end'), notes: str('notes') }, ['soul'], 'write',
-    (os, { soul, ...p }) => merge((x) => os.getCalendarEvent(x), (e) => os.writeCalendarEvent(e), soul, pick(p, ['title', 'start', 'end', 'notes']), 'Event')],
+  ['event_update', 'Change fields of an existing event (only the fields you send).', { soul: str('event id'), title: str('title'), start: when('start'), end: when('end'), notes: str('notes'), projectId: str('project id ("" to clear)') }, ['soul'], 'write',
+    (os, { soul, ...p }) => merge((x) => os.getCalendarEvent(x), (e) => os.writeCalendarEvent(e), soul, pick(p, ['title', 'start', 'end', 'notes', 'projectId']), 'Event')],
   ['contact_get', 'Read one contact.', { soul: str('contact id') }, ['soul'], 'read', (os, a) => os.getContact(a.soul)],
   ['contact_update', 'Change fields of an existing contact (only the fields you send).', { soul: str('contact id'), name: str('name'), emails: arr('emails'), phones: arr('phones'), org: str('organisation'), notes: str('notes'), tags: arr('tags') }, ['soul'], 'write',
     (os, { soul, ...p }) => merge((x) => os.getContact(x), (c) => os.writeContact(c), soul, pick(p, ['name', 'emails', 'phones', 'org', 'notes', 'tags']), 'Contact')],
   ['bookmark_update', 'Change title, folder or tags of a bookmark (only the fields you send).', { soul: str('bookmark id from bookmark_list'), title: str('title'), folder: str('folder path, "" for none'), tags: arr('tags') }, ['soul'], 'write',
     (os, { soul, ...p }) => os.updateBookmark(soul, pick(p, ['title', 'folder', 'tags']))],
-  ['link_add', 'Link an item to an event or a task (the link is stored inside that event or task).', { owner: { type: 'string', enum: ['event', 'task'] }, ownerSoul: str('id of the event or task'), kind: KINDS, soul: str('id of the item to link') }, ['owner', 'ownerSoul', 'kind', 'soul'], 'write',
-    (os, a) => (a.owner === 'event' ? os.linkToEvent(a.ownerSoul, a) : os.linkToTask(a.ownerSoul, a))],
-  ['link_remove', 'Remove a link made with link_add.', { owner: { type: 'string', enum: ['event', 'task'] }, ownerSoul: str('id of the event or task'), kind: KINDS, soul: str('id of the linked item') }, ['owner', 'ownerSoul', 'kind', 'soul'], 'write',
-    (os, a) => (a.owner === 'event' ? os.unlinkFromEvent(a.ownerSoul, a) : os.unlinkFromTask(a.ownerSoul, a))],
-  ['linked_list', 'Events and tasks that link to an item.', { kind: KINDS, soul: str('item id') }, ['kind', 'soul'], 'read',
-    async (os, a) => ({ events: await os.eventsFor(a), tasks: await os.tasksFor(a) })],
+  ['link_add', 'Link an item to an event, a task or a project (the link is stored inside that owner record).', { owner: { type: 'string', enum: ['event', 'task', 'project'] }, ownerSoul: str('id of the event, task or project'), kind: KINDS, soul: str('id of the item to link') }, ['owner', 'ownerSoul', 'kind', 'soul'], 'write',
+    (os, a) => (a.owner === 'event' ? os.linkToEvent(a.ownerSoul, a) : a.owner === 'project' ? os.linkToProject(a.ownerSoul, a) : os.linkToTask(a.ownerSoul, a))],
+  ['link_remove', 'Remove a link made with link_add.', { owner: { type: 'string', enum: ['event', 'task', 'project'] }, ownerSoul: str('id of the event, task or project'), kind: KINDS, soul: str('id of the linked item') }, ['owner', 'ownerSoul', 'kind', 'soul'], 'write',
+    (os, a) => (a.owner === 'event' ? os.unlinkFromEvent(a.ownerSoul, a) : a.owner === 'project' ? os.unlinkFromProject(a.ownerSoul, a) : os.unlinkFromTask(a.ownerSoul, a))],
+  ['linked_list', 'Projects, events and tasks that link to an item.', { kind: KINDS, soul: str('item id') }, ['kind', 'soul'], 'read',
+    async (os, a) => ({ projects: await os.projectsFor(a), events: await os.eventsFor(a), tasks: await os.tasksFor(a) })],
   ['file_read', `Read a file: text files come back as text (up to ${TEXT_MAX} characters); other types only as name, type and size.`, { id: str('file id from file_list') }, ['id'], 'read',
     async (os, a) => {
       const f = (await os.listFiles()).find((x) => x.id === a.id);
