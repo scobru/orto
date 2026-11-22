@@ -76,7 +76,7 @@ export function bookmarksToHtml(bookmarks) {
     node.items.push(b);
   }
   const block = (node, pad) => [
-    ...[...node.dirs].sort(([a], [b]) => a.localeCompare(b)).flatMap(([name, d]) =>
+    ...Array.from(node.dirs).sort(([a], [b]) => a.localeCompare(b)).flatMap(([name, d]) =>
       [`${pad}<DT><H3>${esc(name)}</H3>`, `${pad}<DL><p>`, ...block(d, pad + '    '), `${pad}</DL><p>`]),
     ...node.items.sort((a, b) => a.addedAt - b.addedAt).map(b =>
       `${pad}<DT><A HREF="${esc(b.url)}" ADD_DATE="${Math.floor((b.addedAt || Date.now()) / 1000)}"${(b.tags || []).length ? ` TAGS="${esc(b.tags.join(','))}"` : ''}>${esc(b.title || b.url)}</A>`)

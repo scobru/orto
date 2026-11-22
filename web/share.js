@@ -7,10 +7,17 @@ try {
   document.title = (r.title || r.name || 'Shared') + ' · Orto';
   out.textContent = '';
   if (r.kind === 'note') {
-    if (!window.DOMPurify || !window.marked) throw new Error('markdown libraries unavailable');
-    DOMPurify.addHook('afterSanitizeAttributes', (n) => { if (n.tagName === 'A') { n.setAttribute('target', '_blank'); n.setAttribute('rel', 'noopener noreferrer'); } });
+    if (!window.marked) throw new Error('markdown libraries unavailable');
+    const html = marked.parse(r.body || '');
     const body = document.createElement('div');
-    body.innerHTML = DOMPurify.sanitize(marked.parse(r.body || ''));
+    if ('setHTML' in Element.prototype) {
+      body.setHTML(html);
+    } else if (window.DOMPurify) {
+      body.replaceChildren(DOMPurify.sanitize(html, { RETURN_DOM_FRAGMENT: true }));
+    } else {
+      throw new Error('markdown libraries unavailable');
+    }
+    body.querySelectorAll('a').forEach((n) => { n.setAttribute('target', '_blank'); n.setAttribute('rel', 'noopener noreferrer'); });
     out.append(el('h1', r.title || ''), body);
   } else {
     const img = /^image\/(png|jpe?g|gif|webp|avif|bmp)$/i.test(r.type);

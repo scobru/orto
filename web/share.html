@@ -3,16 +3,56 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src blob: data:; connect-src 'self'">
 <title>Shared with you</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { font: 17px/1.6 system-ui, sans-serif; max-width: 42rem; margin: 0 auto; padding: 24px 16px 64px; }
-  h1 { font-size: 1.5rem; }
-  small { opacity: .6; }
-  img { max-width: 100%; }
-  a.btn { display: inline-block; padding: 8px 16px; border: 1px solid; border-radius: 8px; text-decoration: none; }
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfbfc;
+    --fg: #1a1d23;
+    --mut: #535863;
+    --line: #e6e8ec;
+    --card: #ffffff;
+    --acc: #c4532f;
+    --code-bg: #f3f4f7;
+    accent-color: var(--acc);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1d23;
+      --fg: #f2f4f7;
+      --mut: #a2a8b4;
+      --line: #2c303a;
+      --card: #22252e;
+      --acc: #e0714b;
+      --code-bg: #17191f;
+    }
+  }
+  @supports (color: light-dark(white, black)) {
+    :root {
+      --bg: light-dark(#fbfbfc, #1b1d23);
+      --fg: light-dark(#1a1d23, #f2f4f7);
+      --mut: light-dark(#535863, #a2a8b4);
+      --line: light-dark(#e6e8ec, #2c303a);
+      --card: light-dark(#ffffff, #22252e);
+      --acc: light-dark(#c4532f, #e0714b);
+      --code-bg: light-dark(#f3f4f7, #17191f);
+    }
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--fg); font: 17px/1.7 system-ui, -apple-system, sans-serif; max-width: 44rem; margin: 0 auto; padding: 32px 20px 72px; -webkit-font-smoothing: antialiased; }
+  main { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 28px 32px; box-shadow: 0 4px 20px rgba(0,0,0,.05); }
+  h1 { font-size: 1.7rem; letter-spacing: -0.02em; margin-top: 0; }
+  a { color: var(--acc); text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+  small { color: var(--mut); }
+  img { max-width: 100%; height: auto; border-radius: 10px; }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: ui-monospace, monospace; }
+  pre { padding: 14px; overflow-x: auto; border: 1px solid var(--line); }
+  code { padding: 2px 6px; font-size: 0.9em; }
+  pre code { background: transparent; padding: 0; }
+  a.btn { display: inline-block; padding: 9px 18px; border: 1px solid var(--acc); background: var(--acc); color: #fff; border-radius: 9px; text-decoration: none; font-weight: 500; }
 </style>
 </head>
 <body>

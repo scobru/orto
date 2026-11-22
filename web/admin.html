@@ -3,21 +3,50 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex">
 <title>Orto admin</title>
+<link rel="stylesheet" href="/vendor/fonts.css">
 <style>
-:root{--bg:#fff;--fg:#1a1a1a;--mut:#6b6b6b;--line:#e2e2e2;--card:#f7f7f7;--acc:#2f7d4f;--bad:#b3261e}
-@media(prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mut:#9a9a9a;--line:#333;--card:#1f1f1f;--acc:#5cc58a;--bad:#f2766e}}
+:root{
+  color-scheme:light dark;
+  --bg:#f8f9fb;--fg:#1a1d23;--mut:#535863;--line:#e6e8ec;--card:#ffffff;--input:#f5f6f9;--acc:#c4532f;--acc-hover:#a8431f;--bad:#b3261e;
+  accent-color:var(--acc);
+}
+@media(prefers-color-scheme:dark){
+  :root{--bg:#16181e;--fg:#f2f4f7;--mut:#9da3af;--line:#2c303a;--card:#1e2128;--input:#171920;--acc:#e0714b;--acc-hover:#eb8764;--bad:#f2766e}
+}
+@supports(color:light-dark(white,black)){
+  :root{
+    --bg:light-dark(#f8f9fb,#16181e);
+    --fg:light-dark(#1a1d23,#f2f4f7);
+    --mut:light-dark(#535863,#9da3af);
+    --line:light-dark(#e6e8ec,#2c303a);
+    --card:light-dark(#ffffff,#1e2128);
+    --input:light-dark(#f5f6f9,#171920);
+    --acc:light-dark(#c4532f,#e0714b);
+    --acc-hover:light-dark(#a8431f,#eb8764);
+    --bad:light-dark(#b3261e,#f2766e);
+  }
+}
 *{box-sizing:border-box}
-body{margin:0 auto;max-width:820px;padding:24px 16px;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}
-h1{font-size:20px;margin:0 0 16px}h2{font-size:15px;margin:28px 0 8px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px}
-label{display:block;margin:10px 0 4px;color:var(--mut);font-size:13px}
-input,select,button{font:inherit;padding:7px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
-button{cursor:pointer}button.p{background:var(--acc);border-color:var(--acc);color:#fff}button.d{color:var(--bad)}
+body{margin:0 auto;max-width:860px;padding:32px 20px 64px;background:var(--bg);color:var(--fg);font:15px/1.55 'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+h1{font-family:'Outfit','Inter',system-ui,sans-serif;font-size:24px;letter-spacing:-0.02em;margin:0 0 20px}
+h2{font-size:12px;margin:28px 0 10px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);font-weight:600}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:0 2px 10px rgba(0,0,0,.04)}
+label{display:block;margin:12px 0 5px;color:var(--mut);font-size:13px;font-weight:500}
+input,select,button{font:inherit;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--input);color:var(--fg);transition:border-color .15s,background-color .15s}
+input:focus,select:focus{outline:none;border-color:var(--acc)}
+button{cursor:pointer;background:var(--card);font-weight:500}
+button:hover{border-color:var(--mut)}
+button.p{background:var(--acc);border-color:var(--acc);color:#fff}
+button.p:hover{background:var(--acc-hover);border-color:var(--acc-hover)}
+button.d{color:var(--bad)}
+button.d:hover{border-color:var(--bad)}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);font-size:14px}
-.wrap{overflow-x:auto}.mut{color:var(--mut);font-size:13px}#msg{min-height:1.4em;margin-top:12px}.err{color:var(--bad)}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);font-size:14px}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);font-weight:600}
+.wrap{overflow-x:auto}.mut{color:var(--mut);font-size:13px;margin-top:10px}#msg{min-height:1.4em;margin-top:14px;font-weight:500}.err{color:var(--bad)}
 </style>
 </head>
 <body>

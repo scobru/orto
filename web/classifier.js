@@ -76,8 +76,8 @@ export function loadClassifier({ base = '', onProgress } = {}) {
     frame.setAttribute('aria-hidden', 'true');
     frame.style.cssText = 'position:absolute;width:0;height:0;border:0;visibility:hidden';
     frame.src = resolveUrl(base, '/models/gist/host.html');
-    const pending = new Map(); let seq = 0, ready;
-    const isReady = new Promise((res) => { ready = res; });
+    const pending = new Map(); let seq = 0;
+    const { promise: isReady, resolve: ready } = Promise.withResolvers();
     const onMsg = (e) => {
       if (e.source !== frame.contentWindow) return;
       const m = e.data || {};
