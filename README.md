@@ -144,10 +144,30 @@ Your login derives two independent keys with PBKDF2 (210k rounds): an **AES-GCM 
 
 Forget the password and the data is gone: there is no recovery, by design. Usernames are case-insensitive; the password is case-sensitive.
 
-## CLI
+## CLI & TUI
+
+Run `node cli.js` (or `orto`) in an interactive terminal to open the **zero-dependency pure-ANSI TUI** with live updates across all 12 views (Notes with Markdown/`#tags`/`[[wiki-links]]`/backlinks, Projects, Tasks Kanban, Calendar, Bookmarks, Feeds, Contacts, Secrets with masked reveal & 20s clipboard auto-clear, Files with chunked upload, Blog, interactive ASCII/Unicode Garden, Trash), Shared Spaces switcher (`s`), `$EDITOR` integration (`e`), and `Ctrl+K` fuzzy search.
+
+- **Navigation & Controls**: Jump straight to any view with `1–9`, `0` (Blog), `G` (Garden), `T` (Trash), cycle with `[`/`]`, focus the sidebar with `Ctrl+B`, lock the session with `Ctrl+L`, or open help with `?`. Mouse clicks & scroll wheel are supported (`--no-mouse` disables). Customize with `--theme dark|light`, `--ascii`, and `ORTO_LOCK_MIN`.
+- **Freenet P2P & Viso SSO**: Select **Freenet (P2P)** on the login screen (`Ctrl+F` or `--freenet`). Switch between **Direct Ed25519** (`--key <64-hex|file>`, `#sk=`, or `Ctrl+G`) and **Viso Seed (#0)** (`Ctrl+V`, `--viso-seed <64-hex|file>`, `--persona-index <n>`, or `--delegation <json|file>`) so the CLI/TUI derives the exact same Freenet vault contract as the Freenet Web dApp. Live sync status & record counts appear in the header, and local state is stored AES-GCM encrypted (`--freenet-store` / `ORTO_FREENET_STORE`). Use `--freenet-node <ws-url>` to pick a node or `--offline` for local-only mode.
 
 ```bash
 export ORTO_SERVER=http://127.0.0.1:8787     # or --server; default https://orto.scobrudot.dev
+node cli.js                                  # interactive TUI (choose Server or Freenet P2P)
+node cli.js --freenet                        # launch TUI in Freenet P2P mode (Direct key, Viso Seed via Ctrl+V, or Ctrl+G)
+node cli.js --freenet --viso-seed <64-hex>   # unlock your Freenet Web Viso vault directly
+node cli.js q "Buy seeds #garden" --freenet --key <64-hex|file>   # quick capture on Freenet P2P (or --viso-seed <64-hex|file>)
+node cli.js tasks --theme light --ascii      # jump straight to a view
+node cli.js q "Buy seeds #garden"            # quick capture note (add --task for a task; --freenet supported)
+node cli.js find seeds                       # fuzzy search across all collections
+node cli.js edit <soul-or-title>             # open note, task or blog post in $EDITOR
+node cli.js copy github                      # copy secret to clipboard without printing it
+node cli.js status                           # Garden health, overdue tasks & today summary
+```
+
+Script & agent commands (always JSON / `--table` / `--count`):
+
+```bash
 node cli.js register --user alice --pass 'long passphrase'
 node cli.js vault-write --user alice --pass '…' --title "Hello" --body "First note"
 node cli.js vault-read  --user alice --pass '…'
@@ -197,7 +217,7 @@ All JSON. `Authorization: Bearer <token>` from `POST /api/login` or `/api/regist
 
 ## Tests
 
-`npm test` executes the complete test suite across both SQLite and Freenet runtimes:
+`npm test` executes all three test suites across SQLite, Freenet P2P, and the CLI/TUI:
 
 1. **Server & SQLite tests (`test.js`)**: Starts a throwaway server on a temp SQLite file and tests the entire SDK: client-side AES-GCM encryption at rest, isolation between users, chunked file streaming, live SSE events, public share links, encrypted export/import, password rotation, and server backups.
 2. **Freenet integration tests (`test-freenet.js`)**: Tests the decentralized browser runtime in simulated zero-server conditions:
@@ -207,6 +227,7 @@ All JSON. `Authorization: Bearer <token>` from `POST /api/login` or `/api/regist
    - Resilient persistence across page reloads using the encrypted `window.name` session mirror.
    - P2P Shared Spaces with ECDH P-256 sealed invites and capability links (`#join=cap...`).
    - Isolated `safeStore` state avoiding clobbering between notes, UI preferences, and AI settings.
+3. **TUI & CLI tests (`test-tui.js`)**: Tests the interactive pure-ANSI TUI engine (`Screen` diffing, Unicode width, SGR mouse & input parsing, `$EDITOR` frontmatter bridge), `OrtoStore` reactive updates, all 12 views, human CLI commands (`q`, `find`, `edit`, `copy`, `status`), Freenet P2P Ed25519 keypairs, Viso master-seed & delegation golden vectors, and async vault sync into `OrtoStore`.
 
 ## Coming from ZenOS or the ZEN version
 

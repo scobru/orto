@@ -19,7 +19,7 @@
     "freenet:publish": "node scripts/publish-freenet.mjs",
     "freenet:models:publish": "node scripts/publish-freenet.mjs models --init",
     "freenet:models:update": "node scripts/publish-freenet.mjs models",
-    "test": "node --no-warnings test.js && node --no-warnings test-freenet.js"
+    "test": "node --no-warnings test.js && node --no-warnings test-freenet.js && node --no-warnings test-tui.js"
   },
   "keywords": [
     "self-hosted",

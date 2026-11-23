@@ -28,6 +28,16 @@ Rules for agents:
 ```
 Orto CLI — tools for scripts and agents
 Usage:
+  # Interactive TUI & Quick Commands
+  node cli.js                                          # launch interactive TUI
+  node cli.js <notes|tasks|projects|calendar|bookmarks|secrets|garden|trash|...>
+  node cli.js tui [--freenet | --mode server|freenet] [--theme dark|light] [--ascii] [--no-mouse]   # explicit TUI launch
+  node cli.js q "Quick note or #tags" [--task] [--due tomorrow] [--priority high] [--json]
+  node cli.js find <query> [--limit 25] [--json]       # fuzzy search across all collections
+  node cli.js edit <soul-or-title>                     # open note, task or post in $EDITOR
+  node cli.js copy <secret-name-or-soul> [--json]      # copy secret to clipboard without printing it
+  node cli.js status [--json]                          # Garden health, overdue tasks & today summary
+
   # Account
   node cli.js register [--user <user> --pass <pass>]   # create the account on the server (if registration is open)
   node cli.js identity [--user <user> --pass <pass>]   # check login, print username + server
@@ -137,9 +147,9 @@ Pagination & formatting options (read commands):
   --count, -c             return total count only (e.g. {"total": 1704})
   --table, -t             format results as an easy-to-read console table
 
-Credentials:
-  Flags:     --user <user> --pass <pass> (or -u <user>)
-  Env vars:  ORTO_USER and ORTO_PASS (or ORTO_USERNAME / ORTO_PASSWORD)
+Credentials & Backend:
+  Flags:     --user <user> --pass <pass> (or -u <user>), --freenet / --mode freenet, --key <64hex|file>, --viso-seed <64hex|file>, --persona-index <n>, --delegation <json|file>, --freenet-node <ws-url>, --freenet-store <path>, --offline
+  Env vars:  ORTO_USER and ORTO_PASS (or ORTO_USERNAME / ORTO_PASSWORD), ORTO_MODE, ORTO_FREENET_KEY, ORTO_VISO_SEED, ORTO_VISO_INDEX, ORTO_FREENET_DELEGATION, ORTO_FREENET_NODE, ORTO_FREENET_STORE
   Files:     .env in skill directory or current working directory (or --env <path>)
 ```
 

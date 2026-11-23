@@ -100,7 +100,10 @@ const ev = (name) => process.env['ORTO_' + name] || process.env['ZENOS_' + name]
 
 const str = (v) => (typeof v === 'string' ? v : '');
 
+let resolvedFnCreds = null;
+
 function requireCredentials() {
+  if (resolvedFnCreds) return resolvedFnCreds;
   const user = str(flags.user) || ev('USER') || ev('USERNAME');
   const pass = str(flags.pass) || ev('PASS') || ev('PASSWORD');
   if (!user || !pass) {
@@ -112,8 +115,16 @@ function requireCredentials() {
 // a bare `--folder` (or --folder '') arrives as `true`: it means "no folder"
 const grp = (v) => (v === true ? '' : v);
 
+let activeFreenetRuntime = null;
+let activeFreenetClient = null;
+
 function safeExit(code = 0) {
-  process.stdout.write('', () => process.exit(code));
+  Promise.resolve(activeFreenetRuntime?.flushVaults(activeFreenetClient, 800))
+    .catch(() => {})
+    .finally(() => {
+      activeFreenetRuntime?.close();
+      process.stdout.write('', () => process.exit(code));
+    });
 }
 
 function fmtDate(v, n) {
@@ -195,11 +206,62 @@ function outputResults(items, flags) {
   console.log(JSON.stringify(items, null, 2));
 }
 
+const TUI_VIEWS = new Set([
+  'notes', 'tasks', 'projects', 'calendar', 'bookmarks',
+  'feeds', 'contacts', 'secrets', 'files', 'blog', 'garden', 'trash'
+]);
+
 async function main() {
-  if (!cmd || cmd === '--help' || cmd === '-h') {
+  const rawMode = flags.freenet ? 'freenet' : (typeof flags.mode === 'string' ? flags.mode : ev('MODE'));
+  const mode = rawMode ? String(rawMode).toLowerCase() : undefined;
+  if (mode && mode !== 'server' && mode !== 'freenet') {
+    throw new Error('Invalid --mode: must be "server" or "freenet".');
+  }
+  const freenetNode = typeof flags['freenet-node'] === 'string' ? flags['freenet-node'] : (ev('FREENET_NODE') || undefined);
+  const freenetStore = typeof flags['freenet-store'] === 'string' ? flags['freenet-store'] : (ev('FREENET_STORE') || undefined);
+  const freenetKey = str(flags.key) || str(flags.sk) || ev('FREENET_KEY') || ev('KEY');
+  const visoSeed = str(flags['viso-seed']) || ev('VISO_SEED');
+  const personaIndex = Math.max(0, parseInt(str(flags['persona-index']) || ev('VISO_INDEX') || '0', 10) || 0);
+  const delegation = str(flags.delegation) || ev('FREENET_DELEGATION');
+  const offline = flags.offline === true;
+
+  if (!flags.help && !flags.h && ((cmd === undefined && process.stdout.isTTY && process.stdin.isTTY) || cmd === 'tui' || TUI_VIEWS.has(cmd))) {
+    const { startTui } = await import('./tui/index.js');
+    await startTui({
+      mode,
+      server: typeof flags.server === 'string' ? flags.server : ev('SERVER'),
+      freenetNode,
+      freenetStore,
+      freenetKey,
+      visoSeed,
+      personaIndex,
+      delegation,
+      offline,
+      user: str(flags.user) || ev('USER') || ev('USERNAME'),
+      pass: str(flags.pass) || ev('PASS') || ev('PASSWORD'),
+      space: str(flags.space) || ev('SPACE'),
+      initialView: cmd === 'tui' ? (typeof flags.view === 'string' ? flags.view : 'notes') : (cmd || 'notes'),
+      theme: typeof flags.theme === 'string' ? flags.theme : (ev('THEME') || undefined),
+      ascii: flags.ascii === true ? true : undefined,
+      mouse: flags['no-mouse'] === true ? false : undefined
+    });
+    return;
+  }
+
+  if (!cmd || cmd === '--help' || cmd === '-h' || flags.help || flags.h) {
     console.log(`
 Orto CLI — tools for scripts and agents
 Usage:
+  # Interactive TUI & Quick Commands
+  node cli.js                                          # launch interactive TUI (Server or Freenet)
+  node cli.js <notes|tasks|projects|calendar|bookmarks|secrets|garden|trash|...>
+  node cli.js tui [--freenet | --mode server|freenet] [--theme dark|light] [--ascii] [--no-mouse]
+  node cli.js q "Quick note or #tags" [--task] [--due tomorrow] [--priority high] [--json]
+  node cli.js find <query> [--limit 25] [--json]       # fuzzy search across all collections
+  node cli.js edit <soul-or-title>                     # open note, task or post in $EDITOR
+  node cli.js copy <secret-name-or-soul> [--json]      # copy secret to clipboard without printing it
+  node cli.js status [--json]                          # Garden health, overdue tasks & today summary
+
   # Account
   node cli.js register [--user <user> --pass <pass>]   # create the account on the server (if registration is open)
   node cli.js identity [--user <user> --pass <pass>]   # check login, print username + server
@@ -323,19 +385,78 @@ Credentials:
   Env vars:  ORTO_USER and ORTO_PASS (or ORTO_USERNAME / ORTO_PASSWORD)
   Files:     .env in skill directory or current working directory (or --env <path>)
 
-Server (all commands):
+Backend & Server (all commands):
   --server <url>          Orto server URL (or ORTO_SERVER); default ${DEFAULT_SERVER}
+  --freenet               use Freenet P2P mode (or --mode freenet / ORTO_MODE=freenet)
+  --key <64hex|file>      Freenet Ed25519 key, Viso backup/session JSON, or #sk= (or ORTO_FREENET_KEY)
+  --viso-seed <64hex|file> Viso master seed for Viso SSO vault derivation (or ORTO_VISO_SEED)
+  --persona-index <n>     Viso persona index (default 0; or ORTO_VISO_INDEX)
+  --delegation <json|file> Viso delegation certificate JSON (or ORTO_FREENET_DELEGATION)
+  --freenet-node <ws-url> Freenet WebSocket URL (or ORTO_FREENET_NODE); default ws://127.0.0.1:7509/v1/contract/command
+  --freenet-store <path>  encrypted local Freenet cache path (or ORTO_FREENET_STORE)
+  --offline               in Freenet mode, skip node WebSocket sync (local-only)
   Run your own: node server.js   (see README.md)
 `);
     process.exit(0);
   }
 
+  const effMode = mode || 'server';
   const server = normalizeServer(typeof flags.server === 'string' ? flags.server : ev('SERVER') || DEFAULT_SERVER);
-  const os = new Orto({ server });
+  const { HUMAN_COMMANDS, runHumanCommand } = await import('./tui/commands.js');
+  if (HUMAN_COMMANDS.has(cmd)) {
+    await runHumanCommand(cmd, rest, flags, {
+      mode: effMode,
+      server,
+      freenetNode,
+      freenetStore,
+      freenetKey,
+      visoSeed,
+      personaIndex,
+      delegation,
+      offline,
+      user: str(flags.user) || ev('USER') || ev('USERNAME'),
+      pass: str(flags.pass) || ev('PASS') || ev('PASSWORD'),
+      space: str(flags.space) || ev('SPACE')
+    });
+    safeExit(0);
+    return;
+  }
+
+  let os;
+  if (effMode === 'freenet') {
+    const { installFreenetRuntime, resolveFreenetIdentity } = await import('./tui/freenet.js');
+    const rawFn = visoSeed || freenetKey;
+    if (rawFn) {
+      const id = await resolveFreenetIdentity(rawFn, {
+        keyMode: visoSeed ? 'viso-seed' : 'auto',
+        personaIndex,
+        delegationRaw: delegation
+      });
+      resolvedFnCreds = { user: id.username, pass: id.password, delegation: id.delegation || null };
+    }
+    activeFreenetRuntime = installFreenetRuntime({ storePath: freenetStore, nodeUrl: freenetNode, connectNode: !offline });
+    os = new Orto({ mode: 'freenet' });
+    activeFreenetClient = os;
+  } else {
+    os = new Orto({ server });
+  }
   const spaceId = str(flags.space) || ev('SPACE');
-  if (spaceId) { // every command below then reads and writes that shared space instead of your own data
-    const login = os.login.bind(os);
-    os.login = async (...a) => { const pair = await login(...a), v = await os.openSpace(spaceId); Object.assign(os, { key: v.key, _space: v._space, _role: v._role, _raw: v._raw, spaceName: v.spaceName }); return pair; };
+  if (effMode === 'freenet' || spaceId) {
+    const rawLogin = os.login.bind(os);
+    os.login = async (u, p, opts = {}) => {
+      const loginOpts = resolvedFnCreds?.delegation && !opts.delegation
+        ? { ...opts, delegation: resolvedFnCreds.delegation }
+        : opts;
+      const pair = await rawLogin(u, p, loginOpts);
+      if (effMode === 'freenet' && !offline) {
+        await activeFreenetRuntime.waitForVaultSync(os, 15000);
+      }
+      if (spaceId) { // every command below then reads and writes that shared space instead of your own data
+        const v = await os.openSpace(spaceId);
+        Object.assign(os, { key: v.key, _space: v._space, _role: v._role, _raw: v._raw, spaceName: v.spaceName });
+      }
+      return pair;
+    };
   }
 
   switch (cmd) {

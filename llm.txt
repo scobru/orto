@@ -74,9 +74,9 @@ JSON everywhere; `Authorization: Bearer <token>`.
 - pages: `/` and `/app/` the web app, `/about` the landing page, `/blog/:name`, `/s/:id`; `/models/*` is the optional add-on folder (`ORTO_MODELS`, default `<data>/models`)
 - `GET /api/health`, `GET /api/config` (`{registration, maxUpload, demo?}`: `demo` is `{user, pass, hours}` when the server runs `ORTO_DEMO=1`, a public account that is reset with random fake data; sharing, posts and password change are 403 there)
 
-## CLI
+## CLI & TUI
 
-`node cli.js --help` lists everything. Credentials via `--user/--pass` or `ORTO_USER/ORTO_PASS`; server via `--server` or `ORTO_SERVER`.
+`node cli.js` (TTY) launches the interactive 12-view ANSI TUI; non-TTY invocations print help or run subcommands (`node cli.js --help` lists everything). Human quick commands: `q`, `find`, `edit`, `copy`, `status`. Credentials via `--user/--pass` or `ORTO_USER/ORTO_PASS`; server via `--server` or `ORTO_SERVER`. Freenet P2P mode: `--freenet` / `--mode freenet`, `--key <64hex|file>` (or `ORTO_FREENET_KEY`), `--viso-seed <64hex|file>` (`--persona-index <n>`, `--delegation <json|file>`), `--freenet-node`, `--freenet-store`, `--offline`.
 
 ## MCP
 
@@ -84,7 +84,7 @@ JSON everywhere; `Authorization: Bearer <token>`.
 
 ## Tests & Freenet
 
-- `npm test`: runs both `test.js` (server & SQLite suite) and `test-freenet.js` (Freenet zero-server integration suite: Ed25519 identity, note round trips, window.name sandbox reload persistence, P2P spaces, safeStore isolation).
+- `npm test`: runs `test.js` (server & SQLite suite), `test-freenet.js` (Freenet zero-server integration suite), and `test-tui.js` (pure-ANSI TUI, human CLI commands, Freenet P2P & Viso derivation/sync suite).
 - `npm run freenet:publish`: synchronizes `orto.js` -> `web/orto.js` and publishes the web contract using `fdev website update web --key orto`.
 
 ## Operating rules for agents
