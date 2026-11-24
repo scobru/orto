@@ -6,6 +6,7 @@ import { drawModal, drawTextInput, formatShortDate } from '../engine/widgets.js'
 const STATUS_FILTERS = ['all', 'active', 'on_hold', 'completed', 'archived'];
 const STATUS_EDIT = ['active', 'on_hold', 'completed', 'archived'];
 const TABS = [
+  { key: 'all', label: 'All' },
   { key: 'notes', label: 'Notes' },
   { key: 'tasks', label: 'Tasks' },
   { key: 'events', label: 'Events' },
@@ -37,9 +38,10 @@ export class ProjectsView {
     this.selectedSoul = null;
     this.listScroll = 0;
 
-    this.tabIdx = 0;
+    this.tabIdx = 0; // default 'All' so tasks + notes + events + bookmarks show immediately
     this.itemIdx = 0;
     this.modal = null;
+    this._lastLayout = null;
   }
 
   selectBySoul(soul) {
@@ -75,6 +77,45 @@ export class ProjectsView {
     this.selectedIdx = Math.max(0, Math.min(list.length - 1, this.selectedIdx));
     this.selectedSoul = list[this.selectedIdx].soul;
     return list[this.selectedIdx];
+  }
+
+  _tabItems(ws, tabKey) {
+    if (tabKey === 'all') {
+      return [
+        ...(ws.tasks || []).map((item) => ({ kind: 'task', item })),
+        ...(ws.notes || []).map((item) => ({ kind: 'note', item })),
+        ...(ws.events || []).map((item) => ({ kind: 'event', item })),
+        ...(ws.bookmarks || []).map((item) => ({ kind: 'bookmark', item }))
+      ];
+    }
+    const kind = tabKey === 'notes' ? 'note'
+      : tabKey === 'tasks' ? 'task'
+        : tabKey === 'events' ? 'event'
+          : 'bookmark';
+    return (ws[tabKey] || []).map((item) => ({ kind, item }));
+  }
+
+  _openWorkspaceItem(entry) {
+    if (!entry) return false;
+    const { kind, item } = entry;
+    if (kind === 'note') {
+      this.onNavigate?.('notes', item.soul);
+      return true;
+    }
+    if (kind === 'task') {
+      this.onNavigate?.('tasks', item.soul);
+      return true;
+    }
+    if (kind === 'event') {
+      this.onNavigate?.('calendar', item.soul);
+      return true;
+    }
+    if (kind === 'bookmark') {
+      const r = openUrl(item.url);
+      this.toast(r.ok ? `Opened ${item.title || item.url}` : r.error, r.ok ? 'success' : 'error');
+      return true;
+    }
+    return false;
   }
 
   async _editDescInEditor(project) {
@@ -176,6 +217,40 @@ export class ProjectsView {
     return true;
   }
 
+  async handleMouse(ev) {
+    if (this.modal || !this._lastLayout || ev.button !== 0 || ev.release) return false;
+    const { listHits, tabHits, itemHits } = this._lastLayout;
+    for (const h of listHits) {
+      if (ev.x >= h.x0 && ev.x <= h.x1 && ev.y >= h.y0 && ev.y <= h.y1) {
+        this.pane = 'list';
+        this.selectedIdx = h.idx;
+        this.selectedSoul = h.soul;
+        this.itemIdx = 0;
+        return true;
+      }
+    }
+    for (const h of tabHits) {
+      if (ev.x >= h.x0 && ev.x <= h.x1 && ev.y === h.y) {
+        this.pane = 'workspace';
+        this.tabIdx = h.idx;
+        this.itemIdx = 0;
+        return true;
+      }
+    }
+    for (const h of itemHits) {
+      if (ev.x >= h.x0 && ev.x <= h.x1 && ev.y === h.y) {
+        const alreadySelected = this.pane === 'workspace' && this.itemIdx === h.idx;
+        this.pane = 'workspace';
+        this.itemIdx = h.idx;
+        if (alreadySelected) {
+          this._openWorkspaceItem(h.entry);
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
   async handleKey(ev) {
     const list = this._getList();
     const current = this._currentProject(list);
@@ -208,12 +283,7 @@ export class ProjectsView {
       return true;
     }
 
-    if (ev.name === 'tab' || ev.name === 'h' || ev.name === 'l' || ev.name === 'left' || ev.name === 'right') {
-      if (this.pane === 'workspace' && (ev.name === 'l' || ev.name === 'right') && ev.shift) {
-        this.tabIdx = (this.tabIdx + 1) % TABS.length;
-        this.itemIdx = 0;
-        return true;
-      }
+    if (ev.name === 'tab') {
       this.pane = this.pane === 'list' ? 'workspace' : 'list';
       return true;
     }
@@ -225,6 +295,10 @@ export class ProjectsView {
     }
 
     if (this.pane === 'list') {
+      if ((ev.name === 'l' || ev.name === 'right' || ev.name === 'enter') && current) {
+        this.pane = 'workspace';
+        return true;
+      }
       if (ev.name === 'j' || ev.name === 'down') {
         if (list.length) {
           this.selectedIdx = Math.min(list.length - 1, this.selectedIdx + 1);
@@ -241,14 +315,24 @@ export class ProjectsView {
         }
         return true;
       }
-      if (ev.name === 'enter' && current) {
-        this.pane = 'workspace';
+    } else if (current) {
+      if (ev.name === 'l' || ev.name === 'right') {
+        this.tabIdx = (this.tabIdx + 1) % TABS.length;
+        this.itemIdx = 0;
         return true;
       }
-    } else if (current) {
+      if (ev.name === 'h' || ev.name === 'left') {
+        if (this.tabIdx > 0) {
+          this.tabIdx -= 1;
+          this.itemIdx = 0;
+        } else {
+          this.pane = 'list';
+        }
+        return true;
+      }
       const ws = this.store.getProjectWorkspace(current.soul);
       const tabKey = TABS[this.tabIdx].key;
-      const tabItems = ws[tabKey] || [];
+      const tabItems = this._tabItems(ws, tabKey);
       if (ev.name === 'j' || ev.name === 'down') {
         if (tabItems.length) this.itemIdx = Math.min(tabItems.length - 1, this.itemIdx + 1);
         return true;
@@ -257,16 +341,19 @@ export class ProjectsView {
         this.itemIdx = Math.max(0, this.itemIdx - 1);
         return true;
       }
-      if (ev.name === 'enter' && tabItems[this.itemIdx]) {
-        const it = tabItems[this.itemIdx];
-        if (tabKey === 'notes') this.onNavigate?.('notes', it.soul);
-        else if (tabKey === 'tasks') this.onNavigate?.('tasks', it.soul);
-        else if (tabKey === 'events') this.onNavigate?.('calendar', it.soul);
-        else if (tabKey === 'bookmarks') {
-          const r = openUrl(it.url);
-          this.toast(r.ok ? `Opened ${it.title || it.url}` : r.error, r.ok ? 'success' : 'error');
-        }
+      if (ev.name === 'space' && tabItems[this.itemIdx]?.kind === 'task') {
+        if (this.store.isReadOnly()) { this.toast('Read-only space (viewer)', 'error'); return true; }
+        const t = tabItems[this.itemIdx].item;
+        const isDone = (t.column || t.status) === 'done';
+        const next = isDone ? 'todo' : 'done';
+        try {
+          await this.store.moveTaskColumn(t.soul, next);
+          this.toast(next === 'done' ? 'Task completed' : 'Reopened task', 'success');
+        } catch (e) { this.toast(e.message, 'error'); }
         return true;
+      }
+      if (ev.name === 'enter' && tabItems[this.itemIdx]) {
+        return this._openWorkspaceItem(tabItems[this.itemIdx]);
       }
     }
 
@@ -302,7 +389,7 @@ export class ProjectsView {
 
   getHints() {
     if (this.searchMode) return 'Type to filter projects  ·  Enter: apply  ·  Esc: clear';
-    return 'j/k:select  Tab:pane  m:switch tab  Enter:open item  n:new  i:edit  e:$EDITOR  f:status  d:trash';
+    return '←/→:tabs  Tab:pane  Enter:open item  Space:toggle task  n:new  i:edit  e:$EDITOR  f:status  d:trash';
   }
 
   _statusColor(status, theme) {
@@ -320,6 +407,9 @@ export class ProjectsView {
     const listW = wide ? Math.max(26, Math.min(36, Math.floor(area.w * 0.35))) : area.w;
     const showList = wide || this.pane === 'list';
     const showWs = wide || this.pane === 'workspace';
+    const listHits = [];
+    const tabHits = [];
+    const itemHits = [];
 
     if (showList) {
       screen.box(area.x, area.y, listW, area.h, {
@@ -338,8 +428,9 @@ export class ProjectsView {
         screen.text(area.x + 2, area.y + 2, 'No projects yet. Press n to create.', { fg: theme.fgMuted, bg: theme.listBg });
       } else {
         for (let i = 0; i < maxVis && this.listScroll + i < list.length; i++) {
-          const p = list[this.listScroll + i];
-          const sel = this.listScroll + i === this.selectedIdx;
+          const idx = this.listScroll + i;
+          const p = list[idx];
+          const sel = idx === this.selectedIdx;
           const bg = sel ? theme.selectedBg : theme.listBg;
           const ry = area.y + 1 + i * 2;
           screen.fill(area.x + 1, ry, iw, 2, ' ', { fg: theme.fg, bg });
@@ -353,6 +444,7 @@ export class ProjectsView {
             `${ws.notes.length}n · ${ws.tasks.length}t`
           ].filter(Boolean).join(' · ');
           screen.text(area.x + 4, ry + 1, truncate(meta, iw - 4), { fg: theme.fgMuted, bg });
+          listHits.push({ x0: area.x + 1, x1: area.x + iw, y0: ry, y1: ry + 1, idx, soul: p.soul });
         }
       }
     }
@@ -386,9 +478,10 @@ export class ProjectsView {
         row++;
 
         // Tab strip
+        const totalAll = ws.notes.length + ws.tasks.length + ws.events.length + ws.bookmarks.length;
         let tx = wx + 2;
         TABS.forEach((tab, idx) => {
-          const cnt = (ws[tab.key] || []).length;
+          const cnt = tab.key === 'all' ? totalAll : (ws[tab.key] || []).length;
           const label = ` ${tab.label} (${cnt}) `;
           const active = idx === this.tabIdx;
           if (tx + label.length <= wx + ww - 2) {
@@ -397,6 +490,7 @@ export class ProjectsView {
               bg: active ? theme.accent : theme.selectedBg,
               bold: active
             });
+            tabHits.push({ x0: tx, x1: tx + label.length - 1, y: row, idx });
             tx += label.length + 1;
           }
         });
@@ -404,35 +498,43 @@ export class ProjectsView {
         screen.hline(wx + 2, row++, iw, { fg: theme.border, bg: theme.panelBg });
 
         const tabKey = TABS[this.tabIdx].key;
-        const items = ws[tabKey] || [];
+        const items = this._tabItems(ws, tabKey);
         this.itemIdx = items.length ? Math.max(0, Math.min(items.length - 1, this.itemIdx)) : 0;
         const avail = area.y + area.h - 1 - row;
         if (!items.length) {
-          screen.text(wx + 2, row + 1, `No linked ${TABS[this.tabIdx].label.toLowerCase()}.`, { fg: theme.fgMuted, bg: theme.panelBg });
+          const emptyMsg = tabKey === 'all'
+            ? 'No linked items yet.'
+            : `No linked ${TABS[this.tabIdx].label.toLowerCase()}.`;
+          screen.text(wx + 2, row + 1, emptyMsg, { fg: theme.fgMuted, bg: theme.panelBg });
         } else {
           const scroll = this.itemIdx >= avail ? this.itemIdx - avail + 1 : 0;
           for (let i = 0; i < avail && scroll + i < items.length; i++) {
-            const it = items[scroll + i];
+            const entry = items[scroll + i];
+            const it = entry.item;
             const sel = this.pane === 'workspace' && scroll + i === this.itemIdx;
             const bg = sel ? theme.selectedBg : theme.panelBg;
             screen.fill(wx + 2, row + i, iw, 1, ' ', { fg: theme.fg, bg });
             const label = it.title || it.name || it.url || it.soul;
-            const right = tabKey === 'tasks' ? `[${it.column || it.status || 'todo'}]`
-              : tabKey === 'events' ? formatShortDate(it.start)
-                : '';
+            const right = entry.kind === 'task'
+              ? `[${it.column || it.status || 'todo'}]`
+              : entry.kind === 'event'
+                ? formatShortDate(it.start)
+                : (tabKey === 'all' ? `[${entry.kind}]` : '');
             screen.text(wx + 2, row + i, (sel ? '▸ ' : '  ') + truncate(label, iw - right.length - 4), {
-              fg: theme.fg,
+              fg: entry.kind === 'task' && (it.column || it.status) === 'done' ? theme.fgMuted : theme.fg,
               bg,
               bold: sel
             });
             if (right) {
               screen.text(wx + 2 + iw - right.length, row + i, right, { fg: theme.fgMuted, bg });
             }
+            itemHits.push({ x0: wx + 2, x1: wx + 2 + iw - 1, y: row + i, idx: scroll + i, entry });
           }
         }
       }
     }
 
+    this._lastLayout = { listHits, tabHits, itemHits };
     if (this.modal) this._renderModal(screen, theme);
   }
 

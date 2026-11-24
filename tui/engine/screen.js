@@ -138,6 +138,7 @@ function sameCell(a, b) {
     && a.italic === b.italic
     && a.underline === b.underline
     && a.inverse === b.inverse
+    && a.wide === b.wide
     && a.cont === b.cont;
 }
 

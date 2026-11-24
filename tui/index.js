@@ -184,6 +184,7 @@ export async function startTui(options = {}) {
       onQuit: quit
     });
     loginView.onRedraw = scheduleRender;
+    screen.invalidate();
     scheduleRender();
   };
 
@@ -196,6 +197,7 @@ export async function startTui(options = {}) {
     if (!VIEW_IDS.has(nextId) || nextId === activeViewId) return;
     views?.[activeViewId]?.onBlur?.();
     activeViewId = nextId;
+    screen.invalidate();
   };
 
   const buildViews = (s) => {
@@ -271,6 +273,7 @@ export async function startTui(options = {}) {
     }
 
     toast(`Connected as @${username} (${mode === 'freenet' ? (freenetIdentity?.hasDelegation ? 'Freenet Viso' : 'Freenet P2P') : 'Server'})`, 'success');
+    screen.invalidate();
     scheduleRender();
   };
 
@@ -608,7 +611,7 @@ export async function startTui(options = {}) {
           if (ev.x >= Math.max(0, screen.cols - 24)) {
             await handleKey({ name: 'k', ch: '', ctrl: true, alt: false, shift: false });
           } else if (ev.x < 40) {
-            overlay = new SpacesOverlay({ store, onClose: () => { overlay = null; }, toast });
+            overlay = new SpacesOverlay({ store, onClose: () => { overlay = null; screen.invalidate(); }, toast });
             scheduleRender();
           }
           return;
@@ -646,6 +649,12 @@ export async function startTui(options = {}) {
               scheduleRender();
             }
           }
+          return;
+        }
+        if (ev.x >= area.x && ev.y >= area.y) {
+          sidebarFocused = false;
+          const handled = await views[activeViewId]?.handleMouse?.(ev, area);
+          if (handled) scheduleRender();
         }
       }
       return;
@@ -677,7 +686,7 @@ export async function startTui(options = {}) {
       overlay = new CommandPalette({
         store,
         commands: paletteCommands(),
-        onClose: () => { overlay = null; },
+        onClose: () => { overlay = null; screen.invalidate(); },
         onRunCommand: runCommand,
         onSelectItem: async (hit) => {
           if (VIEW_IDS.has(hit.view)) switchView(hit.view);
@@ -748,13 +757,13 @@ export async function startTui(options = {}) {
       overlay = new HelpOverlay({
         viewTitle: meta?.label || activeViewId,
         viewHints: activeView.getHints?.() || '',
-        onClose: () => { overlay = null; }
+        onClose: () => { overlay = null; screen.invalidate(); }
       });
       scheduleRender();
       return;
     }
     if (ev.name === 's' && !ev.ctrl && !ev.alt) {
-      overlay = new SpacesOverlay({ store, onClose: () => { overlay = null; }, toast });
+      overlay = new SpacesOverlay({ store, onClose: () => { overlay = null; screen.invalidate(); }, toast });
       scheduleRender();
       return;
     }

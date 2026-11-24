@@ -33,6 +33,27 @@ export class TasksView {
     this.query = '';
     this.searchMode = false;
     this.modal = null;
+    this._lastHits = null;
+  }
+
+  async handleMouse(ev) {
+    if (this.modal || !this._lastHits || ev.button !== 0 || ev.release) return false;
+    for (const h of this._lastHits.cards) {
+      if (ev.x >= h.x0 && ev.x <= h.x1 && ev.y >= h.y0 && ev.y <= h.y1) {
+        if (h.colIdx !== undefined) this.colIdx = h.colIdx;
+        if (h.rowIdx !== undefined) this.rowIdx = h.rowIdx;
+        if (h.listIdx !== undefined) this.listIdx = h.listIdx;
+        return true;
+      }
+    }
+    for (const c of this._lastHits.cols) {
+      if (ev.x >= c.x0 && ev.x <= c.x1 && ev.y >= c.y0 && ev.y <= c.y1) {
+        this.colIdx = c.colIdx;
+        this.rowIdx = 0;
+        return true;
+      }
+    }
+    return false;
   }
 
   selectBySoul(soul) {
@@ -345,6 +366,8 @@ export class TasksView {
   render(screen, theme, area) {
     const { cols, all, useKanban } = this._currentTask(area.w);
     const now = Date.now();
+    const hitCols = [];
+    const hitCards = [];
 
     if (useKanban) {
       const colW = Math.floor(area.w / 4);
@@ -353,6 +376,7 @@ export class TasksView {
         const w = cIdx === 3 ? area.w - colW * 3 : colW;
         const items = cols[col.id];
         const focused = cIdx === this.colIdx;
+        hitCols.push({ x0: x, x1: x + w - 1, y0: area.y, y1: area.y + area.h - 1, colIdx: cIdx });
 
         screen.box(x, area.y, w, area.h, {
           title: `${col.label} (${items.length})`,
@@ -374,6 +398,7 @@ export class TasksView {
           const bg = isSel ? theme.selectedBg : theme.listBg;
           const ry = area.y + 1 + i * cardH;
           screen.fill(x + 1, ry, iw, cardH, ' ', { fg: theme.fg, bg });
+          hitCards.push({ x0: x + 1, x1: x + iw, y0: ry, y1: ry + cardH - 1, colIdx: cIdx, rowIdx: scroll + i });
 
           const badge = PRIO_BADGE[(t.priority || 'medium').toLowerCase()] || '[●]';
           const badgeColor = this._prioColor(t.priority, theme);
@@ -412,6 +437,7 @@ export class TasksView {
         const bg = isSel ? theme.selectedBg : theme.listBg;
         const ry = area.y + 1 + i;
         screen.fill(area.x + 1, ry, iw, 1, ' ', { fg: theme.fg, bg });
+        hitCards.push({ x0: area.x + 1, x1: area.x + iw, y0: ry, y1: ry, listIdx: scroll + i });
         const col = t.column || t.status || 'todo';
         const badge = PRIO_BADGE[(t.priority || 'medium').toLowerCase()] || '[●]';
         screen.text(area.x + 1, ry, `${isSel ? '▸' : ' '} ${badge} [${col}] ${truncate(t.title, iw - 22)}`, {
@@ -422,6 +448,7 @@ export class TasksView {
       }
     }
 
+    this._lastHits = { cols: hitCols, cards: hitCards };
     if (this.modal) {
       this._renderModal(screen, theme);
     }

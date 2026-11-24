@@ -41,7 +41,9 @@ import { ContactsView } from './tui/views/contacts.js';
 import { FeedsView, htmlToPlainText } from './tui/views/feeds.js';
 import { FilesView } from './tui/views/files.js';
 import { GardenView } from './tui/views/garden.js';
+import { ProjectsView } from './tui/views/projects.js';
 import { SecretsView } from './tui/views/secrets.js';
+import { TasksView } from './tui/views/tasks.js';
 
 const execFileAsync = promisify(execFile);
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'orto-tui-test-'));
@@ -643,6 +645,49 @@ try {
     if (prevFnVault2 === undefined) delete globalThis.FreenetVault;
     else globalThis.FreenetVault = prevFnVault2;
   }
+
+  console.log('15. ProjectsView All tab, keyboard/mouse tab nav & TasksView mouse hit testing');
+  const radicaProj = await store.saveProject({ name: 'Radica P2P', status: 'active' });
+  const radicaTask = await store.saveTask({ title: 'Fix Radica feeds', priority: 'high', status: 'todo', projectId: radicaProj.soul });
+  const pv = new ProjectsView({ store, config: {}, suspend: () => {}, resume: () => {}, toast: () => {}, onNavigate: () => {} });
+  pv.selectBySoul(radicaProj.soul);
+  const pvScr = new Screen(100, 26, darkTheme);
+  pvScr.clear();
+  pv.render(pvScr, darkTheme, { x: 0, y: 0, w: 100, h: 26 });
+  const pvOut = pvScr.render();
+  assert(pvOut.includes('All (1)'), 'ProjectsView shows All (1) tab by default');
+  assert(pvOut.includes('Fix Radica feeds'), 'ProjectsView shows linked task on default All tab even with 0 notes');
+
+  // Switch pane to workspace and navigate tabs with right/left arrows
+  await pv.handleKey({ name: 'tab', ctrl: false, alt: false, shift: false });
+  assert.equal(pv.pane, 'workspace');
+  await pv.handleKey({ name: 'right', ctrl: false, alt: false, shift: false });
+  assert.equal(pv.tabIdx, 1); // Notes
+  await pv.handleKey({ name: 'right', ctrl: false, alt: false, shift: false });
+  assert.equal(pv.tabIdx, 2); // Tasks
+  await pv.handleKey({ name: 'space', ctrl: false, alt: false, shift: false });
+  assert.equal(store.tasks.get(radicaTask.soul).status, 'done', 'Space toggles linked task done inside ProjectsView');
+  await pv.handleKey({ name: 'left', ctrl: false, alt: false, shift: false });
+  await pv.handleKey({ name: 'left', ctrl: false, alt: false, shift: false });
+  assert.equal(pv.tabIdx, 0);
+  await pv.handleKey({ name: 'left', ctrl: false, alt: false, shift: false });
+  assert.equal(pv.pane, 'list', 'Left arrow from tab 0 returns to project list pane');
+
+  // Mouse click on Tasks tab (tabHits[2]) switches directly to Tasks tab
+  const tasksTabHit = pv._lastLayout.tabHits[2];
+  await pv.handleMouse({ name: 'mouse', button: 0, release: false, x: tasksTabHit.x0 + 1, y: tasksTabHit.y });
+  assert.equal(pv.pane, 'workspace');
+  assert.equal(pv.tabIdx, 2);
+
+  // TasksView mouse click selects column / card
+  const tv = new TasksView({ store, config: {}, suspend: () => {}, resume: () => {}, toast: () => {} });
+  const tvScr = new Screen(100, 24, darkTheme);
+  tvScr.clear();
+  tv.render(tvScr, darkTheme, { x: 0, y: 0, w: 100, h: 24 });
+  assert.equal(tv.colIdx, 0);
+  const doneColHit = tv._lastHits.cols[3];
+  await tv.handleMouse({ name: 'mouse', button: 0, release: false, x: doneColHit.x0 + 2, y: doneColHit.y0 + 1 });
+  assert.equal(tv.colIdx, 3, 'clicking DONE column selects it in TasksView');
 
   console.log('All TUI tests passed!');
 } finally {
