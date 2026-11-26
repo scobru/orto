@@ -555,6 +555,41 @@ try {
   lvSuccess.client.close();
   lvSuccess.freenetRuntime.close();
 
+  // Viso persona private key (Export private key: hex or base58) resolves to the same vault as the seed
+  const p0B58 = (() => {
+    const A = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    let n = BigInt('0x' + p0.secretHex), o = '';
+    while (n > 0n) { o = A[Number(n % 58n)] + o; n /= 58n; }
+    return o;
+  })();
+  const fromB58 = await resolveFreenetIdentity(p0B58);
+  assert.equal(fromB58.kind, 'viso-persona');
+  assert.equal(fromB58.username, resolvedFromBackup.username);
+  assert.equal(fromB58.personaHex, p0.pubHex);
+  const fromHexWrapped = await resolveFreenetIdentity(JSON.stringify({ personaSecret: p0.secretHex }));
+  assert.equal(fromHexWrapped.username, resolvedFromBackup.username);
+  let lvpSuccess = null;
+  const lvPersona = new LoginView({
+    backend: 'freenet',
+    offline: true,
+    freenetStore: path.join(tmpRoot, 'lv-persona-store.json'),
+    onSuccess: (res) => { lvpSuccess = res; },
+    onQuit: () => {}
+  });
+  await lvPersona.handleKey({ name: 'v', ch: '', ctrl: true, alt: false, shift: false });
+  await lvPersona.handleKey({ name: 'v', ch: '', ctrl: true, alt: false, shift: false });
+  assert.equal(lvPersona.fnKeyMode, 'viso-persona');
+  const lvpScr = new Screen(80, 24, darkTheme);
+  lvpScr.clear();
+  lvPersona.render(lvpScr, darkTheme);
+  assert(lvpScr.render().includes('Viso Persona'));
+  await lvPersona.handleKey({ name: 'paste', paste: p0.secretHex, ctrl: false, alt: false, shift: false });
+  await lvPersona._submit();
+  assert.equal(lvpSuccess?.freenetIdentity?.kind, 'viso-persona');
+  assert.equal(lvpSuccess?.freenetIdentity?.personaHex, p0.pubHex);
+  lvpSuccess.client.close();
+  lvpSuccess.freenetRuntime.close();
+
   // Viso Vault Replication + Delayed Async Sync into OrtoStore (notes, files, and space-switch preservation)
   const prevSafe2 = globalThis.safeStore;
   const prevFnVault2 = globalThis.FreenetVault;

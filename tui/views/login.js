@@ -11,6 +11,8 @@ import {
   resolveFreenetIdentity
 } from '../freenet.js';
 
+const FN_KEY_MODES = ['direct', 'viso-seed', 'viso-persona'];
+
 export class LoginView {
   constructor({
     backend = 'server',
@@ -39,7 +41,7 @@ export class LoginView {
     this.pass = '';
     this.fnKey = '';
     this.fnKeyMasked = true;
-    this.fnKeyMode = fnKeyMode === 'viso-seed' ? 'viso-seed' : 'direct'; // 'direct' | 'viso-seed'
+    this.fnKeyMode = FN_KEY_MODES.includes(fnKeyMode) ? fnKeyMode : 'direct';
     this.fnPersonaIndex = Math.max(0, Number(personaIndex) || 0);
     this.fnPreview = '';
     this.mode = 'login'; // 'login' | 'register' (server mode only)
@@ -58,7 +60,7 @@ export class LoginView {
     this.backend = this.backend === 'server' ? 'freenet' : 'server';
     this.error = '';
     this.info = this.backend === 'freenet'
-      ? 'Use Direct Ed25519 key or Viso Master Seed (←/→ or Ctrl+V to switch).'
+      ? 'Use Direct Ed25519 key, Viso Master Seed or Viso Persona key (←/→ or Ctrl+V to switch).'
       : '';
     if (this.backend === 'freenet' && this.focus === 2) this.focus = 3;
     if (this.backend === 'server' && this.focus === 2 && this.user) this.focus = 3;
@@ -66,11 +68,13 @@ export class LoginView {
 
   _toggleFnKeyMode(target = null) {
     if (this.locked || this.backend !== 'freenet') return;
-    this.fnKeyMode = target || (this.fnKeyMode === 'direct' ? 'viso-seed' : 'direct');
+    this.fnKeyMode = target || FN_KEY_MODES[(FN_KEY_MODES.indexOf(this.fnKeyMode) + 1) % FN_KEY_MODES.length];
     this.error = '';
-    this.info = this.fnKeyMode === 'viso-seed'
-      ? `Viso Seed mode (#${this.fnPersonaIndex}): derives persona + Orto delegated app key.`
-      : 'Direct Ed25519 mode: uses 64-hex Orto keypair or Viso session JSON.';
+    this.info = {
+      'viso-seed': `Viso Seed mode (#${this.fnPersonaIndex}): derives persona + Orto delegated app key.`,
+      'viso-persona': 'Viso Persona mode: private key from Viso "Export private key" (hex or base58).',
+      direct: 'Direct Ed25519 mode: uses 64-hex Orto keypair or Viso session JSON.'
+    }[this.fnKeyMode];
     void this._refreshFnPreview();
   }
 
@@ -97,16 +101,16 @@ export class LoginView {
     }
     try {
       const parsed = parseFreenetKeyInput(raw);
-      if (!this.locked && parsed.detectedKind === 'viso-seed' && this.fnKeyMode !== 'viso-seed') {
-        this.fnKeyMode = 'viso-seed';
+      if (!this.locked && (parsed.detectedKind === 'viso-seed' || parsed.detectedKind === 'viso-persona')) {
+        this.fnKeyMode = parsed.detectedKind;
       }
       const id = await resolveFreenetIdentity(raw, {
-        keyMode: this.fnKeyMode === 'viso-seed' ? 'viso-seed' : 'auto',
+        keyMode: this.fnKeyMode === 'direct' ? 'auto' : this.fnKeyMode,
         personaIndex: this.fnPersonaIndex
       });
       if (this.fnKey.trim() === raw) {
-        if (id.kind === 'viso-seed' || id.kind === 'viso-session') {
-          const tag = id.kind === 'viso-session' ? 'Viso Session' : `Viso #${id.personaIndex ?? 0}`;
+        if (id.kind !== 'direct') {
+          const tag = { 'viso-session': 'Viso Session', 'viso-persona': 'Viso Persona' }[id.kind] || `Viso #${id.personaIndex ?? 0}`;
           this.fnPreview = `${tag} · Persona ${id.persona.slice(0, 10)}… · App ${id.username}`;
         } else {
           this.fnPreview = `Direct · ${id.username} (Persona: ${id.persona.slice(0, 10)}…)`;
@@ -164,21 +168,23 @@ export class LoginView {
       if (!this.fnKey.trim()) {
         this.error = this.fnKeyMode === 'viso-seed'
           ? 'Paste your 64-hex Viso master seed or backup file.'
+          : this.fnKeyMode === 'viso-persona'
+          ? 'Paste the persona private key exported from Viso (hex or base58).'
           : 'Paste your 64-hex Ed25519 secret key (or press Ctrl+G to generate one).';
         return;
       }
       this.busy = true;
-      this.info = this.fnKeyMode === 'viso-seed'
+      this.info = this.fnKeyMode !== 'direct'
         ? 'Deriving Viso persona & delegated Orto keys...'
         : 'Deriving Ed25519 identity & AES-GCM keys...';
       this.onRedraw?.();
       try {
         const parsed = parseFreenetKeyInput(this.fnKey);
-        if (!this.locked && parsed.detectedKind === 'viso-seed' && this.fnKeyMode !== 'viso-seed') {
-          this.fnKeyMode = 'viso-seed';
+        if (!this.locked && (parsed.detectedKind === 'viso-seed' || parsed.detectedKind === 'viso-persona')) {
+          this.fnKeyMode = parsed.detectedKind;
         }
         const id = await resolveFreenetIdentity(this.fnKey, {
-          keyMode: this.fnKeyMode === 'viso-seed' ? 'viso-seed' : 'auto',
+          keyMode: this.fnKeyMode === 'direct' ? 'auto' : this.fnKeyMode,
           personaIndex: this.fnPersonaIndex
         });
         if (this.locked && this.lockedIdentity && id.username !== this.lockedIdentity) {
@@ -428,6 +434,7 @@ export class LoginView {
       const visoChip = this.fnKeyMode === 'viso-seed'
         ? `● Viso Seed (#${this.fnPersonaIndex})`
         : `○ Viso Seed (#${this.fnPersonaIndex})`;
+      const personaChip = this.fnKeyMode === 'viso-persona' ? '● Viso Persona' : '○ Viso Persona';
       screen.text(ix, y + 9, truncate('Identity (←/→ or Ctrl+V · +/- index):', iw), {
         fg: this.focus === 2 ? theme.accentSoft : theme.fgDim,
         bg: theme.panelBg
@@ -442,11 +449,18 @@ export class LoginView {
         bg: this.fnKeyMode === 'viso-seed' ? (this.focus === 2 ? theme.accent : theme.green) : theme.selectedBg,
         bold: this.fnKeyMode === 'viso-seed'
       });
+      screen.text(ix + directChip.length + visoChip.length + 6, y + 10, ` ${personaChip} `, {
+        fg: this.fnKeyMode === 'viso-persona' ? theme.bg : theme.fgDim,
+        bg: this.fnKeyMode === 'viso-persona' ? (this.focus === 2 ? theme.accent : theme.green) : theme.selectedBg,
+        bold: this.fnKeyMode === 'viso-persona'
+      });
 
       const keyLabel = this.locked && this.lockedIdentity
         ? `Ed25519 Secret Key to unlock ${this.lockedIdentity} (Ctrl+E show)`
         : (this.fnKeyMode === 'viso-seed'
           ? 'Viso Master Seed (64 hex or backup file · Ctrl+E show)'
+          : this.fnKeyMode === 'viso-persona'
+          ? 'Viso Persona Private Key (hex or base58 · Ctrl+E show)'
           : 'Ed25519 Secret Key / Keypair (64 hex, JSON, #sk=, or file · Ctrl+E show)');
       screen.text(ix, y + 12, truncate(keyLabel, iw), {
         fg: this.focus === 3 ? theme.accentSoft : theme.fgDim,
@@ -457,6 +471,8 @@ export class LoginView {
         masked: this.fnKeyMasked,
         placeholder: this.fnKeyMode === 'viso-seed'
           ? 'Paste 64-hex Viso seed or backup file path'
+          : this.fnKeyMode === 'viso-persona'
+          ? 'Paste key from Viso → persona → Export private key'
           : 'Paste 64-hex secret key or press Ctrl+G to generate',
         theme
       });
@@ -466,6 +482,8 @@ export class LoginView {
       } else {
         const tip = this.fnKeyMode === 'viso-seed'
           ? 'Viso SSO: same seed/persona used in web Freenet Orto finds the same vault'
+          : this.fnKeyMode === 'viso-persona'
+          ? 'Viso SSO: derives the same Orto vault as "Sign in with Viso" on web'
           : 'Direct key: same 64-hex Orto keypair (if you used Viso on web, press Ctrl+V)';
         screen.text(ix, y + 15, truncate(tip, iw), { fg: theme.fgMuted, bg: theme.panelBg });
       }

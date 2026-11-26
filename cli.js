@@ -219,8 +219,11 @@ async function main() {
   }
   const freenetNode = typeof flags['freenet-node'] === 'string' ? flags['freenet-node'] : (ev('FREENET_NODE') || undefined);
   const freenetStore = typeof flags['freenet-store'] === 'string' ? flags['freenet-store'] : (ev('FREENET_STORE') || undefined);
-  const freenetKey = str(flags.key) || str(flags.sk) || ev('FREENET_KEY') || ev('KEY');
+  let freenetKey = str(flags.key) || str(flags.sk) || ev('FREENET_KEY') || ev('KEY');
   const visoSeed = str(flags['viso-seed']) || ev('VISO_SEED');
+  const visoPersona = str(flags['viso-persona']) || ev('VISO_PERSONA');
+  // Wrapped so every resolveFreenetIdentity caller auto-detects it as a persona key
+  if (visoPersona) freenetKey = JSON.stringify({ personaSecret: visoPersona });
   const personaIndex = Math.max(0, parseInt(str(flags['persona-index']) || ev('VISO_INDEX') || '0', 10) || 0);
   const delegation = str(flags.delegation) || ev('FREENET_DELEGATION');
   const offline = flags.offline === true;
@@ -390,6 +393,7 @@ Backend & Server (all commands):
   --freenet               use Freenet P2P mode (or --mode freenet / ORTO_MODE=freenet)
   --key <64hex|file>      Freenet Ed25519 key, Viso backup/session JSON, or #sk= (or ORTO_FREENET_KEY)
   --viso-seed <64hex|file> Viso master seed for Viso SSO vault derivation (or ORTO_VISO_SEED)
+  --viso-persona <key|file> Viso persona private key (Export private key, hex or base58; or ORTO_VISO_PERSONA)
   --persona-index <n>     Viso persona index (default 0; or ORTO_VISO_INDEX)
   --delegation <json|file> Viso delegation certificate JSON (or ORTO_FREENET_DELEGATION)
   --freenet-node <ws-url> Freenet WebSocket URL (or ORTO_FREENET_NODE); default ws://127.0.0.1:7509/v1/contract/command

@@ -10,7 +10,7 @@ export const HUMAN_COMMANDS = new Set(['q', 'find', 'edit', 'copy', 'status']);
 const VALUE_FLAGS = new Set([
   '--user', '-u', '--pass', '--server', '--space', '--env',
   '--mode', '--freenet-node', '--freenet-store', '--key', '--sk', '--pk',
-  '--viso-seed', '--persona-index', '--delegation',
+  '--viso-seed', '--viso-persona', '--persona-index', '--delegation',
   '--due', '--priority', '--status', '--cat', '--project',
   '--title', '--text', '--soul', '-s', '--query', '-q',
   '--limit', '-n', '--kind'

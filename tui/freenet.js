@@ -37,6 +37,19 @@ function toBase58(bytes) {
   return out + d.reverse().map((x) => B58[x]).join('');
 }
 
+function fromBase58(str) {
+  let n = 0n;
+  for (const ch of str) {
+    const v = B58.indexOf(ch);
+    if (v < 0) throw new Error('Invalid base58 string');
+    n = n * 58n + BigInt(v);
+  }
+  const hex = n ? n.toString(16) : '';
+  const body = hex ? hexToBytes(hex.length % 2 ? '0' + hex : hex) : new Uint8Array(0);
+  const zeros = str.match(/^1*/)[0].length;
+  return concatBytes(new Uint8Array(zeros), body);
+}
+
 function hexToBytes(hex) {
   const clean = String(hex || '').replace(/\s+/g, '').toLowerCase();
   if (!clean || clean.length % 2 !== 0 || !/^[0-9a-f]+$/.test(clean)) {
@@ -148,7 +161,7 @@ export function parseFreenetKeyInput(raw, _depth = 0) {
   if (!s) throw new Error('Freenet secret key is required (64 hex chars or keypair JSON).');
 
   // If it looks like a local file path, read it once
-  if (_depth === 0 && !s.startsWith('{') && !/^[0-9a-f\s]{64,}$/i.test(s) && s.length < 512) {
+  if (_depth < 2 && !s.startsWith('{') && !/^[0-9a-f\s]{64,}$/i.test(s) && s.length < 512) {
     try {
       if (fs.existsSync(s) && fs.statSync(s).isFile()) {
         return parseFreenetKeyInput(fs.readFileSync(s, 'utf8'), 1);
@@ -164,6 +177,10 @@ export function parseFreenetKeyInput(raw, _depth = 0) {
         ? JSON.parse(obj.orto_viso_session)
         : obj.orto_viso_session);
       const delegation = normalizeDelegation(delSrc);
+      // Viso persona private key ("Export private key" in Viso), wrapped by --viso-persona
+      if (typeof obj.personaSecret === 'string') {
+        return { ...parseFreenetKeyInput(obj.personaSecret, _depth + 1), detectedKind: 'viso-persona' };
+      }
       const cand = obj.secret || obj.secretHex || obj.sk || obj.privateKey || obj.orto_freenet_secret || obj.seed;
       if (typeof cand === 'string') {
         const res = parseFreenetKeyInput(cand, _depth + 1);
@@ -203,6 +220,16 @@ export function parseFreenetKeyInput(raw, _depth = 0) {
       delegation: null,
       detectedKind: 'hex128'
     };
+  }
+
+  // Base58 32-byte secret: only Viso's "copy base58" export produces this, so it is a persona key
+  if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s)) {
+    try {
+      const b = fromBase58(s);
+      if (b.length === 32) {
+        return { secretHex: bytesToHex(b), expectedPubHex: null, delegation: null, detectedKind: 'viso-persona' };
+      }
+    } catch (_) {}
   }
 
   // Backup text file ("Orto Sovereign Freenet Key: ...\n<64hex>" or "viso master seed ...\nhex:\n<64hex>")
@@ -355,6 +382,12 @@ export async function resolveFreenetIdentity(
       delegation,
       detectedKind: parsed.detectedKind || 'viso-session'
     };
+  }
+
+  // Persona private key exported from Viso: derive the same delegated Orto app key the web connect flow gets
+  if (keyMode === 'viso-persona' || (keyMode === 'auto' && parsed.detectedKind === 'viso-persona')) {
+    const id = await deriveVisoIdentity(parsed.secretHex, { isPersonaKey: true });
+    return { ...id, detectedKind: parsed.detectedKind };
   }
 
   if (keyMode === 'viso-seed' || (keyMode === 'auto' && parsed.detectedKind === 'viso-seed')) {
