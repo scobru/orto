@@ -14,6 +14,9 @@ try {
   {
     const fs = await import('node:fs');
     const src = fs.readFileSync(new URL('./web/index.html', import.meta.url), 'utf8');
+    // The Freenet key must never be written into the URL (address bar, history, copy-paste)
+    assert.ok(!/['"`]#sk=['"`]\s*\+/.test(src), 'web must not build a #sk=<key> hash');
+    assert.ok(src.includes("if (k === 'orto_freenet_secret') continue;"), '#v= state must exclude the Freenet key');
     const block = src.split('// viso-esk:begin')[1].split('// viso-esk:end')[0];
     const store = new Map();
     const safeStore = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) };

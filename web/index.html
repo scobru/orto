@@ -4270,17 +4270,19 @@
         if (!sk) return;
         const obj = {};
         for (const [k, v] of _nameStore.entries()) {
+          if (k === 'orto_freenet_secret') continue; // never put the key in the URL: reload takes it from page storage or the node delegate
           if (k.startsWith('orto_rec:') || k.startsWith('orto_cache_') || k.startsWith('orto_theme') || k.startsWith('orto_freenet_')) {
             obj[k] = v;
           }
         }
         const b64u = await compressStore(obj);
         if (!b64u) return;
-        const newHash = '#sk=' + sk + '&v=' + b64u;
+        const newHash = '#v=' + b64u;
         if (newHash.length <= 8000) {
           if (window.parent !== window) {
             try {
-              window.parent.postMessage({ __freenet_shell__: true, type: 'hash', hash: newHash }, '*');
+              const targetOrigin = (location.origin && location.origin !== 'null') ? location.origin : '*';
+              window.parent.postMessage({ __freenet_shell__: true, type: 'hash', hash: newHash }, targetOrigin);
             } catch (_) {}
           }
           try {
@@ -4838,13 +4840,6 @@
         void nodeKeep(NODE_SECRET, kp.secretHex);
         // a stale node copy is harmless (savedDelegation checks it names the key in use) and only 'remove identity' clears it
         if (delegation) void nodeKeep(NODE_VISO, JSON.stringify(delegation));
-
-        if (window.parent !== window) {
-          try {
-            const targetOrigin = (location.origin && location.origin !== 'null') ? location.origin : '*';
-            window.parent.postMessage({ __freenet_shell__: true, type: 'hash', hash: '#sk=' + kp.secretHex }, targetOrigin);
-          } catch (_) {}
-        }
 
         const userInput = 'fn_' + kp.pubHex.slice(0, 16);
         const passInput = kp.secretHex;
