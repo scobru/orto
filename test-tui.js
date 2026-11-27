@@ -81,6 +81,16 @@ try {
   scr.invalidate();
   assert(scr.render().includes('Orto'), 'invalidate forces full redraw');
 
+  // Ambiguous-width glyphs (●, ·) must re-anchor the cursor so a terminal that draws them
+  // wide can't shift the rest of the run and leave ghost chars from the previous frame
+  const ambScr = new Screen(30, 5, darkTheme);
+  ambScr.text(0, 0, '●Direct·Ed25519');
+  ambScr.render();
+  ambScr.clear();
+  ambScr.text(0, 0, '○Viso···Persona');
+  const ambOut = ambScr.render().replace(/\x1b\[[0-9;]*m/g, '');
+  assert(ambOut.includes('\x1b[1;1H○\x1b[1;2HV\x1b[1;4Hso·\x1b[1;7H·\x1b[1;9HPersona'), 'cursor re-anchored after each non-ASCII glyph');
+
   const asciiTheme = resolveTheme('light', { colorMode: 'ansi16', ascii: true });
   const scrAscii = new Screen(20, 6, asciiTheme);
   scrAscii.clear();
@@ -438,6 +448,7 @@ try {
   lv.render(lvScr, darkTheme);
   const lvOut = lvScr.render();
   assert(lvOut.includes('Ed25519 Secret Key'));
+  assert(lvOut.includes('Ctrl+V: key mode'), 'footer hint matches 3-way key mode cycle');
   assert(!lvOut.includes('Username\x1b'));
 
   const fnStoreFile = path.join(tmpRoot, 'fn-store.json');
