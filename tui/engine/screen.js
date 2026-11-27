@@ -355,6 +355,7 @@ export class Screen {
           continue;
         }
         out += `\x1b[${y + 1};${x + 1}H`;
+        let resync = false;
         while (x < this.cols) {
           const ci = y * this.cols + x;
           const nc = this.next[ci];
@@ -370,7 +371,11 @@ export class Screen {
             out += sgrFor(nc, mode);
             lastStyle = sk;
           }
+          // Terminals disagree on the width of non-ASCII glyphs (●, ·, …, •, emoji); re-anchor
+          // after each one so a mis-measured glyph can't shift the rest of the run and leave ghosts.
+          if (resync) out += `\x1b[${y + 1};${x + 1}H`;
           out += nc.ch;
+          resync = nc.wide || /[^\x20-\x7e]/.test(nc.ch);
           this.prev[ci] = { ...nc };
           if (nc.wide && x + 1 < this.cols) {
             this.prev[ci + 1] = { ...this.next[ci + 1] };

@@ -557,7 +557,7 @@ export class LoginView {
     const hint = this.locked
       ? 'Enter: unlock  ·  Ctrl+C: quit'
       : (this.backend === 'freenet'
-        ? 'Tab: field · Ctrl+V: Direct/Viso · Ctrl+G: gen · Ctrl+E: show · Enter: open'
+        ? 'Tab: field · Ctrl+V: key mode · Ctrl+G: gen · Ctrl+E: show · Enter: open'
         : 'Tab/↑↓: field · Ctrl+F: Freenet · Ctrl+D: demo · Enter: submit');
     screen.text(ix, y + boxH - 2, truncate(hint, iw), { fg: theme.fgMuted, bg: theme.panelBg });
   }
